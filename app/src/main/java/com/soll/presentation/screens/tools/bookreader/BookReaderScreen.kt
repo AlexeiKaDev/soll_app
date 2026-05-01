@@ -17,19 +17,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.soll.data.local.entity.BookEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
-import com.soll.domain.tts.TtsEngineType
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,33 +54,23 @@ fun BookReaderScreen(
     }
 
     if (uiState.currentBook != null) {
+        // Reading view
         BookReadingScreen(
             book = uiState.currentBook!!,
             currentChapter = uiState.currentChapter,
             currentChapterIndex = uiState.currentChapterIndex,
             isTtsPlaying = uiState.isTtsPlaying,
             speechRate = uiState.speechRate,
-            autoAdvanceEnabled = uiState.autoAdvanceEnabled,
-            highlightRange = uiState.highlightRange,
-            availableEngines = uiState.availableEngines.map { it.label to it.name },
-            selectedEngine = uiState.selectedEngine,
-            engineType = uiState.engineType,
-            sileroSpeaker = "",
-            sileroDownloadProgress = uiState.sileroDownloadProgress,
             onBack = { viewModel.closeBook() },
             onChapterSelect = { viewModel.goToChapter(it) },
             onPreviousChapter = { viewModel.previousChapter() },
             onNextChapter = { viewModel.nextChapter() },
             onToggleTts = { viewModel.toggleTts() },
             onStopTts = { viewModel.stopTts() },
-            onSpeechRateChange = { viewModel.setSpeechRate(it) },
-            onAutoAdvanceChange = { viewModel.setAutoAdvance(it) },
-            onEngineSelect = { viewModel.selectTtsEngine(it) },
-            onEngineTypeChange = { viewModel.setEngineType(it) },
-            sileroVoiceId = uiState.sileroVoiceId,
-            onSileroVoiceChange = { viewModel.setSileroVoice(it) }
+            onSpeechRateChange = { viewModel.setSpeechRate(it) }
         )
     } else {
+        // Library view
         BookLibraryScreen(
             books = uiState.books,
             isLoading = uiState.isLoading,
@@ -278,59 +262,16 @@ private fun BookReadingScreen(
     currentChapterIndex: Int,
     isTtsPlaying: Boolean,
     speechRate: Float,
-    autoAdvanceEnabled: Boolean,
-    highlightRange: IntRange?,
-    availableEngines: List<Pair<String, String>>,
-    selectedEngine: String?,
-    engineType: TtsEngineType,
-    sileroSpeaker: String,
-    sileroDownloadProgress: Float?,
     onBack: () -> Unit,
     onChapterSelect: (Int) -> Unit,
     onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onToggleTts: () -> Unit,
     onStopTts: () -> Unit,
-    onSpeechRateChange: (Float) -> Unit,
-    onAutoAdvanceChange: (Boolean) -> Unit,
-    onEngineSelect: (String) -> Unit,
-    onEngineTypeChange: (TtsEngineType) -> Unit,
-    sileroVoiceId: String,
-    onSileroVoiceChange: (String) -> Unit
+    onSpeechRateChange: (Float) -> Unit
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
-    val scrollState = rememberScrollState()
-    val coroutineScope = rememberCoroutineScope()
-    val density = LocalDensity.current
-
-    // Track text layout for auto-scroll
-    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-
-    // Auto-scroll to highlighted word
-    LaunchedEffect(highlightRange) {
-        if (highlightRange != null && textLayoutResult != null) {
-            val layout = textLayoutResult!!
-            val content = currentChapter?.content ?: return@LaunchedEffect
-            val offset = highlightRange.first.coerceIn(0, content.length - 1)
-            try {
-                val line = layout.getLineForOffset(offset)
-                val lineTop = layout.getLineTop(line).toInt()
-                // Add padding offset (16dp for chapter title area + some margin)
-                val targetScroll = (lineTop - with(density) { 200.dp.toPx() }.toInt())
-                    .coerceAtLeast(0)
-
-                // Only scroll if the word is outside the visible area
-                val currentScroll = scrollState.value
-                val viewportHeight = scrollState.viewportSize
-                if (lineTop < currentScroll || lineTop > currentScroll + viewportHeight - 100) {
-                    scrollState.animateScrollTo(targetScroll)
-                }
-            } catch (_: Exception) {
-                // Ignore layout errors
-            }
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -370,6 +311,7 @@ private fun BookReadingScreen(
             )
         },
         bottomBar = {
+            // TTS Controls
             Surface(
                 tonalElevation = 3.dp
             ) {
@@ -412,11 +354,12 @@ private fun BookReadingScreen(
             }
         }
     ) { padding ->
+        // Chapter content
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             currentChapter?.let { chapter ->
@@ -425,37 +368,10 @@ private fun BookReadingScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-
-                // Build annotated string with word highlighting
-                val highlightColor = MaterialTheme.colorScheme.primaryContainer
-                val highlightTextColor = MaterialTheme.colorScheme.onPrimaryContainer
-                val annotatedText = remember(chapter.content, highlightRange) {
-                    buildAnnotatedString {
-                        append(chapter.content)
-                        if (highlightRange != null) {
-                            val start = highlightRange.first.coerceIn(0, chapter.content.length)
-                            val end = highlightRange.last.coerceIn(0, chapter.content.length)
-                            if (start < end) {
-                                addStyle(
-                                    SpanStyle(
-                                        background = highlightColor,
-                                        color = highlightTextColor
-                                    ),
-                                    start = start,
-                                    end = end
-                                )
-                            }
-                        }
-                    }
-                }
-
                 Text(
-                    text = annotatedText,
+                    text = chapter.content,
                     style = MaterialTheme.typography.bodyLarge,
-                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.5,
-                    onTextLayout = { result ->
-                        textLayoutResult = result
-                    }
+                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.5
                 )
             } ?: run {
                 Text(
@@ -513,10 +429,7 @@ private fun BookReadingScreen(
             onDismissRequest = { showSettings = false },
             title = { Text("Reading Settings") },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState())
-                ) {
-                    // Speech rate
+                Column {
                     Text(
                         text = "Speech Rate: ${String.format("%.1f", speechRate)}x",
                         style = MaterialTheme.typography.bodyMedium
@@ -527,173 +440,6 @@ private fun BookReadingScreen(
                         valueRange = 0.5f..2.0f,
                         steps = 5
                     )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Auto-advance toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Auto-advance chapters",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Switch(
-                            checked = autoAdvanceEnabled,
-                            onCheckedChange = onAutoAdvanceChange
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Engine type selector
-                    Text(
-                        text = "TTS Engine",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // UtrobinTTS HD option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.UTROBIN) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.UTROBIN,
-                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("UtrobinTTS HD (оффлайн)", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Высокое качество, 2 голоса (м/ж), ~121MB",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Silero/Piper option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.SILERO) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.SILERO,
-                            onClick = { onEngineTypeChange(TtsEngineType.SILERO) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("Silero (оффлайн)", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Встроенная нейросеть, голос Ксения",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // Download progress
-                    if (sileroDownloadProgress != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Загрузка модели: ${(sileroDownloadProgress * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        LinearProgressIndicator(
-                            progress = { sileroDownloadProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                        )
-                    }
-
-                    // Voice picker (shown when Silero selected)
-                    if (engineType == TtsEngineType.SILERO) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Голос", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary)
-                        com.soll.domain.tts.SileroJitEngine.VOICES.forEach { voice ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSileroVoiceChange(voice.id) }
-                                    .padding(vertical = 2.dp, horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = voice.id == sileroVoiceId,
-                                    onClick = { onSileroVoiceChange(voice.id) }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(voice.label, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // System TTS option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.SYSTEM) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.SYSTEM,
-                            onClick = { onEngineTypeChange(TtsEngineType.SYSTEM) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("System TTS", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Google TTS или другой установленный",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // System engine selector (shown when System is selected)
-                    if (engineType == TtsEngineType.SYSTEM && availableEngines.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "System Engine",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        availableEngines.forEach { (label, packageName) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onEngineSelect(packageName) }
-                                    .padding(vertical = 2.dp, horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = packageName == selectedEngine,
-                                    onClick = { onEngineSelect(packageName) }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(label, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
                 }
             },
             confirmButton = {

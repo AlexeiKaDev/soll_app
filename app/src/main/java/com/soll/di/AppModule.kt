@@ -114,7 +114,7 @@ object AppModule {
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
+            ) as android.content.SharedPreferences
         } catch (e: Exception) {
             // Fallback to regular SharedPreferences if encryption fails
             context.getSharedPreferences(ENCRYPTED_PREFS_NAME, Context.MODE_PRIVATE)

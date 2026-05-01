@@ -107,6 +107,12 @@ dependencies {
     // Background
     implementation(libs.work.runtime.ktx)
 
+    // Media session for TTS controls
+    implementation("androidx.media:media:1.7.0")
+
+    // Sherpa-ONNX TTS (offline, with Piper Russian voices)
+    implementation(files("libs/sherpa-onnx.aar"))
+
     // Logging
     implementation(libs.timber)
 

@@ -83,11 +83,8 @@ fun BookReaderScreen(
             onAutoAdvanceChange = { viewModel.setAutoAdvance(it) },
             onEngineSelect = { viewModel.selectTtsEngine(it) },
             onEngineTypeChange = { viewModel.setEngineType(it) },
-            onSileroSpeakerChange = { },
-            sileroUseV5 = uiState.sileroUseV5,
-            sileroSpeakerId = uiState.sileroSpeakerId,
-            onSileroUseV5Change = { viewModel.setSileroUseV5(it) },
-            onSileroSpeakerIdChange = { viewModel.setSileroSpeakerId(it) }
+            sileroVoiceId = uiState.sileroVoiceId,
+            onSileroVoiceChange = { viewModel.setSileroVoice(it) }
         )
     } else {
         BookLibraryScreen(
@@ -298,11 +295,8 @@ private fun BookReadingScreen(
     onAutoAdvanceChange: (Boolean) -> Unit,
     onEngineSelect: (String) -> Unit,
     onEngineTypeChange: (TtsEngineType) -> Unit,
-    onSileroSpeakerChange: (String) -> Unit,
-    sileroUseV5: Boolean,
-    sileroSpeakerId: Int,
-    onSileroUseV5Change: (Boolean) -> Unit,
-    onSileroSpeakerIdChange: (Int) -> Unit
+    sileroVoiceId: String,
+    onSileroVoiceChange: (String) -> Unit
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -602,40 +596,26 @@ private fun BookReadingScreen(
                         )
                     }
 
-                    // Silero v5 toggle and speaker ID (shown when Silero selected)
+                    // Voice picker (shown when Silero selected)
                     if (engineType == TtsEngineType.SILERO) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("v5 HD (48kHz)", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    if (sileroUseV5) "Высокое качество" else "v1 базовое (16kHz)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Text("Голос", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        com.soll.domain.tts.SileroJitEngine.VOICES.forEach { voice ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSileroVoiceChange(voice.id) }
+                                    .padding(vertical = 2.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = voice.id == sileroVoiceId,
+                                    onClick = { onSileroVoiceChange(voice.id) }
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(voice.label, style = MaterialTheme.typography.bodySmall)
                             }
-                            Switch(
-                                checked = sileroUseV5,
-                                onCheckedChange = onSileroUseV5Change
-                            )
-                        }
-
-                        if (sileroUseV5) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Голос: #$sileroSpeakerId (попробуйте 30-40 для русского)",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Slider(
-                                value = sileroSpeakerId.toFloat(),
-                                onValueChange = { onSileroSpeakerIdChange(it.toInt()) },
-                                valueRange = 0f..59f,
-                                steps = 58
-                            )
                         }
                     }
 

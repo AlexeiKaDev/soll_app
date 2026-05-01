@@ -42,8 +42,7 @@ data class BookReaderUiState(
     val engineType: TtsEngineType = TtsEngineType.SYSTEM,
     val sileroModelDownloaded: Boolean = false,
     val sileroDownloadProgress: Float? = null,
-    val sileroUseV5: Boolean = true,
-    val sileroSpeakerId: Int = 30
+    val sileroVoiceId: String = "irina"
 )
 
 sealed class BookReaderEvent {
@@ -97,8 +96,7 @@ class BookReaderViewModel @Inject constructor(
             )
         }
         ttsManager.setEngineType(engineType)
-        ttsManager.sileroEngine.setUseV5(true) // default to v5 HD
-        ttsManager.sileroEngine.setV5SpeakerId(30)
+        ttsManager.sileroEngine.setVoice(settingsRepository.ttssileroSpeaker)
     }
 
     private fun initTts() {
@@ -331,20 +329,18 @@ class BookReaderViewModel @Inject constructor(
         }
     }
 
-    fun setSileroUseV5(enabled: Boolean) {
-        _uiState.update { it.copy(sileroUseV5 = enabled) }
-        ttsManager.sileroEngine.setUseV5(enabled)
-        // Need to reinitialize if changing model
+    fun setSileroVoice(voiceId: String) {
+        _uiState.update { it.copy(sileroVoiceId = voiceId) }
+        settingsRepository.ttssileroSpeaker = voiceId
+        ttsManager.sileroEngine.setVoice(voiceId)
+        // Reinitialize with new voice
         if (_uiState.value.engineType == TtsEngineType.SILERO) {
             stopTts()
-            ttsManager.sileroEngine.shutdown()
-            viewModelScope.launch { ttsManager.initializeSilero() }
+            viewModelScope.launch {
+                ttsManager.initializeSilero()
+                _uiState.update { it.copy(sileroModelDownloaded = ttsManager.isModelDownloaded()) }
+            }
         }
-    }
-
-    fun setSileroSpeakerId(id: Int) {
-        _uiState.update { it.copy(sileroSpeakerId = id) }
-        ttsManager.sileroEngine.setV5SpeakerId(id)
     }
 
     fun selectTtsEngine(packageName: String) {

@@ -56,65 +56,82 @@ class SileroJitEngine @Inject constructor(
     private var sampleRate = 22050
 
     companion object {
-        private const val MODEL_DIR = "piper_ru_irina"
+        private const val MODEL_BASE_DIR = "piper_ru"
 
-        // Sherpa-onnx pre-converted Piper model (has embedded metadata)
-        private const val MODEL_ARCHIVE_URL =
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ru_RU-irina-medium.tar.bz2"
+        // Available Russian voices from sherpa-onnx releases
+        val VOICES = listOf(
+            Voice("irina", "Ирина (ж)", "vits-piper-ru_RU-irina-medium"),
+            Voice("denis", "Денис (м)", "vits-piper-ru_RU-denis-medium"),
+            Voice("dmitri", "Дмитрий (м)", "vits-piper-ru_RU-dmitri-medium"),
+            Voice("ruslan", "Руслан (м)", "vits-piper-ru_RU-ruslan-medium"),
+        )
+
+        private fun archiveUrl(archiveName: String) =
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$archiveName.tar.bz2"
     }
+
+    data class Voice(val id: String, val label: String, val archiveName: String) {
+        val onnxFilename get() = "ru_RU-$id-medium.onnx"
+    }
+
+    private var currentVoice = VOICES[0]
 
     data class SentenceInfo(val text: String, val startOffset: Int, val endOffset: Int)
 
-    fun isModelDownloaded(): Boolean {
-        val dir = File(context.filesDir, MODEL_DIR)
-        // Look for the extracted model directory from sherpa-onnx archive
-        val extractedDir = dir.listFiles()?.firstOrNull { it.isDirectory && it.name.startsWith("vits-piper") }
-        if (extractedDir != null) {
-            val model = File(extractedDir, "ru_RU-irina-medium.onnx")
-            val tokens = File(extractedDir, "tokens.txt")
-            val espeakDir = File(extractedDir, "espeak-ng-data")
-            return model.exists() && model.length() > 1_000_000 && tokens.exists() && espeakDir.exists()
+    fun isModelDownloaded(): Boolean = isVoiceDownloaded(currentVoice)
+
+    private fun isVoiceDownloaded(voice: Voice): Boolean {
+        val dir = File(context.filesDir, MODEL_BASE_DIR)
+        val voiceDir = File(dir, voice.archiveName)
+        return voiceDir.exists() &&
+                File(voiceDir, voice.onnxFilename).let { it.exists() && it.length() > 1_000_000 } &&
+                File(voiceDir, "tokens.txt").exists() &&
+                File(voiceDir, "espeak-ng-data").exists()
+    }
+
+    fun setVoice(voiceId: String) {
+        val voice = VOICES.find { it.id == voiceId } ?: VOICES[0]
+        if (voice.id != currentVoice.id) {
+            currentVoice = voice
+            // Will need reinit if voice changes
+            if (_isReady.value) {
+                tts?.release()
+                tts = null
+                _isReady.value = false
+            }
         }
-        return false
     }
 
-    private fun getModelDir(): File? {
-        val dir = File(context.filesDir, MODEL_DIR)
-        return dir.listFiles()?.firstOrNull { it.isDirectory && it.name.startsWith("vits-piper") }
-    }
-
-    // These are no-ops now, kept for API compatibility
+    // Kept for API compatibility
     fun setUseV5(enabled: Boolean) {}
     fun setV5SpeakerId(id: Int) {}
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val dir = File(context.filesDir, MODEL_DIR)
-            dir.mkdirs()
+            val baseDir = File(context.filesDir, MODEL_BASE_DIR)
+            baseDir.mkdirs()
 
             // Clean up old files
             listOf("silero_v1_kseniya_16000.jit", "silero_v5_cis_base.jit",
                 "silero_tts_v3_1_ru.pt", "silero_tts_v4_ru.pt", "piper_ru_irina_medium.onnx"
             ).forEach { File(context.filesDir, it).let { f -> if (f.exists()) f.delete() } }
+            // Clean old directory name
+            File(context.filesDir, "piper_ru_irina").let { if (it.exists()) it.deleteRecursively() }
 
-            if (!isModelDownloaded()) {
-                Timber.d("Downloading Piper Russian model archive...")
-                val success = downloadAndExtractArchive(dir)
+            val voice = currentVoice
+            if (!isVoiceDownloaded(voice)) {
+                Timber.d("Downloading voice: ${voice.label} (${voice.archiveName})")
+                val success = downloadAndExtractArchive(baseDir, voice)
                 if (!success) {
-                    Timber.e("Failed to download model")
+                    Timber.e("Failed to download voice model")
                     return@withContext false
                 }
             }
 
-            val modelDir = getModelDir()
-            if (modelDir == null) {
-                Timber.e("Model directory not found after download")
-                return@withContext false
-            }
-
-            val modelPath = File(modelDir, "ru_RU-irina-medium.onnx").absolutePath
-            val tokensPath = File(modelDir, "tokens.txt").absolutePath
-            val dataDir = File(modelDir, "espeak-ng-data").absolutePath
+            val voiceDir = File(baseDir, voice.archiveName)
+            val modelPath = File(voiceDir, voice.onnxFilename).absolutePath
+            val tokensPath = File(voiceDir, "tokens.txt").absolutePath
+            val dataDir = File(voiceDir, "espeak-ng-data").absolutePath
 
             Timber.d("Initializing sherpa-onnx TTS: model=$modelPath")
 
@@ -141,30 +158,28 @@ class SileroJitEngine @Inject constructor(
         }
     }
 
-    private suspend fun downloadAndExtractArchive(dir: File): Boolean = withContext(Dispatchers.IO) {
-        val archiveFile = File(dir, "model.tar.bz2")
+    private suspend fun downloadAndExtractArchive(baseDir: File, voice: Voice): Boolean = withContext(Dispatchers.IO) {
+        val url = archiveUrl(voice.archiveName)
+        val archiveFile = File(baseDir, "${voice.archiveName}.tar.bz2")
         _downloadProgress.value = 0f
 
-        // Download archive
-        if (!downloadFile(
-                OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(10, TimeUnit.MINUTES)
-                    .followRedirects(true).build(),
-                MODEL_ARCHIVE_URL, archiveFile
-            )
-        ) {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.MINUTES)
+            .followRedirects(true).build()
+
+        if (!downloadFile(client, url, archiveFile)) {
             _downloadProgress.value = null
             return@withContext false
         }
 
         _downloadProgress.value = 0.9f
-        Timber.d("Extracting model archive...")
-        extractTarBz2(archiveFile, dir)
+        Timber.d("Extracting ${voice.archiveName}...")
+        extractTarBz2(archiveFile, baseDir)
         archiveFile.delete()
         _downloadProgress.value = null
 
-        isModelDownloaded()
+        isVoiceDownloaded(voice)
     }
 
     private fun downloadFile(client: OkHttpClient, url: String, target: File): Boolean {

@@ -2,64 +2,45 @@ package com.soll.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary - Teal/Aqua theme (from IVARO)
-val md_theme_light_primary = Color(0xFF006A67)
-val md_theme_light_onPrimary = Color(0xFFFFFFFF)
-val md_theme_light_primaryContainer = Color(0xFF8DEFEA)
-val md_theme_light_onPrimaryContainer = Color(0xFF00201F)
-val md_theme_light_secondary = Color(0xFF4A6362)
-val md_theme_light_onSecondary = Color(0xFFFFFFFF)
-val md_theme_light_secondaryContainer = Color(0xFFCCE8E6)
-val md_theme_light_onSecondaryContainer = Color(0xFF051F1F)
-val md_theme_light_tertiary = Color(0xFF4B607C)
-val md_theme_light_onTertiary = Color(0xFFFFFFFF)
-val md_theme_light_tertiaryContainer = Color(0xFFD3E4FF)
-val md_theme_light_onTertiaryContainer = Color(0xFF041C35)
-val md_theme_light_error = Color(0xFFBA1A1A)
-val md_theme_light_errorContainer = Color(0xFFFFDAD6)
-val md_theme_light_onError = Color(0xFFFFFFFF)
-val md_theme_light_onErrorContainer = Color(0xFF410002)
-val md_theme_light_background = Color(0xFFFAFDFC)
-val md_theme_light_onBackground = Color(0xFF191C1C)
-val md_theme_light_surface = Color(0xFFFAFDFC)
-val md_theme_light_onSurface = Color(0xFF191C1C)
-val md_theme_light_surfaceVariant = Color(0xFFDAE5E3)
-val md_theme_light_onSurfaceVariant = Color(0xFF3F4948)
-val md_theme_light_outline = Color(0xFF6F7978)
-val md_theme_light_inverseOnSurface = Color(0xFFEFF1F0)
-val md_theme_light_inverseSurface = Color(0xFF2D3130)
-val md_theme_light_inversePrimary = Color(0xFF52DAD4)
+// Primary - Telegram Blue
+val Primary = Color(0xFF0088CC)
+val PrimaryLight = Color(0xFF5AB8FF)
+val PrimaryDark = Color(0xFF005B9A)
+val OnPrimary = Color.White
 
-val md_theme_dark_primary = Color(0xFF52DAD4)
-val md_theme_dark_onPrimary = Color(0xFF003735)
-val md_theme_dark_primaryContainer = Color(0xFF004A47)
-val md_theme_dark_onPrimaryContainer = Color(0xFF8DEFEA)
-val md_theme_dark_secondary = Color(0xFFB0CCCA)
-val md_theme_dark_onSecondary = Color(0xFF1B3534)
-val md_theme_dark_secondaryContainer = Color(0xFF324B4A)
-val md_theme_dark_onSecondaryContainer = Color(0xFFCCE8E6)
-val md_theme_dark_tertiary = Color(0xFFB5C7E9)
-val md_theme_dark_onTertiary = Color(0xFF1E314B)
-val md_theme_dark_tertiaryContainer = Color(0xFF354863)
-val md_theme_dark_onTertiaryContainer = Color(0xFFD3E4FF)
-val md_theme_dark_error = Color(0xFFFFB4AB)
-val md_theme_dark_errorContainer = Color(0xFF93000A)
-val md_theme_dark_onError = Color(0xFF690005)
-val md_theme_dark_onErrorContainer = Color(0xFFFFDAD6)
-val md_theme_dark_background = Color(0xFF191C1C)
-val md_theme_dark_onBackground = Color(0xFFE0E3E2)
-val md_theme_dark_surface = Color(0xFF191C1C)
-val md_theme_dark_onSurface = Color(0xFFE0E3E2)
-val md_theme_dark_surfaceVariant = Color(0xFF3F4948)
-val md_theme_dark_onSurfaceVariant = Color(0xFFBEC9C7)
-val md_theme_dark_outline = Color(0xFF889391)
-val md_theme_dark_inverseOnSurface = Color(0xFF191C1C)
-val md_theme_dark_inverseSurface = Color(0xFFE0E3E2)
-val md_theme_dark_inversePrimary = Color(0xFF006A67)
+// Secondary - Teal (from IVARO)
+val Secondary = Color(0xFF006A67)
+val SecondaryLight = Color(0xFF4A9996)
+val SecondaryDark = Color(0xFF003D3B)
+val OnSecondary = Color.White
+
+// Tertiary
+val Tertiary = Color(0xFF4B607C)
+val TertiaryLight = Color(0xFF7A8EAD)
+val TertiaryDark = Color(0xFF1E354E)
+val OnTertiary = Color.White
+
+// Background & Surface
+val Background = Color(0xFFFAFAFA)
+val Surface = Color.White
+val SurfaceVariant = Color(0xFFF0F0F0)
+val OnBackground = Color(0xFF1A1A1A)
+val OnSurface = Color(0xFF1A1A1A)
+
+// Dark Theme
+val DarkBackground = Color(0xFF121212)
+val DarkSurface = Color(0xFF1E1E1E)
+val DarkSurfaceVariant = Color(0xFF2C2C2C)
+val DarkOnBackground = Color(0xFFE0E0E0)
+val DarkOnSurface = Color(0xFFE0E0E0)
 
 // Status Colors
-val StatusRunning = Color(0xFF2E7D32)
+val Success = Color(0xFF4CAF50)
+val Warning = Color(0xFFFF9800)
+val Error = Color(0xFFE53935)
+val Info = Color(0xFF2196F3)
+
+// Running status
+val StatusRunning = Color(0xFF4CAF50)
 val StatusStopped = Color(0xFF9E9E9E)
-val StatusError = Color(0xFFD32F2F)
-val StatusWarning = Color(0xFFF57C00)
-val StatusPending = Color(0xFF0288D1)
+val StatusError = Color(0xFFE53935)

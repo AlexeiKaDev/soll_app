@@ -18,11 +18,6 @@ class SettingsRepository @Inject constructor(
         private const val KEY_SERVICE_RUNNING = "service_running"
         private const val KEY_LAST_OFFSET = "last_offset"
         private const val KEY_POLLING_TIMEOUT = "polling_timeout"
-        private const val KEY_TTS_ENGINE = "tts_engine"
-        private const val KEY_TTS_AUTO_ADVANCE = "tts_auto_advance"
-        private const val KEY_TTS_SPEECH_RATE = "tts_speech_rate"
-        private const val KEY_TTS_ENGINE_TYPE = "tts_engine_type"
-        private const val KEY_TTS_SILERO_SPEAKER = "tts_silero_speaker"
     }
 
     // Bot Token (encrypted storage)
@@ -49,31 +44,6 @@ class SettingsRepository @Inject constructor(
     var pollingTimeout: Int
         get() = sharedPreferences.getInt(KEY_POLLING_TIMEOUT, 30)
         set(value) = sharedPreferences.edit().putInt(KEY_POLLING_TIMEOUT, value).apply()
-
-    // TTS engine package name
-    var ttsEngine: String?
-        get() = sharedPreferences.getString(KEY_TTS_ENGINE, null)
-        set(value) = sharedPreferences.edit().putString(KEY_TTS_ENGINE, value).apply()
-
-    // TTS auto-advance to next chapter
-    var ttsAutoAdvance: Boolean
-        get() = sharedPreferences.getBoolean(KEY_TTS_AUTO_ADVANCE, true)
-        set(value) = sharedPreferences.edit().putBoolean(KEY_TTS_AUTO_ADVANCE, value).apply()
-
-    // TTS speech rate
-    var ttsSpeechRate: Float
-        get() = sharedPreferences.getFloat(KEY_TTS_SPEECH_RATE, 1.0f)
-        set(value) = sharedPreferences.edit().putFloat(KEY_TTS_SPEECH_RATE, value).apply()
-
-    // TTS engine type: "system" or "silero"
-    var ttsEngineType: String
-        get() = sharedPreferences.getString(KEY_TTS_ENGINE_TYPE, "system") ?: "system"
-        set(value) = sharedPreferences.edit().putString(KEY_TTS_ENGINE_TYPE, value).apply()
-
-    // Silero speaker name
-    var ttssileroSpeaker: String
-        get() = sharedPreferences.getString(KEY_TTS_SILERO_SPEAKER, "xenia") ?: "xenia"
-        set(value) = sharedPreferences.edit().putString(KEY_TTS_SILERO_SPEAKER, value).apply()
 
     // Bot configs from database
     fun getAllBotConfigs(): Flow<List<BotConfigEntity>> = botConfigDao.getAllConfigs()

@@ -27,9 +27,7 @@ class SollApplication : Application() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            val botChannel = NotificationChannel(
+            val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
                 getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW
@@ -37,26 +35,16 @@ class SollApplication : Application() {
                 description = getString(R.string.notification_channel_description)
                 setShowBadge(false)
             }
-            notificationManager.createNotificationChannel(botChannel)
 
-            val ttsChannel = NotificationChannel(
-                TTS_NOTIFICATION_CHANNEL_ID,
-                "Book Reader TTS",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Text-to-speech playback controls"
-                setShowBadge(false)
-            }
-            notificationManager.createNotificationChannel(ttsChannel)
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
 
-            Timber.d("Notification channels created")
+            Timber.d("Notification channel created: $NOTIFICATION_CHANNEL_ID")
         }
     }
 
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "soll_bot_service"
         const val NOTIFICATION_ID = 1001
-        const val TTS_NOTIFICATION_CHANNEL_ID = "soll_tts_service"
-        const val TTS_NOTIFICATION_ID = 1002
     }
 }

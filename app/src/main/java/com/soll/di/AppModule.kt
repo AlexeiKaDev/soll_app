@@ -8,9 +8,11 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.soll.data.api.TelegramApiService
 import com.soll.data.local.SollDatabase
+import com.soll.data.local.dao.BookDao
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.dao.CommandLogDao
 import com.soll.data.local.dao.MessageLogDao
+import com.soll.data.repository.BookRepository
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.TelegramRepository
 import com.soll.domain.command.CommandProcessor
@@ -95,6 +97,11 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideBookDao(database: SollDatabase): BookDao =
+        database.bookDao()
+
+    @Provides
+    @Singleton
     fun provideEncryptedSharedPreferences(@ApplicationContext context: Context): android.content.SharedPreferences {
         return try {
             val masterKey = MasterKey.Builder(context)
@@ -141,4 +148,11 @@ object AppModule {
         @ApplicationContext context: Context,
         telegramRepository: TelegramRepository
     ): CommandProcessor = CommandProcessor(context, telegramRepository)
+
+    @Provides
+    @Singleton
+    fun provideBookRepository(
+        @ApplicationContext context: Context,
+        bookDao: BookDao
+    ): BookRepository = BookRepository(context, bookDao)
 }

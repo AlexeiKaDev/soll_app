@@ -38,7 +38,8 @@ fun HomeScreen(
         Text(
             text = "Soll",
             style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
         )
 
         // Status Card

@@ -557,7 +557,32 @@ private fun BookReadingScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Silero option
+                    // UtrobinTTS HD option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onEngineTypeChange(TtsEngineType.UTROBIN) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = engineType == TtsEngineType.UTROBIN,
+                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("UtrobinTTS HD (оффлайн)", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Высокое качество, 2 голоса (м/ж), ~121MB",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Silero/Piper option
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

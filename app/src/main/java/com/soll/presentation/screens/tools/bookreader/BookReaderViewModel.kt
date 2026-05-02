@@ -84,6 +84,7 @@ class BookReaderViewModel @Inject constructor(
     private fun loadSettings() {
         val engineType = when (settingsRepository.ttsEngineType) {
             "silero" -> TtsEngineType.SILERO
+            "utrobin" -> TtsEngineType.UTROBIN
             else -> TtsEngineType.SYSTEM
         }
         _uiState.update {
@@ -265,7 +266,15 @@ class BookReaderViewModel @Inject constructor(
             viewModelScope.launch {
                 val success = ttsManager.initializeSilero()
                 if (success) startPlayback(chapter)
-                else _events.emit(BookReaderEvent.ShowError("Не удалось загрузить модель Silero. Проверьте интернет."))
+                else _events.emit(BookReaderEvent.ShowError("Не удалось загрузить модель. Проверьте интернет."))
+            }
+            return
+        }
+        if (_uiState.value.engineType == TtsEngineType.UTROBIN && !ttsManager.utrobinEngine.isReady.value) {
+            viewModelScope.launch {
+                val success = ttsManager.initializeUtrobin()
+                if (success) startPlayback(chapter)
+                else _events.emit(BookReaderEvent.ShowError("Не удалось загрузить модель UtrobinTTS. Проверьте интернет."))
             }
             return
         }
@@ -318,9 +327,13 @@ class BookReaderViewModel @Inject constructor(
         _uiState.update { it.copy(engineType = type) }
         settingsRepository.ttsEngineType = when (type) {
             TtsEngineType.SILERO -> "silero"
+            TtsEngineType.UTROBIN -> "utrobin"
             TtsEngineType.SYSTEM -> "system"
         }
 
+        if (type == TtsEngineType.UTROBIN && !ttsManager.utrobinEngine.isReady.value) {
+            viewModelScope.launch { ttsManager.initializeUtrobin() }
+        }
         if (type == TtsEngineType.SILERO && !ttsManager.sileroEngine.isReady.value) {
             viewModelScope.launch {
                 ttsManager.initializeSilero()

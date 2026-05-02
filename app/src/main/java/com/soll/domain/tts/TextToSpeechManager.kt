@@ -34,13 +34,14 @@ enum class TtsServiceAction {
 }
 
 enum class TtsEngineType {
-    SYSTEM, SILERO
+    SYSTEM, SILERO, UTROBIN
 }
 
 @Singleton
 class TextToSpeechManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    val sileroEngine: SileroJitEngine
+    val sileroEngine: SileroJitEngine,
+    val utrobinEngine: UtrobinTtsEngine
 ) {
     private var tts: TextToSpeech? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -91,6 +92,27 @@ class TextToSpeechManager @Inject constructor(
                     _state.value = TtsState.DownloadingModel(progress)
             }
         }
+        // Utrobin engine observers
+        scope.launch {
+            utrobinEngine.isSpeaking.collect { speaking ->
+                if (_engineType.value == TtsEngineType.UTROBIN) {
+                    _isSpeaking.value = speaking
+                    if (speaking) _state.value = TtsState.Speaking("utrobin")
+                    else if (_state.value is TtsState.Speaking) _state.value = TtsState.Ready
+                }
+            }
+        }
+        scope.launch {
+            utrobinEngine.currentWordRange.collect { range ->
+                if (_engineType.value == TtsEngineType.UTROBIN) _currentWordRange.value = range
+            }
+        }
+        scope.launch {
+            utrobinEngine.downloadProgress.collect { progress ->
+                if (progress != null && _engineType.value == TtsEngineType.UTROBIN)
+                    _state.value = TtsState.DownloadingModel(progress)
+            }
+        }
     }
 
     fun setEngineType(type: TtsEngineType) {
@@ -127,6 +149,13 @@ class TextToSpeechManager @Inject constructor(
             TextToSpeech(context, initListener)
         }
         return initResult
+    }
+
+    suspend fun initializeUtrobin(): Boolean {
+        _state.value = TtsState.Initializing
+        val success = utrobinEngine.initialize()
+        _state.value = if (success) TtsState.Ready else TtsState.Error("Failed to load UtrobinTTS model")
+        return success
     }
 
     suspend fun initializeSilero(): Boolean {
@@ -171,7 +200,16 @@ class TextToSpeechManager @Inject constructor(
     fun speakChapter(text: String) {
         when (_engineType.value) {
             TtsEngineType.SILERO -> speakChapterSilero(text)
+            TtsEngineType.UTROBIN -> speakChapterUtrobin(text)
             TtsEngineType.SYSTEM -> speakChapterSystem(text)
+        }
+    }
+
+    private fun speakChapterUtrobin(text: String) {
+        currentText = text; isPaused = false; _currentWordRange.value = null
+        _state.value = TtsState.Speaking("utrobin"); _isSpeaking.value = true
+        scope.launch(Dispatchers.IO) {
+            utrobinEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
         }
     }
 
@@ -236,6 +274,7 @@ class TextToSpeechManager @Inject constructor(
         isPaused = true
         when (_engineType.value) {
             TtsEngineType.SILERO -> sileroEngine.pause()
+            TtsEngineType.UTROBIN -> utrobinEngine.pause()
             TtsEngineType.SYSTEM -> tts?.stop()
         }
         _isSpeaking.value = false
@@ -248,6 +287,7 @@ class TextToSpeechManager @Inject constructor(
         isPaused = false
         when (_engineType.value) {
             TtsEngineType.SILERO -> currentText?.let { speakChapterSilero(it) }
+            TtsEngineType.UTROBIN -> currentText?.let { speakChapterUtrobin(it) }
             TtsEngineType.SYSTEM -> {
                 if (currentChunks.isNotEmpty()) speakNextChunk()
                 else currentText?.let { speakChapterSystem(it) }
@@ -265,6 +305,7 @@ class TextToSpeechManager @Inject constructor(
         _currentWordRange.value = null
         when (_engineType.value) {
             TtsEngineType.SILERO -> sileroEngine.stop()
+            TtsEngineType.UTROBIN -> utrobinEngine.stop()
             TtsEngineType.SYSTEM -> tts?.stop()
         }
         _isSpeaking.value = false
@@ -277,6 +318,7 @@ class TextToSpeechManager @Inject constructor(
         val coerced = rate.coerceIn(0.5f, 2.0f)
         tts?.setSpeechRate(coerced)
         sileroEngine.setSpeechRate(coerced)
+        utrobinEngine.setSpeechRate(coerced)
     }
 
     fun setPitch(pitch: Float) { tts?.setPitch(pitch.coerceIn(0.5f, 2.0f)) }
@@ -290,7 +332,7 @@ class TextToSpeechManager @Inject constructor(
     private fun shutdownSystemTts() { tts?.stop(); tts?.shutdown(); tts = null }
 
     fun shutdown() {
-        stop(); shutdownSystemTts(); sileroEngine.shutdown()
+        stop(); shutdownSystemTts(); sileroEngine.shutdown(); utrobinEngine.shutdown()
         _state.value = TtsState.Idle; _isSpeaking.value = false; _currentWordRange.value = null
     }
 }

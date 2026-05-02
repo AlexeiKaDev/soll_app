@@ -56,9 +56,6 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        jniLibs {
-            pickFirsts += "**/*.so"
-        }
     }
 }
 
@@ -113,10 +110,8 @@ dependencies {
     // Media session for TTS controls
     implementation("androidx.media:media:1.7.0")
 
-    // Sherpa-ONNX TTS (offline, Piper Russian voices)
+    // Sherpa-ONNX TTS (offline, Piper + UtrobinTTS Russian voices)
     implementation(files("libs/sherpa-onnx.aar"))
-    // ONNX Runtime Java API for UtrobinTTS high quality voice
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.3")
 
     // Logging
     implementation(libs.timber)

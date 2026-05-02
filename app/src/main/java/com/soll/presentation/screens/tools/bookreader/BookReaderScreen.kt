@@ -28,8 +28,9 @@ import com.soll.data.local.entity.BookEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
 import com.soll.domain.tts.TtsEngineType
+import com.soll.domain.tts.book.TtsEngineTunable
+import com.soll.domain.tts.book.TtsVoiceOption
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +72,12 @@ fun BookReaderScreen(
             availableEngines = uiState.availableEngines.map { it.label to it.name },
             selectedEngine = uiState.selectedEngine,
             engineType = uiState.engineType,
-            sileroSpeaker = "",
+            ttsVoiceOptions = uiState.ttsVoiceOptions,
+            sileroVoiceId = uiState.sileroVoiceId,
+            utrobinVoiceId = uiState.utrobinVoiceId,
+            utrobinOrtThreads = uiState.utrobinOrtThreads,
+            systemPitch = uiState.systemPitch,
+            engineTunables = uiState.engineTunables,
             sileroDownloadProgress = uiState.sileroDownloadProgress,
             onBack = { viewModel.closeBook() },
             onChapterSelect = { viewModel.goToChapter(it) },
@@ -83,11 +89,8 @@ fun BookReaderScreen(
             onAutoAdvanceChange = { viewModel.setAutoAdvance(it) },
             onEngineSelect = { viewModel.selectTtsEngine(it) },
             onEngineTypeChange = { viewModel.setEngineType(it) },
-            onSileroSpeakerChange = { },
-            sileroUseV5 = uiState.sileroUseV5,
-            sileroSpeakerId = uiState.sileroSpeakerId,
-            onSileroUseV5Change = { viewModel.setSileroUseV5(it) },
-            onSileroSpeakerIdChange = { viewModel.setSileroSpeakerId(it) }
+            onEngineVoiceChange = { viewModel.setEngineVoice(it) },
+            onEngineTunableChange = { key, value -> viewModel.applyEngineTunable(key, value) },
         )
     } else {
         BookLibraryScreen(
@@ -286,7 +289,12 @@ private fun BookReadingScreen(
     availableEngines: List<Pair<String, String>>,
     selectedEngine: String?,
     engineType: TtsEngineType,
-    sileroSpeaker: String,
+    ttsVoiceOptions: List<TtsVoiceOption>,
+    sileroVoiceId: String,
+    utrobinVoiceId: String,
+    utrobinOrtThreads: Int,
+    systemPitch: Float,
+    engineTunables: List<TtsEngineTunable>,
     sileroDownloadProgress: Float?,
     onBack: () -> Unit,
     onChapterSelect: (Int) -> Unit,
@@ -298,16 +306,12 @@ private fun BookReadingScreen(
     onAutoAdvanceChange: (Boolean) -> Unit,
     onEngineSelect: (String) -> Unit,
     onEngineTypeChange: (TtsEngineType) -> Unit,
-    onSileroSpeakerChange: (String) -> Unit,
-    sileroUseV5: Boolean,
-    sileroSpeakerId: Int,
-    onSileroUseV5Change: (Boolean) -> Unit,
-    onSileroSpeakerIdChange: (Int) -> Unit
+    onEngineVoiceChange: (String) -> Unit,
+    onEngineTunableChange: (String, Float) -> Unit,
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
-    val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
 
     // Track text layout for auto-scroll
@@ -376,8 +380,12 @@ private fun BookReadingScreen(
             )
         },
         bottomBar = {
+            // Как у основного контента / тёмного фона: без tonal elevation (он даёт «серую» полосу).
             Surface(
-                tonalElevation = 3.dp
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
             ) {
                 Row(
                     modifier = Modifier
@@ -534,6 +542,43 @@ private fun BookReadingScreen(
                         steps = 5
                     )
 
+                    if (engineTunables.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Параметры движка",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        engineTunables.forEach { tunable ->
+                            when (tunable) {
+                                is TtsEngineTunable.Slider -> {
+                                    val sliderValue = when (tunable.key) {
+                                        "pitch" -> systemPitch
+                                        "ort_intra_threads" -> utrobinOrtThreads.toFloat()
+                                        else -> tunable.defaultValue
+                                    }.coerceIn(tunable.range.start, tunable.range.endInclusive)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val valueLabel = when (tunable.key) {
+                                        "ort_intra_threads" -> sliderValue.toInt().toString()
+                                        else -> String.format("%.2f", sliderValue)
+                                    }
+                                    Text(
+                                        text = "${tunable.label}: $valueLabel",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    val stepsCount = tunable.materialSliderSteps
+                                        ?: (((tunable.range.endInclusive - tunable.range.start) * 20f).toInt() - 1)
+                                            .coerceAtLeast(0)
+                                    Slider(
+                                        value = sliderValue,
+                                        onValueChange = { onEngineTunableChange(tunable.key, it) },
+                                        valueRange = tunable.range,
+                                        steps = stepsCount,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Auto-advance toggle
@@ -563,32 +608,7 @@ private fun BookReadingScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // UtrobinTTS HD option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.UTROBIN) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.UTROBIN,
-                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("UtrobinTTS HD (оффлайн)", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Высокое качество, 2 голоса (м/ж), ~121MB",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Silero/Piper option
+                    // Silero/Piper first — usually better quality/speed for books
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -602,9 +622,57 @@ private fun BookReadingScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Silero (оффлайн)", style = MaterialTheme.typography.bodyMedium)
+                            Text("Silero (оффлайн, Piper) — рекомендуем", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Встроенная нейросеть, голос Ксения",
+                                "Быстрый старт, несколько голосов; для книги чаще приятнее Utrobin",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onEngineTypeChange(TtsEngineType.NATASHA) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = engineType == TtsEngineType.NATASHA,
+                            onClick = { onEngineTypeChange(TtsEngineType.NATASHA) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Natasha VITS2 (оффлайн)", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Модель встроена в APK (assets). Обычно естественнее, чем Utrobin",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onEngineTypeChange(TtsEngineType.UTROBIN) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = engineType == TtsEngineType.UTROBIN,
+                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Utrobin VITS (оффлайн)", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Долгий первый запуск (копия ~100MB из assets); на CPU часто звучит хуже Piper",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -627,40 +695,34 @@ private fun BookReadingScreen(
                         )
                     }
 
-                    // Silero v5 toggle and speaker ID (shown when Silero selected)
-                    if (engineType == TtsEngineType.SILERO) {
+                    val selectedVoiceId = when (engineType) {
+                        TtsEngineType.SILERO -> sileroVoiceId
+                        TtsEngineType.UTROBIN -> utrobinVoiceId
+                        TtsEngineType.NATASHA -> ""
+                        TtsEngineType.SYSTEM -> ""
+                    }
+                    if (ttsVoiceOptions.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("v5 HD (48kHz)", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    if (sileroUseV5) "Высокое качество" else "v1 базовое (16kHz)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Text(
+                            "Голос",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        ttsVoiceOptions.forEach { voice ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onEngineVoiceChange(voice.id) }
+                                    .padding(vertical = 2.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = voice.id == selectedVoiceId,
+                                    onClick = { onEngineVoiceChange(voice.id) },
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(voice.label, style = MaterialTheme.typography.bodySmall)
                             }
-                            Switch(
-                                checked = sileroUseV5,
-                                onCheckedChange = onSileroUseV5Change
-                            )
-                        }
-
-                        if (sileroUseV5) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Голос: #$sileroSpeakerId (попробуйте 30-40 для русского)",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Slider(
-                                value = sileroSpeakerId.toFloat(),
-                                onValueChange = { onSileroSpeakerIdChange(it.toInt()) },
-                                valueRange = 0f..59f,
-                                steps = 58
-                            )
                         }
                     }
 
@@ -714,6 +776,7 @@ private fun BookReadingScreen(
                             }
                         }
                     }
+
                 }
             },
             confirmButton = {

@@ -118,6 +118,7 @@ class SileroJitEngine @Inject constructor(
 
             Timber.d("Initializing sherpa-onnx TTS: model=$modelPath")
 
+            val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
             val config = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
                     vits = OfflineTtsVitsModelConfig(
@@ -125,7 +126,7 @@ class SileroJitEngine @Inject constructor(
                         tokens = tokensPath,
                         dataDir = dataDir,
                     ),
-                    numThreads = 2,
+                    numThreads = threads,
                     debug = false,
                 )
             )

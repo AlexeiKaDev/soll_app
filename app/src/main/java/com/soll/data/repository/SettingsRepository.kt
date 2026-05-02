@@ -23,6 +23,9 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_SPEECH_RATE = "tts_speech_rate"
         private const val KEY_TTS_ENGINE_TYPE = "tts_engine_type"
         private const val KEY_TTS_SILERO_SPEAKER = "tts_silero_speaker"
+        private const val KEY_TTS_UTROBIN_SPEAKER = "tts_utrobin_speaker"
+        private const val KEY_TTS_UTROBIN_ORT_THREADS = "tts_utrobin_ort_threads"
+        private const val KEY_TTS_SYSTEM_PITCH = "tts_system_pitch"
     }
 
     // Bot Token (encrypted storage)
@@ -70,10 +73,27 @@ class SettingsRepository @Inject constructor(
         get() = sharedPreferences.getString(KEY_TTS_ENGINE_TYPE, "system") ?: "system"
         set(value) = sharedPreferences.edit().putString(KEY_TTS_ENGINE_TYPE, value).apply()
 
-    // Silero speaker name
+    // Piper / Silero voice id (e.g. irina)
     var ttssileroSpeaker: String
-        get() = sharedPreferences.getString(KEY_TTS_SILERO_SPEAKER, "xenia") ?: "xenia"
+        get() = sharedPreferences.getString(KEY_TTS_SILERO_SPEAKER, "irina") ?: "irina"
         set(value) = sharedPreferences.edit().putString(KEY_TTS_SILERO_SPEAKER, value).apply()
+
+    /** Utrobin speaker index as string: "0" / "1" */
+    var ttsUtrobinSpeaker: String
+        get() = sharedPreferences.getString(KEY_TTS_UTROBIN_SPEAKER, "0") ?: "0"
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_UTROBIN_SPEAKER, value).apply()
+
+    /** ONNX Runtime intra-op threads for Utrobin (1–4). */
+    var ttsUtrobinOrtIntraThreads: Int
+        get() = sharedPreferences.getInt(KEY_TTS_UTROBIN_ORT_THREADS, 2).coerceIn(1, 4)
+        set(value) = sharedPreferences.edit()
+            .putInt(KEY_TTS_UTROBIN_ORT_THREADS, value.coerceIn(1, 4))
+            .apply()
+
+    /** System TTS pitch (1 = default). */
+    var ttsSystemPitch: Float
+        get() = sharedPreferences.getFloat(KEY_TTS_SYSTEM_PITCH, 1.0f)
+        set(value) = sharedPreferences.edit().putFloat(KEY_TTS_SYSTEM_PITCH, value).apply()
 
     // Bot configs from database
     fun getAllBotConfigs(): Flow<List<BotConfigEntity>> = botConfigDao.getAllConfigs()

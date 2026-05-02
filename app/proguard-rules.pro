@@ -18,6 +18,9 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
+# ONNX Runtime (Utrobin HF VITS)
+-keep class ai.onnxruntime.** { *; }
+
 # Moshi
 -keep class com.squareup.moshi.** { *; }
 -keep interface com.squareup.moshi.** { *; }

@@ -15,10 +15,13 @@ import com.soll.domain.tts.TextToSpeechManager
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.TtsServiceAction
 import com.soll.domain.tts.TtsState
+import com.soll.domain.tts.book.TtsEngineTunable
+import com.soll.domain.tts.book.TtsVoiceOption
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -42,8 +45,14 @@ data class BookReaderUiState(
     val engineType: TtsEngineType = TtsEngineType.SYSTEM,
     val sileroModelDownloaded: Boolean = false,
     val sileroDownloadProgress: Float? = null,
-    val sileroUseV5: Boolean = true,
-    val sileroSpeakerId: Int = 30
+    val sileroVoiceId: String = "irina",
+    val utrobinVoiceId: String = "0",
+    /** Utrobin ONNX intra-op threads (1–4), persisted. */
+    val utrobinOrtThreads: Int = 2,
+    val ttsVoiceOptions: List<TtsVoiceOption> = emptyList(),
+    /** Слайдеры и др. из [TtsBookEngine.tunableSettings] активного движка. */
+    val engineTunables: List<TtsEngineTunable> = emptyList(),
+    val systemPitch: Float = 1.0f,
 )
 
 sealed class BookReaderEvent {
@@ -86,20 +95,33 @@ class BookReaderViewModel @Inject constructor(
         val engineType = when (settingsRepository.ttsEngineType) {
             "silero" -> TtsEngineType.SILERO
             "utrobin" -> TtsEngineType.UTROBIN
+            "natasha" -> TtsEngineType.NATASHA
             else -> TtsEngineType.SYSTEM
         }
+        val sileroVoice = settingsRepository.ttssileroSpeaker
+        val utrobinVoice = settingsRepository.ttsUtrobinSpeaker
+        val utrobinOrt = settingsRepository.ttsUtrobinOrtIntraThreads
+        val pitch = settingsRepository.ttsSystemPitch
+        ttsManager.setEngineType(engineType)
+        ttsManager.setVoiceIdForEngine(TtsEngineType.SILERO, sileroVoice)
+        ttsManager.setVoiceIdForEngine(TtsEngineType.UTROBIN, utrobinVoice)
+        ttsManager.applyTunableForEngine(TtsEngineType.UTROBIN, "ort_intra_threads", utrobinOrt.toFloat())
+        ttsManager.setPitch(pitch)
         _uiState.update {
             it.copy(
                 autoAdvanceEnabled = settingsRepository.ttsAutoAdvance,
                 selectedEngine = settingsRepository.ttsEngine,
                 speechRate = settingsRepository.ttsSpeechRate,
                 engineType = engineType,
-                sileroModelDownloaded = ttsManager.isModelDownloaded()
+                sileroModelDownloaded = ttsManager.isModelDownloaded(),
+                sileroVoiceId = sileroVoice,
+                utrobinVoiceId = utrobinVoice,
+                utrobinOrtThreads = utrobinOrt,
+                systemPitch = pitch,
+                ttsVoiceOptions = ttsManager.voiceOptions(engineType),
+                engineTunables = ttsManager.tunableSettingsFor(engineType),
             )
         }
-        ttsManager.setEngineType(engineType)
-        ttsManager.sileroEngine.setUseV5(true) // default to v5 HD
-        ttsManager.sileroEngine.setV5SpeakerId(30)
     }
 
     private fun initTts() {
@@ -111,9 +133,13 @@ class BookReaderViewModel @Inject constructor(
                 it.copy(availableEngines = ttsManager.getAvailableEngines())
             }
             ttsManager.setSpeechRate(_uiState.value.speechRate)
+            ttsManager.setPitch(settingsRepository.ttsSystemPitch)
 
             if (_uiState.value.engineType == TtsEngineType.SILERO && ttsManager.isModelDownloaded()) {
                 ttsManager.initializeSilero()
+            }
+            if (_uiState.value.engineType == TtsEngineType.NATASHA && ttsManager.isModelDownloadedFor(TtsEngineType.NATASHA)) {
+                ttsManager.initializeNatasha()
             }
         }
     }
@@ -264,7 +290,7 @@ class BookReaderViewModel @Inject constructor(
     fun playTts() {
         val chapter = _uiState.value.currentChapter ?: return
 
-        if (_uiState.value.engineType == TtsEngineType.SILERO && !ttsManager.sileroEngine.isReady.value) {
+        if (_uiState.value.engineType == TtsEngineType.SILERO && !ttsManager.isEngineReady(TtsEngineType.SILERO)) {
             viewModelScope.launch {
                 val success = ttsManager.initializeSilero()
                 if (success) startPlayback(chapter)
@@ -272,11 +298,27 @@ class BookReaderViewModel @Inject constructor(
             }
             return
         }
-        if (_uiState.value.engineType == TtsEngineType.UTROBIN && !ttsManager.utrobinEngine.isReady.value) {
+        if (_uiState.value.engineType == TtsEngineType.UTROBIN && !ttsManager.isEngineReady(TtsEngineType.UTROBIN)) {
             viewModelScope.launch {
                 val success = ttsManager.initializeUtrobin()
                 if (success) startPlayback(chapter)
-                else _events.emit(BookReaderEvent.ShowError("Не удалось загрузить модель UtrobinTTS. Проверьте интернет."))
+                else _events.emit(
+                    BookReaderEvent.ShowError(
+                        "Не удалось инициализировать UtrobinTTS (модель в приложении). Пересоберите APK или сообщите об ошибке.",
+                    ),
+                )
+            }
+            return
+        }
+        if (_uiState.value.engineType == TtsEngineType.NATASHA && !ttsManager.isEngineReady(TtsEngineType.NATASHA)) {
+            viewModelScope.launch {
+                val success = ttsManager.initializeNatasha()
+                if (success) startPlayback(chapter)
+                else _events.emit(
+                    BookReaderEvent.ShowError(
+                        "Не удалось инициализировать Natasha VITS2. Проверьте assets: app/src/main/assets/natasha_vits2/model.onnx",
+                    ),
+                )
             }
             return
         }
@@ -326,17 +368,36 @@ class BookReaderViewModel @Inject constructor(
     fun setEngineType(type: TtsEngineType) {
         stopTts()
         ttsManager.setEngineType(type)
-        _uiState.update { it.copy(engineType = type) }
         settingsRepository.ttsEngineType = when (type) {
             TtsEngineType.SILERO -> "silero"
             TtsEngineType.UTROBIN -> "utrobin"
+            TtsEngineType.NATASHA -> "natasha"
             TtsEngineType.SYSTEM -> "system"
         }
+        if (type == TtsEngineType.UTROBIN) {
+            val t = settingsRepository.ttsUtrobinOrtIntraThreads
+            ttsManager.applyTunableForEngine(TtsEngineType.UTROBIN, "ort_intra_threads", t.toFloat())
+        }
+        _uiState.update {
+            it.copy(
+                engineType = type,
+                ttsVoiceOptions = ttsManager.voiceOptions(type),
+                engineTunables = ttsManager.tunableSettingsFor(type),
+                utrobinOrtThreads = if (type == TtsEngineType.UTROBIN) {
+                    settingsRepository.ttsUtrobinOrtIntraThreads
+                } else {
+                    it.utrobinOrtThreads
+                },
+            )
+        }
 
-        if (type == TtsEngineType.UTROBIN && !ttsManager.utrobinEngine.isReady.value) {
+        if (type == TtsEngineType.UTROBIN && !ttsManager.isEngineReady(TtsEngineType.UTROBIN)) {
             viewModelScope.launch { ttsManager.initializeUtrobin() }
         }
-        if (type == TtsEngineType.SILERO && !ttsManager.sileroEngine.isReady.value) {
+        if (type == TtsEngineType.NATASHA && !ttsManager.isEngineReady(TtsEngineType.NATASHA)) {
+            viewModelScope.launch { ttsManager.initializeNatasha() }
+        }
+        if (type == TtsEngineType.SILERO && !ttsManager.isEngineReady(TtsEngineType.SILERO)) {
             viewModelScope.launch {
                 ttsManager.initializeSilero()
                 _uiState.update { it.copy(sileroModelDownloaded = ttsManager.isModelDownloaded()) }
@@ -344,20 +405,40 @@ class BookReaderViewModel @Inject constructor(
         }
     }
 
-    fun setSileroUseV5(enabled: Boolean) {
-        _uiState.update { it.copy(sileroUseV5 = enabled) }
-        ttsManager.sileroEngine.setUseV5(enabled)
-        // Need to reinitialize if changing model
-        if (_uiState.value.engineType == TtsEngineType.SILERO) {
-            stopTts()
-            ttsManager.sileroEngine.shutdown()
-            viewModelScope.launch { ttsManager.initializeSilero() }
+    fun setEngineVoice(voiceId: String) {
+        when (_uiState.value.engineType) {
+            TtsEngineType.SILERO -> {
+                settingsRepository.ttssileroSpeaker = voiceId
+                _uiState.update { it.copy(sileroVoiceId = voiceId) }
+                ttsManager.setVoiceIdForEngine(TtsEngineType.SILERO, voiceId)
+                stopTts()
+                viewModelScope.launch {
+                    ttsManager.initializeSilero()
+                    _uiState.update { it.copy(sileroModelDownloaded = ttsManager.isModelDownloaded()) }
+                }
+            }
+            TtsEngineType.UTROBIN -> {
+                settingsRepository.ttsUtrobinSpeaker = voiceId
+                _uiState.update { it.copy(utrobinVoiceId = voiceId) }
+                ttsManager.setVoiceIdForEngine(TtsEngineType.UTROBIN, voiceId)
+            }
+            else -> {}
         }
     }
 
-    fun setSileroSpeakerId(id: Int) {
-        _uiState.update { it.copy(sileroSpeakerId = id) }
-        ttsManager.sileroEngine.setV5SpeakerId(id)
+    fun applyEngineTunable(key: String, value: Float) {
+        val type = _uiState.value.engineType
+        ttsManager.applyTunableForEngine(type, key, value)
+        if (type == TtsEngineType.SYSTEM && key == "pitch") {
+            val v = value.coerceIn(0.5f, 2.0f)
+            settingsRepository.ttsSystemPitch = v
+            _uiState.update { it.copy(systemPitch = v) }
+        }
+        if (type == TtsEngineType.UTROBIN && key == "ort_intra_threads") {
+            val v = value.roundToInt().coerceIn(1, 4)
+            settingsRepository.ttsUtrobinOrtIntraThreads = v
+            _uiState.update { it.copy(utrobinOrtThreads = v) }
+        }
     }
 
     fun selectTtsEngine(packageName: String) {
@@ -365,6 +446,7 @@ class BookReaderViewModel @Inject constructor(
         _uiState.update { it.copy(selectedEngine = packageName) }
         ttsManager.reinitializeWithEngine(packageName)
         ttsManager.setSpeechRate(_uiState.value.speechRate)
+        ttsManager.setPitch(_uiState.value.systemPitch)
         _uiState.update { it.copy(availableEngines = ttsManager.getAvailableEngines()) }
     }
 

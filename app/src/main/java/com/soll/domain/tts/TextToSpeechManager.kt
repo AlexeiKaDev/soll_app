@@ -1,9 +1,13 @@
 package com.soll.domain.tts
 
-import android.content.Context
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.soll.domain.tts.book.PiperSherpaBookEngine
+import com.soll.domain.tts.book.SystemAndroidBookEngine
+import com.soll.domain.tts.book.TtsBookEngine
+import com.soll.domain.tts.book.TtsVoiceOption
+import com.soll.domain.tts.book.NatashaVitsBookEngine
+import com.soll.domain.tts.book.UtrobinVitsBookEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +17,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Locale
@@ -29,21 +34,36 @@ sealed class TtsState {
     data class DownloadingModel(val progress: Float) : TtsState()
 }
 
-enum class TtsServiceAction {
-    NEXT_CHAPTER, PREV_CHAPTER, PLAY, PAUSE, STOP
-}
-
 enum class TtsEngineType {
-    SYSTEM, SILERO, UTROBIN
+    SYSTEM,
+    SILERO,
+    UTROBIN,
+    NATASHA,
 }
 
+enum class TtsServiceAction {
+    NEXT_CHAPTER,
+    PREV_CHAPTER,
+    PLAY,
+    PAUSE,
+    STOP,
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class TextToSpeechManager @Inject constructor(
-    @ApplicationContext private val context: Context,
-    val sileroEngine: SileroJitEngine,
-    val utrobinEngine: UtrobinTtsEngine
+    private val systemEngine: SystemAndroidBookEngine,
+    private val piperEngine: PiperSherpaBookEngine,
+    private val utrobinEngine: UtrobinVitsBookEngine,
+    private val natashaEngine: NatashaVitsBookEngine,
 ) {
-    private var tts: TextToSpeech? = null
+    private val engines: Map<TtsEngineType, TtsBookEngine> = mapOf(
+        TtsEngineType.SYSTEM to systemEngine,
+        TtsEngineType.SILERO to piperEngine,
+        TtsEngineType.UTROBIN to utrobinEngine,
+        TtsEngineType.NATASHA to natashaEngine,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val _engineType = MutableStateFlow(TtsEngineType.SYSTEM)
@@ -66,54 +86,37 @@ class TextToSpeechManager @Inject constructor(
 
     private var currentText: String? = null
     private var isPaused = false
-    private var currentChunks: List<String> = emptyList()
-    private var currentChunkIndex = 0
-    private var currentChunkOffset = 0
-    private var onUtteranceCompleted: (() -> Unit)? = null
 
     init {
         scope.launch {
-            sileroEngine.isSpeaking.collect { speaking ->
-                if (_engineType.value == TtsEngineType.SILERO) {
-                    _isSpeaking.value = speaking
-                    if (speaking) _state.value = TtsState.Speaking("silero")
-                    else if (_state.value is TtsState.Speaking) _state.value = TtsState.Ready
+            _engineType.flatMapLatest { engines.getValue(it).isSpeaking }.collect { speaking ->
+                _isSpeaking.value = speaking
+                if (speaking) {
+                    _state.value = TtsState.Speaking(_engineType.value.name.lowercase())
+                } else if (_state.value is TtsState.Speaking) {
+                    _state.value = TtsState.Ready
                 }
             }
         }
         scope.launch {
-            sileroEngine.currentWordRange.collect { range ->
-                if (_engineType.value == TtsEngineType.SILERO) _currentWordRange.value = range
+            _engineType.flatMapLatest { engines.getValue(it).currentWordRange }.collect { range ->
+                _currentWordRange.value = range
             }
         }
         scope.launch {
-            sileroEngine.downloadProgress.collect { progress ->
-                if (progress != null && _engineType.value == TtsEngineType.SILERO)
+            _engineType.flatMapLatest { engines.getValue(it).downloadProgress }.collect { progress ->
+                if (progress != null && _engineType.value != TtsEngineType.SYSTEM) {
                     _state.value = TtsState.DownloadingModel(progress)
-            }
-        }
-        // Utrobin engine observers
-        scope.launch {
-            utrobinEngine.isSpeaking.collect { speaking ->
-                if (_engineType.value == TtsEngineType.UTROBIN) {
-                    _isSpeaking.value = speaking
-                    if (speaking) _state.value = TtsState.Speaking("utrobin")
-                    else if (_state.value is TtsState.Speaking) _state.value = TtsState.Ready
                 }
-            }
-        }
-        scope.launch {
-            utrobinEngine.currentWordRange.collect { range ->
-                if (_engineType.value == TtsEngineType.UTROBIN) _currentWordRange.value = range
-            }
-        }
-        scope.launch {
-            utrobinEngine.downloadProgress.collect { progress ->
-                if (progress != null && _engineType.value == TtsEngineType.UTROBIN)
-                    _state.value = TtsState.DownloadingModel(progress)
             }
         }
     }
+
+    fun engine(type: TtsEngineType): TtsBookEngine = engines.getValue(type)
+
+    fun voiceOptions(type: TtsEngineType): List<TtsVoiceOption> = engines.getValue(type).voiceOptions()
+
+    fun isEngineReady(type: TtsEngineType): Boolean = engines.getValue(type).isReady.value
 
     fun setEngineType(type: TtsEngineType) {
         if (_isSpeaking.value) stop()
@@ -122,160 +125,72 @@ class TextToSpeechManager @Inject constructor(
 
     fun initialize(enginePackage: String? = null): Boolean {
         if (_state.value is TtsState.Speaking) stop()
-        shutdownSystemTts()
+        shutdownSystemTtsForRecreate()
         _state.value = TtsState.Initializing
-
-        var initResult = false
-        val initListener = TextToSpeech.OnInitListener { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.let { engine ->
-                    val result = engine.setLanguage(Locale("ru", "RU"))
-                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        engine.setLanguage(Locale.getDefault())
-                    }
-                    engine.setSpeechRate(1.0f)
-                    setupProgressListener(engine)
-                    _state.value = TtsState.Ready
-                    initResult = true
-                }
-            } else {
-                _state.value = TtsState.Error("TTS initialization failed")
-            }
+        systemEngine.setup(enginePackage) { ok ->
+            _state.value = if (ok) TtsState.Ready else TtsState.Error("TTS initialization failed")
         }
+        return true
+    }
 
-        tts = if (enginePackage != null) {
-            TextToSpeech(context, initListener, enginePackage)
+    suspend fun initializeSilero(): Boolean = prepareEngine(TtsEngineType.SILERO)
+
+    suspend fun initializeUtrobin(): Boolean = prepareEngine(TtsEngineType.UTROBIN)
+
+    suspend fun initializeNatasha(): Boolean = prepareEngine(TtsEngineType.NATASHA)
+
+    suspend fun prepareEngine(type: TtsEngineType): Boolean {
+        _state.value = TtsState.Initializing
+        val engine = engines.getValue(type)
+        val success = engine.prepare()
+        _state.value = if (success) {
+            TtsState.Ready
         } else {
-            TextToSpeech(context, initListener)
+            TtsState.Error("Failed to initialize ${engine.displayName}")
         }
-        return initResult
-    }
-
-    suspend fun initializeUtrobin(): Boolean {
-        _state.value = TtsState.Initializing
-        val success = utrobinEngine.initialize()
-        _state.value = if (success) TtsState.Ready else TtsState.Error("Failed to load UtrobinTTS model")
         return success
     }
 
-    suspend fun initializeSilero(): Boolean {
-        _state.value = TtsState.Initializing
-        val success = sileroEngine.initialize()
-        _state.value = if (success) TtsState.Ready else TtsState.Error("Failed to download Silero model")
-        return success
+    fun getAvailableEngines(): List<TextToSpeech.EngineInfo> = systemEngine.availableEngines()
+
+    fun reinitializeWithEngine(enginePackage: String) {
+        initialize(enginePackage)
     }
-
-    private fun setupProgressListener(engine: TextToSpeech) {
-        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                _isSpeaking.value = true
-                _state.value = TtsState.Speaking(utteranceId ?: "")
-            }
-            override fun onDone(utteranceId: String?) {
-                _isSpeaking.value = false
-                _state.value = TtsState.Ready
-                onUtteranceCompleted?.invoke()
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                _isSpeaking.value = false
-                _state.value = TtsState.Error("TTS Error")
-            }
-            override fun onError(utteranceId: String?, errorCode: Int) {
-                _isSpeaking.value = false
-                _state.value = TtsState.Error("TTS Error: $errorCode")
-            }
-            override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
-                if (_engineType.value == TtsEngineType.SYSTEM) {
-                    _currentWordRange.value = IntRange(currentChunkOffset + start, currentChunkOffset + end)
-                }
-            }
-        })
-    }
-
-    fun getAvailableEngines(): List<TextToSpeech.EngineInfo> = tts?.engines ?: emptyList()
-
-    fun reinitializeWithEngine(enginePackage: String) { initialize(enginePackage) }
 
     fun speakChapter(text: String) {
+        currentText = text
+        isPaused = false
         when (_engineType.value) {
-            TtsEngineType.SILERO -> speakChapterSilero(text)
-            TtsEngineType.UTROBIN -> speakChapterUtrobin(text)
-            TtsEngineType.SYSTEM -> speakChapterSystem(text)
-        }
-    }
-
-    private fun speakChapterUtrobin(text: String) {
-        currentText = text; isPaused = false; _currentWordRange.value = null
-        _state.value = TtsState.Speaking("utrobin"); _isSpeaking.value = true
-        scope.launch(Dispatchers.IO) {
-            utrobinEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
-        }
-    }
-
-    private fun speakChapterSilero(text: String) {
-        currentText = text
-        isPaused = false
-        _currentWordRange.value = null
-        _state.value = TtsState.Speaking("silero")
-        _isSpeaking.value = true
-        scope.launch(Dispatchers.IO) {
-            sileroEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
-        }
-    }
-
-    private fun speakChapterSystem(text: String) {
-        currentText = text
-        isPaused = false
-        currentChunks = splitIntoChunks(text)
-        currentChunkIndex = 0
-        currentChunkOffset = 0
-        _currentWordRange.value = null
-        speakNextChunk()
-    }
-
-    private fun speakNextChunk() {
-        if (currentChunkIndex >= currentChunks.size) {
-            onUtteranceCompleted = null
-            _currentWordRange.value = null
-            _chapterFinished.tryEmit(Unit)
-            return
-        }
-        if (isPaused) { onUtteranceCompleted = null; return }
-
-        currentChunkOffset = 0
-        for (i in 0 until currentChunkIndex) currentChunkOffset += currentChunks[i].length
-
-        onUtteranceCompleted = { currentChunkIndex++; speakNextChunk() }
-        tts?.speak(currentChunks[currentChunkIndex], TextToSpeech.QUEUE_FLUSH, null, "chunk_$currentChunkIndex")
-    }
-
-    private fun splitIntoChunks(text: String, maxSize: Int = 3900): List<String> {
-        val chunks = mutableListOf<String>()
-        var start = 0
-        while (start < text.length) {
-            var end = (start + maxSize).coerceAtMost(text.length)
-            if (end < text.length) {
-                val region = text.substring(start, end)
-                val lastSentenceEnd = maxOf(
-                    region.lastIndexOf(". "), region.lastIndexOf("! "), region.lastIndexOf("? "),
-                    region.lastIndexOf(".\n"), region.lastIndexOf("!\n"), region.lastIndexOf("?\n")
-                )
-                if (lastSentenceEnd > 0) end = start + lastSentenceEnd + 2
-                else { val lastSpace = region.lastIndexOf(' '); if (lastSpace > 0) end = start + lastSpace + 1 }
+            TtsEngineType.SYSTEM -> {
+                scope.launch(Dispatchers.Main) {
+                    systemEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
+                }
             }
-            chunks.add(text.substring(start, end))
-            start = end
+            TtsEngineType.SILERO -> {
+                scope.launch(Dispatchers.IO) {
+                    piperEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
+                }
+            }
+            TtsEngineType.UTROBIN -> {
+                scope.launch(Dispatchers.IO) {
+                    utrobinEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
+                }
+            }
+            TtsEngineType.NATASHA -> {
+                scope.launch(Dispatchers.IO) {
+                    natashaEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
+                }
+            }
         }
-        return chunks
     }
 
     fun pause() {
         isPaused = true
         when (_engineType.value) {
-            TtsEngineType.SILERO -> sileroEngine.pause()
+            TtsEngineType.SYSTEM -> systemEngine.pause()
+            TtsEngineType.SILERO -> piperEngine.pause()
             TtsEngineType.UTROBIN -> utrobinEngine.pause()
-            TtsEngineType.SYSTEM -> tts?.stop()
+            TtsEngineType.NATASHA -> natashaEngine.pause()
         }
         _isSpeaking.value = false
         _currentWordRange.value = null
@@ -286,11 +201,37 @@ class TextToSpeechManager @Inject constructor(
         if (!isPaused) return
         isPaused = false
         when (_engineType.value) {
-            TtsEngineType.SILERO -> currentText?.let { speakChapterSilero(it) }
-            TtsEngineType.UTROBIN -> currentText?.let { speakChapterUtrobin(it) }
             TtsEngineType.SYSTEM -> {
-                if (currentChunks.isNotEmpty()) speakNextChunk()
-                else currentText?.let { speakChapterSystem(it) }
+                if (systemEngine.hasPausedProgress()) {
+                    systemEngine.resumeIfPaused()
+                } else {
+                    currentText?.let { txt ->
+                        scope.launch(Dispatchers.Main) {
+                            systemEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
+                        }
+                    }
+                }
+            }
+            TtsEngineType.SILERO -> {
+                currentText?.let { txt ->
+                    scope.launch(Dispatchers.IO) {
+                        piperEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
+                    }
+                }
+            }
+            TtsEngineType.UTROBIN -> {
+                currentText?.let { txt ->
+                    scope.launch(Dispatchers.IO) {
+                        utrobinEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
+                    }
+                }
+            }
+            TtsEngineType.NATASHA -> {
+                currentText?.let { txt ->
+                    scope.launch(Dispatchers.IO) {
+                        natashaEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
+                    }
+                }
             }
         }
     }
@@ -298,41 +239,63 @@ class TextToSpeechManager @Inject constructor(
     fun stop() {
         isPaused = false
         currentText = null
-        currentChunks = emptyList()
-        currentChunkIndex = 0
-        currentChunkOffset = 0
-        onUtteranceCompleted = null
         _currentWordRange.value = null
         when (_engineType.value) {
-            TtsEngineType.SILERO -> sileroEngine.stop()
+            TtsEngineType.SYSTEM -> systemEngine.stop()
+            TtsEngineType.SILERO -> piperEngine.stop()
             TtsEngineType.UTROBIN -> utrobinEngine.stop()
-            TtsEngineType.SYSTEM -> tts?.stop()
+            TtsEngineType.NATASHA -> natashaEngine.stop()
         }
         _isSpeaking.value = false
         if (_state.value !is TtsState.Idle) _state.value = TtsState.Ready
     }
 
-    fun emitServiceAction(action: TtsServiceAction) { _serviceActions.tryEmit(action) }
+    fun emitServiceAction(action: TtsServiceAction) {
+        _serviceActions.tryEmit(action)
+    }
 
     fun setSpeechRate(rate: Float) {
         val coerced = rate.coerceIn(0.5f, 2.0f)
-        tts?.setSpeechRate(coerced)
-        sileroEngine.setSpeechRate(coerced)
+        systemEngine.setSpeechRate(coerced)
+        piperEngine.setSpeechRate(coerced)
         utrobinEngine.setSpeechRate(coerced)
+        natashaEngine.setSpeechRate(coerced)
     }
 
-    fun setPitch(pitch: Float) { tts?.setPitch(pitch.coerceIn(0.5f, 2.0f)) }
-    fun setLanguage(locale: Locale): Boolean {
-        val result = tts?.setLanguage(locale)
-        return result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+    fun setPitch(pitch: Float) {
+        systemEngine.setPitch(pitch.coerceIn(0.5f, 2.0f))
     }
-    fun getAvailableLanguages(): List<Locale> = tts?.availableLanguages?.toList() ?: emptyList()
-    fun isModelDownloaded(): Boolean = sileroEngine.isModelDownloaded()
 
-    private fun shutdownSystemTts() { tts?.stop(); tts?.shutdown(); tts = null }
+    fun setLanguage(locale: Locale): Boolean = systemEngine.setLanguage(locale)
+
+    fun getAvailableLanguages(): List<Locale> = systemEngine.availableLanguages()
+
+    fun isModelDownloaded(): Boolean = piperEngine.isModelDownloaded()
+
+    fun isModelDownloadedFor(type: TtsEngineType): Boolean = engines.getValue(type).isModelDownloaded()
+
+    fun setVoiceIdForEngine(type: TtsEngineType, voiceId: String) {
+        engines.getValue(type).setVoiceId(voiceId)
+    }
+
+    fun tunableSettingsFor(type: TtsEngineType) = engines.getValue(type).tunableSettings()
+
+    fun applyTunableForEngine(type: TtsEngineType, key: String, value: Float) {
+        engines.getValue(type).applyTunable(key, value)
+    }
+
+    private fun shutdownSystemTtsForRecreate() {
+        systemEngine.shutdown()
+    }
 
     fun shutdown() {
-        stop(); shutdownSystemTts(); sileroEngine.shutdown(); utrobinEngine.shutdown()
-        _state.value = TtsState.Idle; _isSpeaking.value = false; _currentWordRange.value = null
+        stop()
+        systemEngine.shutdown()
+        piperEngine.shutdown()
+        utrobinEngine.shutdown()
+        natashaEngine.shutdown()
+        _state.value = TtsState.Idle
+        _isSpeaking.value = false
+        _currentWordRange.value = null
     }
 }

@@ -2,6 +2,7 @@ package com.soll.domain.tts
 
 import android.speech.tts.TextToSpeech
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.book.PiperSherpaBookEngine
 import com.soll.domain.tts.book.SystemAndroidBookEngine
 import com.soll.domain.tts.book.TtsBookEngine
@@ -282,6 +283,11 @@ class TextToSpeechManager @Inject constructor(
 
     fun applyTunableForEngine(type: TtsEngineType, key: String, value: Float) {
         engines.getValue(type).applyTunable(key, value)
+    }
+
+    /** Chunk merge + default thread budget for Utrobin/Natasha/Piper. */
+    fun applyBookPerformanceProfile(profile: TtsBookPerformanceProfile) {
+        engines.values.forEach { it.applyPerformanceProfile(profile) }
     }
 
     private fun shutdownSystemTtsForRecreate() {

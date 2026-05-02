@@ -28,6 +28,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
 
 @Singleton
 class SileroJitEngine @Inject constructor(
@@ -54,6 +55,41 @@ class SileroJitEngine @Inject constructor(
     private var sentences: List<SentenceInfo> = emptyList()
     private var speechRate = 1.0f
     private var sampleRate = 22050
+
+    private var sherpaNumThreads: Int = TtsBookPerformanceProfile.sherpaNumThreads(
+        TtsBookPerformanceProfile.BALANCED,
+        Runtime.getRuntime().availableProcessors(),
+    )
+    private var mergeShortThreshold = 220
+    private var mergeTotalCap = 360
+
+    fun applyPerformanceProfile(profile: TtsBookPerformanceProfile) {
+        val (a, b) = TtsBookPerformanceProfile.chunkMergeLimits(profile)
+        mergeShortThreshold = a
+        mergeTotalCap = b
+        val n = TtsBookPerformanceProfile.sherpaNumThreads(
+            profile,
+            Runtime.getRuntime().availableProcessors(),
+        )
+        applySherpaNumThreadsInternal(n, rebuild = true)
+    }
+
+    fun getSherpaNumThreads(): Int = sherpaNumThreads
+
+    fun applySherpaNumThreads(value: Float) {
+        applySherpaNumThreadsInternal(value.roundToInt(), rebuild = true)
+    }
+
+    private fun applySherpaNumThreadsInternal(n: Int, rebuild: Boolean) {
+        val threads = n.coerceIn(1, 4)
+        if (threads == sherpaNumThreads && tts != null) return
+        sherpaNumThreads = threads
+        if (rebuild) {
+            tts?.release()
+            tts = null
+            _isReady.value = false
+        }
+    }
 
     companion object {
         private const val MODEL_DIR = "piper_ru_irina"
@@ -118,7 +154,6 @@ class SileroJitEngine @Inject constructor(
 
             Timber.d("Initializing sherpa-onnx TTS: model=$modelPath")
 
-            val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
             val config = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
                     vits = OfflineTtsVitsModelConfig(
@@ -126,7 +161,7 @@ class SileroJitEngine @Inject constructor(
                         tokens = tokensPath,
                         dataDir = dataDir,
                     ),
-                    numThreads = threads,
+                    numThreads = sherpaNumThreads,
                     debug = false,
                 )
             )
@@ -311,7 +346,7 @@ class SileroJitEngine @Inject constructor(
         audioTrack = track
         track.write(shorts, 0, shorts.size)
         track.play()
-        Thread.sleep((shorts.size * 1000L / sampleRate) + 100)
+        Thread.sleep(shorts.size * 1000L / sampleRate)
         try { track.stop(); track.release() } catch (_: Exception) {}
     }
 
@@ -347,6 +382,31 @@ class SileroJitEngine @Inject constructor(
             if (t.isNotBlank()) result.add(SentenceInfo(t, lastEnd, text.length))
         }
         if (result.isEmpty() && text.isNotBlank()) result.add(SentenceInfo(text.trim(), 0, text.length))
-        return result
+        return mergeNearbySentences(result)
+    }
+
+    private fun mergeNearbySentences(sentences: List<SentenceInfo>): List<SentenceInfo> {
+        if (sentences.size <= 1) return sentences
+        val merged = mutableListOf<SentenceInfo>()
+        var current = sentences.first()
+        val maxShort = mergeShortThreshold
+        val maxTotal = mergeTotalCap
+        for (i in 1 until sentences.size) {
+            val next = sentences[i]
+            val shouldMerge = current.text.length < maxShort && next.text.length < maxShort &&
+                (current.text.length + next.text.length) < maxTotal
+            current = if (shouldMerge) {
+                SentenceInfo(
+                    text = "${current.text} ${next.text}".trim(),
+                    startOffset = current.startOffset,
+                    endOffset = next.endOffset,
+                )
+            } else {
+                merged.add(current)
+                next
+            }
+        }
+        merged.add(current)
+        return merged
     }
 }

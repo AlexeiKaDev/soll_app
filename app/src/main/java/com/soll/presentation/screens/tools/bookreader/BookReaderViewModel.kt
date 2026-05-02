@@ -2,7 +2,9 @@ package com.soll.presentation.screens.tools.bookreader
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.speech.tts.TextToSpeech
+import java.util.Locale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.local.entity.BookEntity
@@ -12,6 +14,7 @@ import com.soll.data.service.TtsService
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
 import com.soll.domain.tts.TextToSpeechManager
+import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.TtsServiceAction
 import com.soll.domain.tts.TtsState
@@ -49,6 +52,9 @@ data class BookReaderUiState(
     val utrobinVoiceId: String = "0",
     /** Utrobin ONNX intra-op threads (1–4), persisted. */
     val utrobinOrtThreads: Int = 2,
+    val natashaOrtThreads: Int = 2,
+    val sherpaThreads: Int = 2,
+    val performanceProfile: TtsBookPerformanceProfile = TtsBookPerformanceProfile.BALANCED,
     val ttsVoiceOptions: List<TtsVoiceOption> = emptyList(),
     /** Слайдеры и др. из [TtsBookEngine.tunableSettings] активного движка. */
     val engineTunables: List<TtsEngineTunable> = emptyList(),
@@ -92,6 +98,10 @@ class BookReaderViewModel @Inject constructor(
     }
 
     private fun loadSettings() {
+        ensureS200BookReaderBootstrap()
+        val profile = TtsBookPerformanceProfile.fromStorage(settingsRepository.ttsBookPerformanceProfile)
+        ttsManager.applyBookPerformanceProfile(profile)
+
         val engineType = when (settingsRepository.ttsEngineType) {
             "silero" -> TtsEngineType.SILERO
             "utrobin" -> TtsEngineType.UTROBIN
@@ -101,11 +111,15 @@ class BookReaderViewModel @Inject constructor(
         val sileroVoice = settingsRepository.ttssileroSpeaker
         val utrobinVoice = settingsRepository.ttsUtrobinSpeaker
         val utrobinOrt = settingsRepository.ttsUtrobinOrtIntraThreads
+        val natashaOrt = settingsRepository.ttsNatashaOrtIntraThreads
+        val sherpaTh = settingsRepository.ttsSherpaNumThreads
         val pitch = settingsRepository.ttsSystemPitch
         ttsManager.setEngineType(engineType)
         ttsManager.setVoiceIdForEngine(TtsEngineType.SILERO, sileroVoice)
         ttsManager.setVoiceIdForEngine(TtsEngineType.UTROBIN, utrobinVoice)
         ttsManager.applyTunableForEngine(TtsEngineType.UTROBIN, "ort_intra_threads", utrobinOrt.toFloat())
+        ttsManager.applyTunableForEngine(TtsEngineType.NATASHA, "natasha_ort_intra_threads", natashaOrt.toFloat())
+        ttsManager.applyTunableForEngine(TtsEngineType.SILERO, "sherpa_num_threads", sherpaTh.toFloat())
         ttsManager.setPitch(pitch)
         _uiState.update {
             it.copy(
@@ -117,10 +131,73 @@ class BookReaderViewModel @Inject constructor(
                 sileroVoiceId = sileroVoice,
                 utrobinVoiceId = utrobinVoice,
                 utrobinOrtThreads = utrobinOrt,
+                natashaOrtThreads = natashaOrt,
+                sherpaThreads = sherpaTh,
+                performanceProfile = profile,
                 systemPitch = pitch,
                 ttsVoiceOptions = ttsManager.voiceOptions(engineType),
                 engineTunables = ttsManager.tunableSettingsFor(engineType),
             )
+        }
+    }
+
+    private fun ensureS200BookReaderBootstrap() {
+        if (settingsRepository.bookReaderS200BootstrapDone) return
+        if (isLikelyDoogeeS200()) {
+            settingsRepository.ttsEngineType = "silero"
+            settingsRepository.ttsBookPerformanceProfile = TtsBookPerformanceProfile.BALANCED.storageKey
+            settingsRepository.syncThreadPrefsFromProfile(TtsBookPerformanceProfile.BALANCED)
+        }
+        settingsRepository.bookReaderS200BootstrapDone = true
+    }
+
+    private fun isLikelyDoogeeS200(): Boolean {
+        val m = Build.MANUFACTURER.lowercase(Locale.US)
+        val model = Build.MODEL.uppercase(Locale.US)
+        return m.contains("doogee") && model.contains("S200")
+    }
+
+    fun setPerformanceProfile(profile: TtsBookPerformanceProfile) {
+        stopTts()
+        settingsRepository.ttsBookPerformanceProfile = profile.storageKey
+        settingsRepository.syncThreadPrefsFromProfile(profile)
+        ttsManager.applyBookPerformanceProfile(profile)
+        ttsManager.applyTunableForEngine(
+            TtsEngineType.UTROBIN,
+            "ort_intra_threads",
+            settingsRepository.ttsUtrobinOrtIntraThreads.toFloat(),
+        )
+        ttsManager.applyTunableForEngine(
+            TtsEngineType.NATASHA,
+            "natasha_ort_intra_threads",
+            settingsRepository.ttsNatashaOrtIntraThreads.toFloat(),
+        )
+        ttsManager.applyTunableForEngine(
+            TtsEngineType.SILERO,
+            "sherpa_num_threads",
+            settingsRepository.ttsSherpaNumThreads.toFloat(),
+        )
+        val type = _uiState.value.engineType
+        _uiState.update {
+            it.copy(
+                performanceProfile = profile,
+                utrobinOrtThreads = settingsRepository.ttsUtrobinOrtIntraThreads,
+                natashaOrtThreads = settingsRepository.ttsNatashaOrtIntraThreads,
+                sherpaThreads = settingsRepository.ttsSherpaNumThreads,
+                engineTunables = ttsManager.tunableSettingsFor(type),
+            )
+        }
+        if (type == TtsEngineType.SILERO && !ttsManager.isEngineReady(TtsEngineType.SILERO)) {
+            viewModelScope.launch {
+                ttsManager.initializeSilero()
+                _uiState.update { it.copy(sileroModelDownloaded = ttsManager.isModelDownloaded()) }
+            }
+        }
+        if (type == TtsEngineType.NATASHA && !ttsManager.isEngineReady(TtsEngineType.NATASHA)) {
+            viewModelScope.launch { ttsManager.initializeNatasha() }
+        }
+        if (type == TtsEngineType.UTROBIN && !ttsManager.isEngineReady(TtsEngineType.UTROBIN)) {
+            viewModelScope.launch { ttsManager.initializeUtrobin() }
         }
     }
 
@@ -383,11 +460,9 @@ class BookReaderViewModel @Inject constructor(
                 engineType = type,
                 ttsVoiceOptions = ttsManager.voiceOptions(type),
                 engineTunables = ttsManager.tunableSettingsFor(type),
-                utrobinOrtThreads = if (type == TtsEngineType.UTROBIN) {
-                    settingsRepository.ttsUtrobinOrtIntraThreads
-                } else {
-                    it.utrobinOrtThreads
-                },
+                utrobinOrtThreads = settingsRepository.ttsUtrobinOrtIntraThreads,
+                natashaOrtThreads = settingsRepository.ttsNatashaOrtIntraThreads,
+                sherpaThreads = settingsRepository.ttsSherpaNumThreads,
             )
         }
 
@@ -438,6 +513,16 @@ class BookReaderViewModel @Inject constructor(
             val v = value.roundToInt().coerceIn(1, 4)
             settingsRepository.ttsUtrobinOrtIntraThreads = v
             _uiState.update { it.copy(utrobinOrtThreads = v) }
+        }
+        if (type == TtsEngineType.NATASHA && key == "natasha_ort_intra_threads") {
+            val v = value.roundToInt().coerceIn(1, 4)
+            settingsRepository.ttsNatashaOrtIntraThreads = v
+            _uiState.update { it.copy(natashaOrtThreads = v) }
+        }
+        if (type == TtsEngineType.SILERO && key == "sherpa_num_threads") {
+            val v = value.roundToInt().coerceIn(1, 4)
+            settingsRepository.ttsSherpaNumThreads = v
+            _uiState.update { it.copy(sherpaThreads = v) }
         }
     }
 

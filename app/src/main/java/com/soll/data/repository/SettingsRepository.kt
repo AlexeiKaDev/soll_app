@@ -3,6 +3,7 @@ package com.soll.data.repository
 import android.content.SharedPreferences
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.entity.BotConfigEntity
+import com.soll.domain.tts.TtsBookPerformanceProfile
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,6 +26,10 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_SILERO_SPEAKER = "tts_silero_speaker"
         private const val KEY_TTS_UTROBIN_SPEAKER = "tts_utrobin_speaker"
         private const val KEY_TTS_UTROBIN_ORT_THREADS = "tts_utrobin_ort_threads"
+        private const val KEY_TTS_NATASHA_ORT_THREADS = "tts_natasha_ort_threads"
+        private const val KEY_TTS_SHERPA_NUM_THREADS = "tts_sherpa_num_threads"
+        private const val KEY_TTS_BOOK_PERF_PROFILE = "tts_book_perf_profile"
+        private const val KEY_BOOK_READER_S200_BOOTSTRAP = "book_reader_s200_bootstrap_done"
         private const val KEY_TTS_SYSTEM_PITCH = "tts_system_pitch"
     }
 
@@ -89,6 +94,56 @@ class SettingsRepository @Inject constructor(
         set(value) = sharedPreferences.edit()
             .putInt(KEY_TTS_UTROBIN_ORT_THREADS, value.coerceIn(1, 4))
             .apply()
+
+    /** ONNX intra-op threads for Natasha book engine (1–4). */
+    var ttsNatashaOrtIntraThreads: Int
+        get() = sharedPreferences.getInt(KEY_TTS_NATASHA_ORT_THREADS, 2).coerceIn(1, 4)
+        set(value) = sharedPreferences.edit()
+            .putInt(KEY_TTS_NATASHA_ORT_THREADS, value.coerceIn(1, 4))
+            .apply()
+
+    /** Sherpa OfflineTts numThreads for Piper (1–4). */
+    var ttsSherpaNumThreads: Int
+        get() = sharedPreferences.getInt(
+            KEY_TTS_SHERPA_NUM_THREADS,
+            TtsBookPerformanceProfile.sherpaNumThreads(
+                TtsBookPerformanceProfile.BALANCED,
+                Runtime.getRuntime().availableProcessors(),
+            ),
+        ).coerceIn(1, 4)
+        set(value) = sharedPreferences.edit()
+            .putInt(KEY_TTS_SHERPA_NUM_THREADS, value.coerceIn(1, 4))
+            .apply()
+
+    /**
+     * Book reader preset: battery / balanced / quality (threads + chunk merge).
+     * See [com.soll.domain.tts.TtsBookPerformanceProfile] and docs/tts-s200-model-shortlist.md.
+     */
+    var ttsBookPerformanceProfile: String
+        get() = sharedPreferences.getString(
+            KEY_TTS_BOOK_PERF_PROFILE,
+            TtsBookPerformanceProfile.BALANCED.storageKey,
+        ) ?: TtsBookPerformanceProfile.BALANCED.storageKey
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_BOOK_PERF_PROFILE, value).apply()
+
+    /** One-time defaults for Doogee S200–class devices (Piper + Balanced). */
+    var bookReaderS200BootstrapDone: Boolean
+        get() = sharedPreferences.getBoolean(KEY_BOOK_READER_S200_BOOTSTRAP, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_BOOK_READER_S200_BOOTSTRAP, value).apply()
+
+    /** Writes thread prefs to match a performance preset (e.g. when user taps Battery/Balanced/Quality). */
+    fun syncThreadPrefsFromProfile(profile: TtsBookPerformanceProfile) {
+        val ort = TtsBookPerformanceProfile.ortIntraThreads(profile)
+        val sh = TtsBookPerformanceProfile.sherpaNumThreads(
+            profile,
+            Runtime.getRuntime().availableProcessors(),
+        )
+        sharedPreferences.edit()
+            .putInt(KEY_TTS_UTROBIN_ORT_THREADS, ort)
+            .putInt(KEY_TTS_NATASHA_ORT_THREADS, ort)
+            .putInt(KEY_TTS_SHERPA_NUM_THREADS, sh)
+            .apply()
+    }
 
     /** System TTS pitch (1 = default). */
     var ttsSystemPitch: Float

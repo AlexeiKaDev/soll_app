@@ -27,6 +27,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.soll.data.local.entity.BookEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
@@ -76,6 +77,9 @@ fun BookReaderScreen(
             sileroVoiceId = uiState.sileroVoiceId,
             utrobinVoiceId = uiState.utrobinVoiceId,
             utrobinOrtThreads = uiState.utrobinOrtThreads,
+            natashaOrtThreads = uiState.natashaOrtThreads,
+            sherpaThreads = uiState.sherpaThreads,
+            performanceProfile = uiState.performanceProfile,
             systemPitch = uiState.systemPitch,
             engineTunables = uiState.engineTunables,
             sileroDownloadProgress = uiState.sileroDownloadProgress,
@@ -91,6 +95,7 @@ fun BookReaderScreen(
             onEngineTypeChange = { viewModel.setEngineType(it) },
             onEngineVoiceChange = { viewModel.setEngineVoice(it) },
             onEngineTunableChange = { key, value -> viewModel.applyEngineTunable(key, value) },
+            onPerformanceProfileChange = { viewModel.setPerformanceProfile(it) },
         )
     } else {
         BookLibraryScreen(
@@ -293,6 +298,9 @@ private fun BookReadingScreen(
     sileroVoiceId: String,
     utrobinVoiceId: String,
     utrobinOrtThreads: Int,
+    natashaOrtThreads: Int,
+    sherpaThreads: Int,
+    performanceProfile: TtsBookPerformanceProfile,
     systemPitch: Float,
     engineTunables: List<TtsEngineTunable>,
     sileroDownloadProgress: Float?,
@@ -308,6 +316,7 @@ private fun BookReadingScreen(
     onEngineTypeChange: (TtsEngineType) -> Unit,
     onEngineVoiceChange: (String) -> Unit,
     onEngineTunableChange: (String, Float) -> Unit,
+    onPerformanceProfileChange: (TtsBookPerformanceProfile) -> Unit,
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -380,12 +389,10 @@ private fun BookReadingScreen(
             )
         },
         bottomBar = {
-            // Как у основного контента / тёмного фона: без tonal elevation (он даёт «серую» полосу).
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
                 tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
             ) {
                 Row(
                     modifier = Modifier
@@ -542,6 +549,38 @@ private fun BookReadingScreen(
                         steps = 5
                     )
 
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Профиль нагрузки (S200 и др.)",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = "Батарея: меньше потоков и крупнее фразы. Качество: больше CPU, мельче чанки.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = performanceProfile == TtsBookPerformanceProfile.BATTERY,
+                            onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.BATTERY) },
+                            label = { Text("Батарея") },
+                        )
+                        FilterChip(
+                            selected = performanceProfile == TtsBookPerformanceProfile.BALANCED,
+                            onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.BALANCED) },
+                            label = { Text("Баланс") },
+                        )
+                        FilterChip(
+                            selected = performanceProfile == TtsBookPerformanceProfile.QUALITY,
+                            onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.QUALITY) },
+                            label = { Text("Качество") },
+                        )
+                    }
+
                     if (engineTunables.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
@@ -554,11 +593,16 @@ private fun BookReadingScreen(
                                     val sliderValue = when (tunable.key) {
                                         "pitch" -> systemPitch
                                         "ort_intra_threads" -> utrobinOrtThreads.toFloat()
+                                        "natasha_ort_intra_threads" -> natashaOrtThreads.toFloat()
+                                        "sherpa_num_threads" -> sherpaThreads.toFloat()
                                         else -> tunable.defaultValue
                                     }.coerceIn(tunable.range.start, tunable.range.endInclusive)
                                     Spacer(modifier = Modifier.height(8.dp))
                                     val valueLabel = when (tunable.key) {
-                                        "ort_intra_threads" -> sliderValue.toInt().toString()
+                                        "ort_intra_threads",
+                                        "natasha_ort_intra_threads",
+                                        "sherpa_num_threads",
+                                        -> sliderValue.toInt().toString()
                                         else -> String.format("%.2f", sliderValue)
                                     }
                                     Text(
@@ -608,7 +652,7 @@ private fun BookReadingScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Silero/Piper first — usually better quality/speed for books
+                    // Silero/Piper first — baseline: скорость и расход батареи
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -622,9 +666,9 @@ private fun BookReadingScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Silero (оффлайн, Piper) — рекомендуем", style = MaterialTheme.typography.bodyMedium)
+                            Text("Piper / Sherpa (оффлайн) — базовый режим", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Быстрый старт, несколько голосов; для книги чаще приятнее Utrobin",
+                                "Низкая нагрузка, стабильно; интонация проще, чем у VITS2. Для S200 рекомендован как дефолт.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -648,7 +692,7 @@ private fun BookReadingScreen(
                         Column {
                             Text("Natasha VITS2 (оффлайн)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Модель встроена в APK (assets). Обычно естественнее, чем Utrobin",
+                                "Лучшая русская интонация среди оффлайн вариантов; выше CPU и расход батареи, модель в assets.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -672,7 +716,7 @@ private fun BookReadingScreen(
                         Column {
                             Text("Utrobin VITS (оффлайн)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Долгий первый запуск (копия ~100MB из assets); на CPU часто звучит хуже Piper",
+                                "Третий оффлайн вариант: ONNX из assets, средняя нагрузка; качество зависит от чанка, не дефолт.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

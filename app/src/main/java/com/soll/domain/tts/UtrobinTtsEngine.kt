@@ -22,13 +22,14 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.roundToInt
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
+import java.util.Locale
 
 /**
- * Russian Utrobin / HF-style VITS: ONNX has [input_ids, attention_mask, speaker_id] (HuggingFace export).
+ * Russian Utrobin / HF-style VITS: ONNX often has [input_ids, attention_mask, speaker_id] (HuggingFace export).
  * Sherpa-ONNX [OfflineTts] targets a different graph; using it caused SIGSEGV in libonnxruntime.
  */
 @Singleton
@@ -61,15 +62,28 @@ class UtrobinTtsEngine @Inject constructor(
     private var maxSpeakerIndex = 1
     private var maxTokenId = 42
 
+    private var mergeShortThreshold = 220
+    private var mergeTotalCap = 360
+
     private val sessionLock = Any()
     private var cachedModelPath: String? = null
     private var ortIntraThreads: Int = 2
     @Volatile
     private var sessionStale: Boolean = false
 
+    fun applyPerformanceProfile(profile: TtsBookPerformanceProfile) {
+        val (a, b) = TtsBookPerformanceProfile.chunkMergeLimits(profile)
+        mergeShortThreshold = a
+        mergeTotalCap = b
+        val threads = TtsBookPerformanceProfile.ortIntraThreads(profile)
+        applyOrtIntraThreadsTunable(threads.toFloat())
+    }
+
     companion object {
         private const val ASSETS_DIR = "utrobin_tts"
         private const val FILES_DIR = "utrobin_tts_extracted"
+        private const val MODEL_NAME = "model.onnx"
+        private const val MIN_MODEL_BYTES = 10_000_000L
         val SPEAKERS = listOf("Женский" to 0, "Мужской" to 1)
 
         private val VOCAB_CHARS: Set<Char> = buildSet {
@@ -88,7 +102,10 @@ class UtrobinTtsEngine @Inject constructor(
 
     data class SentenceInfo(val text: String, val startOffset: Int, val endOffset: Int)
 
-    fun isModelDownloaded(): Boolean = true
+    fun isModelDownloaded(): Boolean {
+        val f = File(File(context.filesDir, FILES_DIR), MODEL_NAME)
+        return f.exists() && f.length() >= MIN_MODEL_BYTES
+    }
 
     fun setSpeaker(id: Int) { speakerId = id }
 
@@ -106,18 +123,37 @@ class UtrobinTtsEngine @Inject constructor(
             val dir = File(context.filesDir, FILES_DIR)
             dir.mkdirs()
 
-            val modelFile = File(dir, "model.onnx")
+            val modelFile = File(dir, MODEL_NAME)
             val tokensFile = File(dir, "tokens.txt")
+            val assetModel = "$ASSETS_DIR/$MODEL_NAME"
+            val assetTokens = "$ASSETS_DIR/tokens.txt"
 
-            if (!modelFile.exists() || modelFile.length() < 10_000_000) {
+            if (!modelFile.exists() || modelFile.length() < MIN_MODEL_BYTES) {
+                if (!assetExists(assetModel)) {
+                    Timber.e(
+                        "Utrobin: missing asset $assetModel (dir: ${listAssetsSafe(ASSETS_DIR)})",
+                    )
+                    _isReady.value = false
+                    return@withContext false
+                }
                 Timber.d("Extracting UtrobinTTS from assets...")
                 _downloadProgress.value = 0.1f
-                copyAsset("$ASSETS_DIR/model.onnx", modelFile)
-                _downloadProgress.value = 0.9f
+                copyAsset(assetModel, modelFile)
                 _downloadProgress.value = null
+                if (modelFile.length() < MIN_MODEL_BYTES) {
+                    Timber.e("Utrobin: model too small after copy: ${modelFile.length()} bytes")
+                    _isReady.value = false
+                    return@withContext false
+                }
                 Timber.d("Extracted: ${modelFile.length() / 1024 / 1024}MB")
             }
-            copyTokensAsset("$ASSETS_DIR/tokens.txt", tokensFile)
+
+            if (!assetExists(assetTokens)) {
+                Timber.e("Utrobin: missing $assetTokens")
+                _isReady.value = false
+                return@withContext false
+            }
+            copyTokensAsset(assetTokens, tokensFile)
             token2id = UtrobinCharTokenizer.loadTokenMap(tokensFile)
             if (token2id.isEmpty() || !token2id.containsKey(' ')) {
                 Timber.e("Invalid tokens.txt (no space id)")
@@ -128,6 +164,7 @@ class UtrobinTtsEngine @Inject constructor(
 
             cachedModelPath = modelFile.absolutePath
             buildOrtSession(modelFile.absolutePath)
+            logSessionIoSummary()
             sampleRate = 16000
             maxSpeakerIndex = 1
             _isReady.value = true
@@ -137,6 +174,16 @@ class UtrobinTtsEngine @Inject constructor(
             Timber.e(e, "Failed to init UtrobinTTS")
             _isReady.value = false
             false
+        }
+    }
+
+    private fun logSessionIoSummary() {
+        val s = ortSession ?: return
+        try {
+            Timber.d("Utrobin model inputs: ${s.inputInfo.keys.joinToString()}")
+            Timber.d("Utrobin model outputs: ${s.outputInfo.keys.joinToString()}")
+        } catch (e: Exception) {
+            Timber.w(e, "Utrobin: could not log session IO")
         }
     }
 
@@ -178,8 +225,21 @@ class UtrobinTtsEngine @Inject constructor(
         }
     }
 
+    private fun assetExists(assetPath: String): Boolean = try {
+        context.assets.open(assetPath).close()
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun listAssetsSafe(path: String): List<String> = try {
+        context.assets.list(path)?.toList().orEmpty()
+    } catch (_: Exception) {
+        emptyList()
+    }
+
     private fun normalizeForUtrobinTts(text: String): String {
-        val lower = text.lowercase(java.util.Locale("ru", "RU"))
+        val lower = text.lowercase(Locale("ru", "RU"))
         val sb = StringBuilder(lower.length)
         for (ch in lower) {
             when {
@@ -227,8 +287,6 @@ class UtrobinTtsEngine @Inject constructor(
     }
 
     private fun generateAudio(text: String): FloatArray? {
-        ensureOrtSessionFresh()
-        val session = ortSession ?: return null
         if (text.isBlank()) return null
         val normalized = normalizeForUtrobinTts(text)
         if (normalized.isBlank()) return null
@@ -249,33 +307,74 @@ class UtrobinTtsEngine @Inject constructor(
         val seqLen = ids.size
         val sid = clampedSpeakerId().toLong()
 
-        return try {
-            OnnxTensor.createTensor(env, arrayOf(ids)).use { inputIds ->
-                OnnxTensor.createTensor(env, Array(1) { LongArray(seqLen) { 1L } }).use { mask ->
-                    OnnxTensor.createTensor(env, longArrayOf(sid)).use { spk ->
-                        val feeds = mapOf(
-                            "input_ids" to inputIds,
-                            "attention_mask" to mask,
-                            "speaker_id" to spk,
-                        )
-                        session.run(feeds).use { result ->
-                            val tensor = waveformOutputTensor(result) ?: run {
-                                Timber.e("Utrobin: no tensor output (keys: ${result.joinToString { it.key }})")
-                                return@use null
+        return synchronized(sessionLock) utrobinInfer@{
+            ensureOrtSessionFresh()
+            val session = ortSession ?: return@utrobinInfer null
+            try {
+                OnnxTensor.createTensor(env, arrayOf(ids)).use { inputIds ->
+                    OnnxTensor.createTensor(env, Array(1) { LongArray(seqLen) { 1L } }).use { mask ->
+                        OnnxTensor.createTensor(env, longArrayOf(sid)).use { spk ->
+                            val feeds = buildUtrobinFeeds(session, inputIds, mask, spk)
+                            session.run(feeds).use runOut@{ result ->
+                                val tensor = waveformOutputTensor(result) ?: run {
+                                    Timber.e(
+                                        "Utrobin: no tensor output (keys: ${result.joinToString { it.key }})",
+                                    )
+                                    return@runOut null
+                                }
+                                val raw = waveformToFloatArray(tensor)
+                                resampleForSpeechRate(raw)
                             }
-                            val raw = waveformToFloatArray(tensor)
-                            resampleForSpeechRate(raw)
                         }
                     }
                 }
+            } catch (e: Exception) {
+                Timber.e(e, "UtrobinTTS ONNX failed: ${text.take(40)}")
+                null
             }
-        } catch (e: Exception) {
-            Timber.e(e, "UtrobinTTS ONNX failed: ${text.take(40)}")
-            null
         }
     }
 
-    /** ORT Java API: [OrtSession.Result.get] by name returns Optional&lt;OnnxValue&gt;, not OnnxTensor. */
+    private fun buildUtrobinFeeds(
+        session: OrtSession,
+        inputIds: OnnxTensor,
+        mask: OnnxTensor,
+        spk: OnnxTensor,
+    ): Map<String, OnnxTensor> {
+        val inputNames = session.inputInfo.keys.toList()
+        val byLower = inputNames.associateBy { it.lowercase() }
+        val feeds = linkedMapOf<String, OnnxTensor>()
+
+        fun putIfPresent(vararg aliases: String, tensor: OnnxTensor) {
+            val name = aliases.firstNotNullOfOrNull { byLower[it] } ?: return
+            feeds[name] = tensor
+        }
+
+        putIfPresent("input_ids", "input", "x", "inputs", "tokens", tensor = inputIds)
+        putIfPresent("attention_mask", "mask", "attn_mask", tensor = mask)
+        putIfPresent("speaker_id", "speaker", "sid", "speakers", "spk", tensor = spk)
+
+        if (feeds.isEmpty() && inputNames.isNotEmpty()) {
+            feeds[inputNames[0]] = inputIds
+            if (inputNames.size >= 2) feeds[inputNames[1]] = mask
+            if (inputNames.size >= 3) feeds[inputNames[2]] = spk
+        } else {
+            val fallback = listOf(inputIds, mask, spk)
+            var idx = 0
+            for (name in inputNames) {
+                if (!feeds.containsKey(name) && idx < fallback.size) {
+                    feeds[name] = fallback[idx++]
+                }
+            }
+        }
+        if (feeds.size != inputNames.size) {
+            Timber.w(
+                "Utrobin: mapped ${feeds.size} feeds for ${inputNames.size} inputs; names=$inputNames",
+            )
+        }
+        return feeds
+    }
+
     private fun waveformOutputTensor(result: OrtSession.Result): OnnxTensor? {
         val byName = listOf("waveform", "audio", "output", "wav", "output_audio")
         for (name in byName) {
@@ -302,15 +401,27 @@ class UtrobinTtsEngine @Inject constructor(
 
     private fun waveformToFloatArray(tensor: OnnxTensor): FloatArray {
         val o = tensor.value ?: return floatArrayOf()
-        @Suppress("UNCHECKED_CAST")
         return when (o) {
             is FloatArray -> o
-            is Array<*> -> (o[0] as FloatArray).copyOf()
-            else -> (o as Array<FloatArray>)[0].copyOf()
+            is Array<*> -> {
+                val a = o[0]
+                when (a) {
+                    is FloatArray -> a
+                    is Array<*> -> (a[0] as? FloatArray)?.copyOf() ?: floatArrayOf()
+                    else -> floatArrayOf()
+                }
+            }
+            else -> {
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    (o as Array<FloatArray>)[0].copyOf()
+                } catch (_: Exception) {
+                    floatArrayOf()
+                }
+            }
         }
     }
 
-    /** Cheap tempo: ONNX model has no speed input; approximate via decimation/interpolation. */
     private fun resampleForSpeechRate(samples: FloatArray): FloatArray {
         val rate = speechRate
         if (rate == 1.0f) return samples
@@ -338,7 +449,7 @@ class UtrobinTtsEngine @Inject constructor(
             words.add(IntRange(s, i))
         }
         if (words.isEmpty()) return
-        val total = words.sumOf { it.last - it.first }
+        val total = words.sumOf { it.last - it.first }.coerceAtLeast(1)
         for (w in words) {
             _currentWordRange.value = IntRange(sentence.startOffset + w.first, sentence.startOffset + w.last)
             delay((durationMs * (w.last - w.first) / total).coerceAtLeast(50))
@@ -363,7 +474,7 @@ class UtrobinTtsEngine @Inject constructor(
         audioTrack = track
         track.write(shorts, 0, shorts.size)
         track.play()
-        Thread.sleep((shorts.size * 1000L / sampleRate) + 100)
+        Thread.sleep(shorts.size * 1000L / sampleRate)
         try {
             track.stop()
             track.release()
@@ -433,6 +544,31 @@ class UtrobinTtsEngine @Inject constructor(
             if (t.isNotBlank()) result.add(SentenceInfo(t, last, text.length))
         }
         if (result.isEmpty() && text.isNotBlank()) result.add(SentenceInfo(text.trim(), 0, text.length))
-        return result
+        return mergeNearbySentences(result)
+    }
+
+    private fun mergeNearbySentences(sentences: List<SentenceInfo>): List<SentenceInfo> {
+        if (sentences.size <= 1) return sentences
+        val merged = mutableListOf<SentenceInfo>()
+        var current = sentences.first()
+        val maxShort = mergeShortThreshold
+        val maxTotal = mergeTotalCap
+        for (i in 1 until sentences.size) {
+            val next = sentences[i]
+            val shouldMerge = current.text.length < maxShort && next.text.length < maxShort &&
+                (current.text.length + next.text.length) < maxTotal
+            current = if (shouldMerge) {
+                SentenceInfo(
+                    text = "${current.text} ${next.text}".trim(),
+                    startOffset = current.startOffset,
+                    endOffset = next.endOffset,
+                )
+            } else {
+                merged.add(current)
+                next
+            }
+        }
+        merged.add(current)
+        return merged
     }
 }

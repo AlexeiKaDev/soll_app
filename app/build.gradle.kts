@@ -110,7 +110,7 @@ dependencies {
     // Media session for TTS controls
     implementation("androidx.media:media:1.7.0")
 
-    // Sherpa-ONNX TTS (offline, with Piper Russian voices)
+    // Sherpa-ONNX TTS (offline, Piper + UtrobinTTS Russian voices)
     implementation(files("libs/sherpa-onnx.aar"))
 
     // Logging

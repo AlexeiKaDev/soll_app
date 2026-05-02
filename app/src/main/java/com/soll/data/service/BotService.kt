@@ -22,6 +22,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import retrofit2.HttpException
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -161,6 +162,12 @@ class BotService : Service() {
             var offset = settingsRepository.lastOffset
             val timeout = settingsRepository.pollingTimeout
 
+            // Long polling conflicts with an active webhook (Telegram → HTTP 409).
+            telegramRepository.deleteWebhook(dropPendingUpdates = false).fold(
+                onSuccess = { Timber.d("deleteWebhook: ok (long polling mode)") },
+                onFailure = { Timber.w(it, "deleteWebhook failed; getUpdates may return 409 if webhook is set") },
+            )
+
             while (isActive) {
                 try {
                     val result = telegramRepository.getUpdates(
@@ -184,7 +191,13 @@ class BotService : Service() {
                             withContext(Dispatchers.Main) {
                                 updateNotification("Error: ${error.message}")
                             }
-                            delay(5000) // Wait before retry on error
+                            if (error is HttpException && error.code() == 409) {
+                                Timber.w("409 Conflict: clearing webhook / retrying (also check no second bot instance)")
+                                telegramRepository.deleteWebhook(dropPendingUpdates = false)
+                                delay(1500)
+                            } else {
+                                delay(5000) // Wait before retry on error
+                            }
                         }
                     )
                 } catch (e: CancellationException) {

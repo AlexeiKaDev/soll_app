@@ -214,25 +214,13 @@ class TextToSpeechManager @Inject constructor(
                 }
             }
             TtsEngineType.SILERO -> {
-                currentText?.let { txt ->
-                    scope.launch(Dispatchers.IO) {
-                        piperEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
-                    }
-                }
+                scope.launch(Dispatchers.IO) { piperEngine.resume() }
             }
             TtsEngineType.UTROBIN -> {
-                currentText?.let { txt ->
-                    scope.launch(Dispatchers.IO) {
-                        utrobinEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
-                    }
-                }
+                scope.launch(Dispatchers.IO) { utrobinEngine.resume() }
             }
             TtsEngineType.NATASHA -> {
-                currentText?.let { txt ->
-                    scope.launch(Dispatchers.IO) {
-                        natashaEngine.speakChapter(txt) { _chapterFinished.tryEmit(Unit) }
-                    }
-                }
+                scope.launch(Dispatchers.IO) { natashaEngine.resume() }
             }
         }
     }

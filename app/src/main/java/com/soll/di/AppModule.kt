@@ -6,6 +6,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.soll.BuildConfig
 import com.soll.data.api.TelegramApiService
 import com.soll.data.local.SollDatabase
 import com.soll.data.local.dao.BookDao
@@ -25,6 +26,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -44,8 +46,19 @@ object AppModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+        val tokenRegex = Regex("""bot\d+:(?:[A-Za-z0-9_-]{20,})""")
+        val encodedTokenRegex = Regex("""bot\d+%3A(?:[A-Za-z0-9_-]{20,})""")
+        val loggingInterceptor = HttpLoggingInterceptor { message ->
+            val sanitized = message
+                .replace(tokenRegex, "bot<redacted>")
+                .replace(encodedTokenRegex, "bot<redacted>")
+            Timber.tag("OkHttp").d(sanitized)
+        }.apply {
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BASIC
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
 
         return OkHttpClient.Builder()

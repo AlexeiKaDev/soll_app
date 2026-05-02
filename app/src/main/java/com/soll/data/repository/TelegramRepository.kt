@@ -27,10 +27,17 @@ class TelegramRepository @Inject constructor(
         get() = settingsRepository.botToken ?: throw IllegalStateException("Bot token not set")
 
     /**
+     * Telegram tokens are `id:secret`. Raw `:` in a path segment breaks OkHttp when resolving
+     * relative to [Retrofit.baseUrl]; pass this to @Path(encoded = true) endpoints.
+     */
+    private val tokenForPath: String
+        get() = token.replace(":", "%3A")
+
+    /**
      * Get bot info
      */
     suspend fun getMe(): Result<BotInfo> = runCatching {
-        val response = apiService.getMe(token)
+        val response = apiService.getMe(tokenForPath)
         if (response.ok && response.result != null) {
             response.result
         } else {
@@ -39,11 +46,22 @@ class TelegramRepository @Inject constructor(
     }
 
     /**
+     * Drop webhook (if any) so long polling via [getUpdates] is allowed. Telegram returns HTTP 409 on getUpdates
+     * when a webhook is still active or another client holds a concurrent getUpdates.
+     */
+    suspend fun deleteWebhook(dropPendingUpdates: Boolean = false): Result<Unit> = runCatching {
+        val response = apiService.deleteWebhook(tokenForPath, dropPendingUpdates)
+        if (!response.ok) {
+            throw Exception(response.description ?: "deleteWebhook failed")
+        }
+    }
+
+    /**
      * Get updates using long polling
      */
     suspend fun getUpdates(offset: Long? = null, timeout: Int = 30): Result<List<Update>> = runCatching {
         val response = apiService.getUpdates(
-            token = token,
+            token = tokenForPath,
             offset = offset,
             timeout = timeout
         )
@@ -75,7 +93,7 @@ class TelegramRepository @Inject constructor(
             parseMode = parseMode,
             replyToMessageId = replyToMessageId
         )
-        val response = apiService.sendMessage(token, request)
+        val response = apiService.sendMessage(tokenForPath, request)
         if (response.ok && response.result != null) {
             response.result
         } else {
@@ -100,7 +118,7 @@ class TelegramRepository @Inject constructor(
         val documentPart = MultipartBody.Part.createFormData("document", file.name, requestFile)
 
         val response = apiService.sendDocument(
-            token = token,
+            token = tokenForPath,
             chatId = chatIdBody,
             document = documentPart,
             caption = captionBody,
@@ -130,7 +148,7 @@ class TelegramRepository @Inject constructor(
         val photoPart = MultipartBody.Part.createFormData("photo", file.name, requestFile)
 
         val response = apiService.sendPhoto(
-            token = token,
+            token = tokenForPath,
             chatId = chatIdBody,
             photo = photoPart,
             caption = captionBody,
@@ -159,7 +177,7 @@ class TelegramRepository @Inject constructor(
             longitude = longitude,
             horizontalAccuracy = accuracy
         )
-        val response = apiService.sendLocation(token, request)
+        val response = apiService.sendLocation(tokenForPath, request)
         if (response.ok && response.result != null) {
             response.result
         } else {
@@ -184,7 +202,7 @@ class TelegramRepository @Inject constructor(
         val voicePart = MultipartBody.Part.createFormData("voice", file.name, requestFile)
 
         val response = apiService.sendVoice(
-            token = token,
+            token = tokenForPath,
             chatId = chatIdBody,
             voice = voicePart,
             caption = captionBody,
@@ -202,7 +220,7 @@ class TelegramRepository @Inject constructor(
      * Get file info for downloading
      */
     suspend fun getFile(fileId: String): Result<TelegramFile> = runCatching {
-        val response = apiService.getFile(token, fileId)
+        val response = apiService.getFile(tokenForPath, fileId)
         if (response.ok && response.result != null) {
             response.result
         } else {

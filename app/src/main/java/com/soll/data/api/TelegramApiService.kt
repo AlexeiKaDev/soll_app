@@ -16,7 +16,7 @@ interface TelegramApiService {
      */
     @GET("bot{token}/getMe")
     suspend fun getMe(
-        @Path("token") token: String
+        @Path(value = "token", encoded = true) token: String
     ): TelegramResponse<BotInfo>
 
     /**
@@ -26,18 +26,27 @@ interface TelegramApiService {
      */
     @GET("bot{token}/getUpdates")
     suspend fun getUpdates(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Query("offset") offset: Long? = null,
         @Query("timeout") timeout: Int = 30,
         @Query("allowed_updates") allowedUpdates: String? = null
     ): TelegramResponse<List<Update>>
 
     /**
+     * Remove webhook so [getUpdates] long polling works. Required if bot was used with a webhook elsewhere.
+     */
+    @GET("bot{token}/deleteWebhook")
+    suspend fun deleteWebhook(
+        @Path(value = "token", encoded = true) token: String,
+        @Query("drop_pending_updates") dropPendingUpdates: Boolean = false,
+    ): TelegramResponse<Boolean>
+
+    /**
      * Send text message
      */
     @POST("bot{token}/sendMessage")
     suspend fun sendMessage(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Body request: SendMessageRequest
     ): TelegramResponse<Message>
 
@@ -47,7 +56,7 @@ interface TelegramApiService {
     @Multipart
     @POST("bot{token}/sendDocument")
     suspend fun sendDocument(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Part("chat_id") chatId: RequestBody,
         @Part document: MultipartBody.Part,
         @Part("caption") caption: RequestBody? = null,
@@ -60,7 +69,7 @@ interface TelegramApiService {
     @Multipart
     @POST("bot{token}/sendPhoto")
     suspend fun sendPhoto(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Part("chat_id") chatId: RequestBody,
         @Part photo: MultipartBody.Part,
         @Part("caption") caption: RequestBody? = null,
@@ -73,7 +82,7 @@ interface TelegramApiService {
     @Multipart
     @POST("bot{token}/sendAudio")
     suspend fun sendAudio(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Part("chat_id") chatId: RequestBody,
         @Part audio: MultipartBody.Part,
         @Part("caption") caption: RequestBody? = null,
@@ -86,7 +95,7 @@ interface TelegramApiService {
     @Multipart
     @POST("bot{token}/sendVoice")
     suspend fun sendVoice(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Part("chat_id") chatId: RequestBody,
         @Part voice: MultipartBody.Part,
         @Part("caption") caption: RequestBody? = null,
@@ -98,7 +107,7 @@ interface TelegramApiService {
      */
     @POST("bot{token}/sendLocation")
     suspend fun sendLocation(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Body request: SendLocationRequest
     ): TelegramResponse<Message>
 
@@ -107,7 +116,7 @@ interface TelegramApiService {
      */
     @GET("bot{token}/getFile")
     suspend fun getFile(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Query("file_id") fileId: String
     ): TelegramResponse<TelegramFile>
 
@@ -116,7 +125,7 @@ interface TelegramApiService {
      */
     @POST("bot{token}/answerCallbackQuery")
     suspend fun answerCallbackQuery(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Body request: AnswerCallbackQueryRequest
     ): TelegramResponse<Boolean>
 
@@ -125,7 +134,7 @@ interface TelegramApiService {
      */
     @GET("bot{token}/deleteMessage")
     suspend fun deleteMessage(
-        @Path("token") token: String,
+        @Path(value = "token", encoded = true) token: String,
         @Query("chat_id") chatId: Long,
         @Query("message_id") messageId: Long
     ): TelegramResponse<Boolean>
@@ -135,7 +144,8 @@ interface TelegramApiService {
          * Get file download URL
          */
         fun getFileUrl(token: String, filePath: String): String {
-            return "https://api.telegram.org/file/bot$token/$filePath"
+            val t = token.replace(":", "%3A")
+            return "https://api.telegram.org/file/bot$t/$filePath"
         }
     }
 }

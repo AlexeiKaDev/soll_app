@@ -53,6 +53,9 @@ class SileroJitEngine @Inject constructor(
     private var isPaused = false
     private var currentSentenceIndex = 0
     private var sentences: List<SentenceInfo> = emptyList()
+    private var chapterFinishedCallback: (() -> Unit)? = null
+    @Volatile
+    private var playbackSessionId: Long = 0L
     private var speechRate = 1.0f
     private var sampleRate = 22050
 
@@ -257,12 +260,23 @@ class SileroJitEngine @Inject constructor(
         sentences = splitIntoSentences(text)
         currentSentenceIndex = 0
         isPaused = false
+        chapterFinishedCallback = onChapterFinished
+        playbackSessionId++
+        resume()
+    }
+
+    suspend fun resume() = coroutineScope {
+        if (sentences.isEmpty()) return@coroutineScope
+        if (currentSentenceIndex >= sentences.size) return@coroutineScope
+        if (!isPaused && playbackJob?.isActive == true) return@coroutineScope
+        isPaused = false
+        val sessionId = playbackSessionId
         _isSpeaking.value = true
         Timber.d("speakChapter: ${sentences.size} sentences")
 
         playbackJob = launch(Dispatchers.IO) {
             try {
-                while (currentSentenceIndex < sentences.size && isActive && !isPaused) {
+                while (currentSentenceIndex < sentences.size && isActive && !isPaused && sessionId == playbackSessionId) {
                     val sentence = sentences[currentSentenceIndex]
                     _currentWordRange.value = IntRange(sentence.startOffset, sentence.endOffset)
 
@@ -274,10 +288,12 @@ class SileroJitEngine @Inject constructor(
                     }
                     if (!isPaused) currentSentenceIndex++
                 }
-                if (currentSentenceIndex >= sentences.size && !isPaused) {
+                if (currentSentenceIndex >= sentences.size && !isPaused && sessionId == playbackSessionId) {
                     _isSpeaking.value = false
                     _currentWordRange.value = null
-                    withContext(Dispatchers.Main) { onChapterFinished() }
+                    chapterFinishedCallback?.let { cb ->
+                        withContext(Dispatchers.Main) { cb() }
+                    }
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) Timber.e(e, "Playback error")
@@ -346,20 +362,29 @@ class SileroJitEngine @Inject constructor(
         audioTrack = track
         track.write(shorts, 0, shorts.size)
         track.play()
-        Thread.sleep(shorts.size * 1000L / sampleRate)
+        val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
+        var elapsed = 0L
+        while (elapsed < totalMs && !isPaused && (playbackJob?.isActive != false)) {
+            val step = minOf(20L, totalMs - elapsed)
+            Thread.sleep(step)
+            elapsed += step
+        }
         try { track.stop(); track.release() } catch (_: Exception) {}
     }
 
     fun pause() {
+        playbackSessionId++
         isPaused = true; playbackJob?.cancel()
         try { audioTrack?.stop() } catch (_: Exception) {}
         _isSpeaking.value = false; _currentWordRange.value = null
     }
 
     fun stop() {
+        playbackSessionId++
         isPaused = false; playbackJob?.cancel(); playbackJob = null
         try { audioTrack?.stop(); audioTrack?.release() } catch (_: Exception) {}
         audioTrack = null; currentSentenceIndex = 0; sentences = emptyList()
+        chapterFinishedCallback = null
         _isSpeaking.value = false; _currentWordRange.value = null
     }
 

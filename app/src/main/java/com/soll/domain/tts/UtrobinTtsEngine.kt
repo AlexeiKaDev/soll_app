@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -81,8 +82,8 @@ class UtrobinTtsEngine @Inject constructor(
                 _downloadProgress.value = null
                 Timber.d("Extracted: ${modelFile.length() / 1024 / 1024}MB")
             }
-            // Always refresh tokens (small); sherpa character frontend rejects multi-char rows like "<unk>".
-            copyAsset("$ASSETS_DIR/tokens.txt", tokensFile)
+            // Always refresh tokens; CRLF breaks ReadTokens first line (space id 0) and drops U+0020 from the map.
+            copyTokensAsset("$ASSETS_DIR/tokens.txt", tokensFile)
 
             val config = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
@@ -112,6 +113,29 @@ class UtrobinTtsEngine @Inject constructor(
             FileOutputStream(target).use { out -> inp.copyTo(out) }
         }
     }
+
+    /** Sherpa ReadTokens: if a line ends with \\r, the "space id" line is mis-parsed and U+0020 is missing → native crash. */
+    private fun copyTokensAsset(assetPath: String, target: File) {
+        context.assets.open(assetPath).use { inp ->
+            val text = inp.bufferedReader(StandardCharsets.UTF_8).readText()
+            val normalized = text.replace("\r\n", "\n").replace('\r', '\n').trimEnd()
+            target.writeText(normalized, StandardCharsets.UTF_8)
+        }
+    }
+
+    /** Map chars not in utrobin tokens to known ones (see app/src/main/assets/utrobin_tts/tokens.txt). */
+    private fun normalizeForUtrobinTts(text: String): String =
+        text.lowercase()
+            .replace('\u00a0', ' ')
+            .replace('\u00ab', ' ')
+            .replace('\u00bb', ' ')
+            .replace('\u2011', ' ')
+            .replace('\u2010', ',')
+            .replace('\u2013', ',')
+            .replace('\u2014', ',')
+            .replace('-', ',')
+            .replace(Regex("\\s+"), " ")
+            .trim()
 
     suspend fun speakChapter(text: String, onChapterFinished: () -> Unit = {}) = coroutineScope {
         stop()
@@ -145,8 +169,14 @@ class UtrobinTtsEngine @Inject constructor(
     private fun generateAudio(text: String): FloatArray? {
         val engine = tts ?: return null
         if (text.isBlank()) return null
+        val normalized = normalizeForUtrobinTts(text)
+        if (normalized.isBlank()) return null
         return try {
-            val audio = engine.generate(text = text.lowercase(), sid = speakerId, speed = 1.0f / speechRate)
+            val audio = engine.generate(
+                text = normalized,
+                sid = speakerId,
+                speed = 1.0f / speechRate,
+            )
             audio.samples
         } catch (e: Exception) {
             Timber.e(e, "UtrobinTTS failed: ${text.take(40)}")

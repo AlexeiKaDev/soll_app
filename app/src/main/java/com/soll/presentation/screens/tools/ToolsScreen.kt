@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -24,7 +25,8 @@ data class Tool(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolsScreen(
-    onNavigateToBookReader: () -> Unit
+    onNavigateToBookReader: () -> Unit,
+    onNavigateToBreathing: () -> Unit
 ) {
     val tools = listOf(
         Tool(
@@ -32,6 +34,12 @@ fun ToolsScreen(
             name = "Book Reader",
             description = "Read EPUB books with text and audio (TTS)",
             icon = Icons.Default.Book
+        ),
+        Tool(
+            id = "guided_breathing",
+            name = "Guided Breathing",
+            description = "3 раунда дыхания: дыхание, задержка, восстановление",
+            icon = Icons.Default.Air
         )
     )
 
@@ -55,6 +63,7 @@ fun ToolsScreen(
                     onClick = {
                         when (tool.id) {
                             "book_reader" -> onNavigateToBookReader()
+                            "guided_breathing" -> onNavigateToBreathing()
                         }
                     }
                 )

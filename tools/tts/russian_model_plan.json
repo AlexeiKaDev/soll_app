@@ -1,0 +1,18 @@
+[
+  {
+    "model_id": "moss_nano_100m",
+    "quality_score_ru": 6,
+    "size_mb_int4": null,
+    "size_mb_fp16": null,
+    "size_mb_fp32": 673,
+    "recommendation": "default_ru_offline"
+  },
+  {
+    "model_id": "chatterbox_multilingual",
+    "quality_score_ru": 9,
+    "size_mb_int4": 860,
+    "size_mb_fp16": 1040,
+    "size_mb_fp32": 4980,
+    "recommendation": "high_quality_ru_if_storage_and_ram_allow"
+  }
+]

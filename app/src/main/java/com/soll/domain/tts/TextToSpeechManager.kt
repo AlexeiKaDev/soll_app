@@ -8,7 +8,9 @@ import com.soll.domain.tts.book.SystemAndroidBookEngine
 import com.soll.domain.tts.book.TtsBookEngine
 import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.book.NatashaVitsBookEngine
+import com.soll.domain.tts.book.OnnxExternalBookEngine
 import com.soll.domain.tts.book.UtrobinVitsBookEngine
+import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +42,7 @@ enum class TtsEngineType {
     SILERO,
     UTROBIN,
     NATASHA,
+    ONNX_EXTERNAL,
 }
 
 enum class TtsServiceAction {
@@ -57,12 +60,14 @@ class TextToSpeechManager @Inject constructor(
     private val piperEngine: PiperSherpaBookEngine,
     private val utrobinEngine: UtrobinVitsBookEngine,
     private val natashaEngine: NatashaVitsBookEngine,
+    private val onnxExternalEngine: OnnxExternalBookEngine,
 ) {
     private val engines: Map<TtsEngineType, TtsBookEngine> = mapOf(
         TtsEngineType.SYSTEM to systemEngine,
         TtsEngineType.SILERO to piperEngine,
         TtsEngineType.UTROBIN to utrobinEngine,
         TtsEngineType.NATASHA to natashaEngine,
+        TtsEngineType.ONNX_EXTERNAL to onnxExternalEngine,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -139,6 +144,7 @@ class TextToSpeechManager @Inject constructor(
     suspend fun initializeUtrobin(): Boolean = prepareEngine(TtsEngineType.UTROBIN)
 
     suspend fun initializeNatasha(): Boolean = prepareEngine(TtsEngineType.NATASHA)
+    suspend fun initializeOnnxExternal(): Boolean = prepareEngine(TtsEngineType.ONNX_EXTERNAL)
 
     suspend fun prepareEngine(type: TtsEngineType): Boolean {
         _state.value = TtsState.Initializing
@@ -182,6 +188,11 @@ class TextToSpeechManager @Inject constructor(
                     natashaEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
                 }
             }
+            TtsEngineType.ONNX_EXTERNAL -> {
+                scope.launch(Dispatchers.IO) {
+                    onnxExternalEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
+                }
+            }
         }
     }
 
@@ -192,6 +203,7 @@ class TextToSpeechManager @Inject constructor(
             TtsEngineType.SILERO -> piperEngine.pause()
             TtsEngineType.UTROBIN -> utrobinEngine.pause()
             TtsEngineType.NATASHA -> natashaEngine.pause()
+            TtsEngineType.ONNX_EXTERNAL -> onnxExternalEngine.pause()
         }
         _isSpeaking.value = false
         _currentWordRange.value = null
@@ -222,6 +234,9 @@ class TextToSpeechManager @Inject constructor(
             TtsEngineType.NATASHA -> {
                 scope.launch(Dispatchers.IO) { natashaEngine.resume() }
             }
+            TtsEngineType.ONNX_EXTERNAL -> {
+                scope.launch(Dispatchers.IO) { onnxExternalEngine.resume() }
+            }
         }
     }
 
@@ -234,6 +249,7 @@ class TextToSpeechManager @Inject constructor(
             TtsEngineType.SILERO -> piperEngine.stop()
             TtsEngineType.UTROBIN -> utrobinEngine.stop()
             TtsEngineType.NATASHA -> natashaEngine.stop()
+            TtsEngineType.ONNX_EXTERNAL -> onnxExternalEngine.stop()
         }
         _isSpeaking.value = false
         if (_state.value !is TtsState.Idle) _state.value = TtsState.Ready
@@ -249,6 +265,7 @@ class TextToSpeechManager @Inject constructor(
         piperEngine.setSpeechRate(coerced)
         utrobinEngine.setSpeechRate(coerced)
         natashaEngine.setSpeechRate(coerced)
+        onnxExternalEngine.setSpeechRate(coerced)
     }
 
     fun setPitch(pitch: Float) {
@@ -265,6 +282,10 @@ class TextToSpeechManager @Inject constructor(
 
     fun setVoiceIdForEngine(type: TtsEngineType, voiceId: String) {
         engines.getValue(type).setVoiceId(voiceId)
+    }
+
+    fun setSelectedOnnxPack(pack: InstalledOnnxPack?) {
+        onnxExternalEngine.setSelectedPack(pack)
     }
 
     fun tunableSettingsFor(type: TtsEngineType) = engines.getValue(type).tunableSettings()
@@ -288,6 +309,7 @@ class TextToSpeechManager @Inject constructor(
         piperEngine.shutdown()
         utrobinEngine.shutdown()
         natashaEngine.shutdown()
+        onnxExternalEngine.shutdown()
         _state.value = TtsState.Idle
         _isSpeaking.value = false
         _currentWordRange.value = null

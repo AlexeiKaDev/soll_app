@@ -23,6 +23,7 @@ import com.soll.presentation.screens.home.HomeScreen
 import com.soll.presentation.screens.logs.LogsScreen
 import com.soll.presentation.screens.settings.SettingsScreen
 import com.soll.presentation.screens.tools.ToolsScreen
+import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
@@ -35,6 +36,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 // Additional routes (not in bottom bar)
 object Routes {
     const val BOOK_READER = "book_reader"
+    const val BREATHING = "guided_breathing"
 }
 
 @Composable
@@ -91,7 +93,10 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                 ToolsScreen(
                     onNavigateToBookReader = {
                         navController.navigate(Routes.BOOK_READER)
-                    }
+                    },
+                    onNavigateToBreathing = {
+                        navController.navigate(Routes.BREATHING)
+                    },
                 )
             }
             composable(Screen.Logs.route) {
@@ -102,6 +107,11 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             }
             composable(Routes.BOOK_READER) {
                 BookReaderScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.BREATHING) {
+                BreathingScreen(
                     onBack = { navController.popBackStack() }
                 )
             }

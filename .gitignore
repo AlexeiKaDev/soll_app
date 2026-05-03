@@ -1,0 +1,51 @@
+# Gradle / Android
+.gradle/
+build/
+**/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# Android artifacts
+*.apk
+*.aab
+
+# ML / model artifacts (keep out of git)
+*.onnx
+*.onnx_data
+*.pt
+*.pth
+*.bin
+*.jar
+utrobin_onnx/
+models/
+checkpoints/
+external_models/
+# Gradle / Android build artifacts
+.gradle/
+build/
+**/build/
+local.properties
+
+# IDE artifacts
+.idea/
+*.iml
+
+# APK / bundles
+*.apk
+*.aab
+
+# Native/model artifacts (keep out of git)
+*.onnx
+*.onnx_data
+*.pt
+*.pth
+*.bin
+*.jar
+
+# Local model folders
+utrobin_onnx/
+models/
+checkpoints/

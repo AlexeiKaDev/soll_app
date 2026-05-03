@@ -31,6 +31,7 @@ import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
+import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,6 +49,12 @@ fun BookReaderScreen(
         uri?.let { viewModel.importBook(it) }
     }
 
+    val onnxModelsFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let { viewModel.importOnnxPacksFromUserFolder(it) }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
@@ -56,6 +63,13 @@ fun BookReaderScreen(
                 }
                 is BookReaderEvent.BookImported -> {
                     Toast.makeText(context, "Imported: ${event.title}", Toast.LENGTH_SHORT).show()
+                }
+                is BookReaderEvent.OnnxPacksImported -> {
+                    Toast.makeText(
+                        context,
+                        "Импортировано ONNX-пакетов: ${event.count}",
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }
             }
         }
@@ -83,6 +97,8 @@ fun BookReaderScreen(
             systemPitch = uiState.systemPitch,
             engineTunables = uiState.engineTunables,
             sileroDownloadProgress = uiState.sileroDownloadProgress,
+            installedOnnxPacks = uiState.installedOnnxPacks,
+            selectedOnnxPackKey = uiState.selectedOnnxPackKey,
             onBack = { viewModel.closeBook() },
             onChapterSelect = { viewModel.goToChapter(it) },
             onPreviousChapter = { viewModel.previousChapter() },
@@ -96,6 +112,10 @@ fun BookReaderScreen(
             onEngineVoiceChange = { viewModel.setEngineVoice(it) },
             onEngineTunableChange = { key, value -> viewModel.applyEngineTunable(key, value) },
             onPerformanceProfileChange = { viewModel.setPerformanceProfile(it) },
+            onRefreshOnnxPacks = { viewModel.refreshOnnxPacks() },
+            onPickOnnxImportFolder = { onnxModelsFolderLauncher.launch(null) },
+            onSelectOnnxPack = { modelId, precision -> viewModel.selectOnnxPack(modelId, precision) },
+            onResetProgress = { viewModel.resetCurrentBookProgress() },
         )
     } else {
         BookLibraryScreen(
@@ -183,8 +203,10 @@ private fun BookLibraryScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(books) { book ->
+                    items(books.size) { index ->
+                        val book = books[index]
                         BookListItem(
+                            index = index + 1,
                             book = book,
                             onClick = { onOpenBook(book) },
                             onDelete = { onDeleteBook(book) }
@@ -198,6 +220,7 @@ private fun BookLibraryScreen(
 
 @Composable
 private fun BookListItem(
+    index: Int,
     book: BookEntity,
     onClick: () -> Unit,
     onDelete: () -> Unit
@@ -215,6 +238,14 @@ private fun BookListItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                text = "$index.",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
             Icon(
                 imageVector = Icons.Default.Book,
                 contentDescription = null,
@@ -246,6 +277,19 @@ private fun BookListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            val progressPercent = remember(book.currentChapter, book.currentPosition, book.totalChapters) {
+                val total = book.totalChapters.coerceAtLeast(1)
+                (((book.currentChapter.toFloat() + (book.currentPosition / 10000f)) / total) * 100f)
+                    .toInt()
+                    .coerceIn(0, 100)
+            }
+            Text(
+                text = "$progressPercent%",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(4.dp))
 
             IconButton(onClick = { showDeleteDialog = true }) {
                 Icon(
@@ -304,6 +348,8 @@ private fun BookReadingScreen(
     systemPitch: Float,
     engineTunables: List<TtsEngineTunable>,
     sileroDownloadProgress: Float?,
+    installedOnnxPacks: List<InstalledOnnxPack>,
+    selectedOnnxPackKey: String?,
     onBack: () -> Unit,
     onChapterSelect: (Int) -> Unit,
     onPreviousChapter: () -> Unit,
@@ -317,6 +363,10 @@ private fun BookReadingScreen(
     onEngineVoiceChange: (String) -> Unit,
     onEngineTunableChange: (String, Float) -> Unit,
     onPerformanceProfileChange: (TtsBookPerformanceProfile) -> Unit,
+    onRefreshOnnxPacks: () -> Unit,
+    onPickOnnxImportFolder: () -> Unit,
+    onSelectOnnxPack: (String, String) -> Unit,
+    onResetProgress: () -> Unit,
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -641,6 +691,16 @@ private fun BookReadingScreen(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onResetProgress,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Сбросить прогресс книги")
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(12.dp))
@@ -723,6 +783,94 @@ private fun BookReadingScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onEngineTypeChange(TtsEngineType.ONNX_EXTERNAL) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = engineType == TtsEngineType.ONNX_EXTERNAL,
+                            onClick = { onEngineTypeChange(TtsEngineType.ONNX_EXTERNAL) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("ONNX External (RU модели)", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Пакеты моделей ставятся отдельно (вне APK), выбор по quality/size.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (engineType == TtsEngineType.ONNX_EXTERNAL) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onPickOnnxImportFolder,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Папка с моделями",
+                                    maxLines = 2,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = onRefreshOnnxPacks,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Обновить", style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Если файлы лежат в Загрузках (например Downloads/tts), нажми «Папка с моделями» и выбери эту папку — приложение само найдёт model_manifest.json и скопирует пакеты. Либо скопируй вручную в external_models/tts.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (installedOnnxPacks.isEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Паки не найдены. Kokoro: python tools/tts/prepare_onnx_pack.py --model kokoro_82m ... --download — в пакете нужны onnx/, voices/*.bin и config.json (hexgrad/Kokoro-82M). Остальные модели пока без рантайма в приложении.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            installedOnnxPacks.forEach { pack ->
+                                val key = "${pack.modelId}|${pack.precision}"
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectOnnxPack(pack.modelId, pack.precision) }
+                                        .padding(vertical = 2.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = key == selectedOnnxPackKey,
+                                        onClick = { onSelectOnnxPack(pack.modelId, pack.precision) }
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Column {
+                                        Text("${pack.modelId} (${pack.precision})", style = MaterialTheme.typography.bodySmall)
+                                        Text("~${pack.estimatedSizeMb} MB", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Download progress
                     if (sileroDownloadProgress != null) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -743,6 +891,7 @@ private fun BookReadingScreen(
                         TtsEngineType.SILERO -> sileroVoiceId
                         TtsEngineType.UTROBIN -> utrobinVoiceId
                         TtsEngineType.NATASHA -> ""
+                        TtsEngineType.ONNX_EXTERNAL -> ""
                         TtsEngineType.SYSTEM -> ""
                     }
                     if (ttsVoiceOptions.isNotEmpty()) {

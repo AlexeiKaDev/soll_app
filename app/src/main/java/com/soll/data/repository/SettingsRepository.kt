@@ -31,6 +31,10 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_BOOK_PERF_PROFILE = "tts_book_perf_profile"
         private const val KEY_BOOK_READER_S200_BOOTSTRAP = "book_reader_s200_bootstrap_done"
         private const val KEY_TTS_SYSTEM_PITCH = "tts_system_pitch"
+        private const val KEY_TTS_ONNX_MODEL_ID = "tts_onnx_model_id"
+        private const val KEY_TTS_ONNX_PRECISION = "tts_onnx_precision"
+        /** Последний URI дерева для импортa ONNX-паков (SAF); для повтора «указать ту же папку». */
+        private const val KEY_TTS_ONNX_IMPORT_TREE_URI = "tts_onnx_import_tree_uri"
     }
 
     // Bot Token (encrypted storage)
@@ -149,6 +153,18 @@ class SettingsRepository @Inject constructor(
     var ttsSystemPitch: Float
         get() = sharedPreferences.getFloat(KEY_TTS_SYSTEM_PITCH, 1.0f)
         set(value) = sharedPreferences.edit().putFloat(KEY_TTS_SYSTEM_PITCH, value).apply()
+
+    var ttsOnnxModelId: String?
+        get() = sharedPreferences.getString(KEY_TTS_ONNX_MODEL_ID, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_ONNX_MODEL_ID, value).apply()
+
+    var ttsOnnxPrecision: String?
+        get() = sharedPreferences.getString(KEY_TTS_ONNX_PRECISION, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_ONNX_PRECISION, value).apply()
+
+    var ttsOnnxImportTreeUri: String?
+        get() = sharedPreferences.getString(KEY_TTS_ONNX_IMPORT_TREE_URI, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_ONNX_IMPORT_TREE_URI, value).apply()
 
     // Bot configs from database
     fun getAllBotConfigs(): Flow<List<BotConfigEntity>> = botConfigDao.getAllConfigs()

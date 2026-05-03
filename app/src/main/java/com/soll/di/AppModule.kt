@@ -2,6 +2,8 @@ package com.soll.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.squareup.moshi.Moshi
@@ -11,9 +13,11 @@ import com.soll.data.api.TelegramApiService
 import com.soll.data.local.SollDatabase
 import com.soll.data.local.dao.BookDao
 import com.soll.data.local.dao.BotConfigDao
+import com.soll.data.local.dao.BreathingSessionDao
 import com.soll.data.local.dao.CommandLogDao
 import com.soll.data.local.dao.MessageLogDao
 import com.soll.data.repository.BookRepository
+import com.soll.data.repository.BreathingRepository
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.TelegramRepository
 import com.soll.domain.command.CommandProcessor
@@ -33,6 +37,24 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    private val migration2To3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `breathing_sessions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `startedAtMillis` INTEGER NOT NULL,
+                    `endedAtMillis` INTEGER NOT NULL,
+                    `durationSeconds` INTEGER NOT NULL,
+                    `completedFully` INTEGER NOT NULL,
+                    `roundsCompleted` INTEGER NOT NULL,
+                    `holdRecordsCsv` TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+    }
 
     private const val TELEGRAM_API_BASE_URL = "https://api.telegram.org/"
     private const val ENCRYPTED_PREFS_NAME = "soll_secure_prefs"
@@ -90,6 +112,7 @@ object AppModule {
             SollDatabase::class.java,
             "soll_database"
         )
+            .addMigrations(migration2To3)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -112,6 +135,16 @@ object AppModule {
     @Singleton
     fun provideBookDao(database: SollDatabase): BookDao =
         database.bookDao()
+
+    @Provides
+    @Singleton
+    fun provideBreathingSessionDao(database: SollDatabase): BreathingSessionDao =
+        database.breathingSessionDao()
+
+    @Provides
+    @Singleton
+    fun provideBreathingRepository(dao: BreathingSessionDao): BreathingRepository =
+        BreathingRepository(dao)
 
     @Provides
     @Singleton

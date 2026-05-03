@@ -20,12 +20,15 @@ import com.soll.domain.tts.TtsServiceAction
 import com.soll.domain.tts.TtsState
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
+import com.soll.domain.tts.onnx.InstalledOnnxPack
+import com.soll.domain.tts.onnx.OnnxModelPackManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-import timber.log.Timber
 import javax.inject.Inject
 
 data class BookReaderUiState(
@@ -34,6 +37,7 @@ data class BookReaderUiState(
     val currentBookEntity: BookEntity? = null,
     val currentChapter: EpubChapter? = null,
     val currentChapterIndex: Int = 0,
+    val currentChapterPosition: Int = 0,
     val isLoading: Boolean = false,
     val isTtsPlaying: Boolean = false,
     val ttsState: TtsState = TtsState.Idle,
@@ -56,6 +60,8 @@ data class BookReaderUiState(
     val sherpaThreads: Int = 2,
     val performanceProfile: TtsBookPerformanceProfile = TtsBookPerformanceProfile.BALANCED,
     val ttsVoiceOptions: List<TtsVoiceOption> = emptyList(),
+    val installedOnnxPacks: List<InstalledOnnxPack> = emptyList(),
+    val selectedOnnxPackKey: String? = null,
     /** Слайдеры и др. из [TtsBookEngine.tunableSettings] активного движка. */
     val engineTunables: List<TtsEngineTunable> = emptyList(),
     val systemPitch: Float = 1.0f,
@@ -64,6 +70,7 @@ data class BookReaderUiState(
 sealed class BookReaderEvent {
     data class ShowError(val message: String) : BookReaderEvent()
     data class BookImported(val title: String) : BookReaderEvent()
+    data class OnnxPacksImported(val count: Int) : BookReaderEvent()
 }
 
 @HiltViewModel
@@ -71,7 +78,8 @@ class BookReaderViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val bookRepository: BookRepository,
     private val ttsManager: TextToSpeechManager,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val onnxModelPackManager: OnnxModelPackManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookReaderUiState())
@@ -106,6 +114,7 @@ class BookReaderViewModel @Inject constructor(
             "silero" -> TtsEngineType.SILERO
             "utrobin" -> TtsEngineType.UTROBIN
             "natasha" -> TtsEngineType.NATASHA
+            "onnx_external" -> TtsEngineType.ONNX_EXTERNAL
             else -> TtsEngineType.SYSTEM
         }
         val sileroVoice = settingsRepository.ttssileroSpeaker
@@ -121,6 +130,12 @@ class BookReaderViewModel @Inject constructor(
         ttsManager.applyTunableForEngine(TtsEngineType.NATASHA, "natasha_ort_intra_threads", natashaOrt.toFloat())
         ttsManager.applyTunableForEngine(TtsEngineType.SILERO, "sherpa_num_threads", sherpaTh.toFloat())
         ttsManager.setPitch(pitch)
+        val installedOnnxPacks = onnxModelPackManager.listInstalledPacks()
+        val savedPackKey = buildOnnxPackKey(settingsRepository.ttsOnnxModelId, settingsRepository.ttsOnnxPrecision)
+        val selectedOnnxPack = installedOnnxPacks.firstOrNull {
+            buildOnnxPackKey(it.modelId, it.precision) == savedPackKey
+        } ?: onnxModelPackManager.pickBestRussianPack()
+        ttsManager.setSelectedOnnxPack(selectedOnnxPack)
         _uiState.update {
             it.copy(
                 autoAdvanceEnabled = settingsRepository.ttsAutoAdvance,
@@ -137,6 +152,8 @@ class BookReaderViewModel @Inject constructor(
                 systemPitch = pitch,
                 ttsVoiceOptions = ttsManager.voiceOptions(engineType),
                 engineTunables = ttsManager.tunableSettingsFor(engineType),
+                installedOnnxPacks = installedOnnxPacks,
+                selectedOnnxPackKey = selectedOnnxPack?.let { p -> buildOnnxPackKey(p.modelId, p.precision) },
             )
         }
     }
@@ -199,6 +216,9 @@ class BookReaderViewModel @Inject constructor(
         if (type == TtsEngineType.UTROBIN && !ttsManager.isEngineReady(TtsEngineType.UTROBIN)) {
             viewModelScope.launch { ttsManager.initializeUtrobin() }
         }
+        if (type == TtsEngineType.ONNX_EXTERNAL && !ttsManager.isEngineReady(TtsEngineType.ONNX_EXTERNAL)) {
+            viewModelScope.launch { ttsManager.initializeOnnxExternal() }
+        }
     }
 
     private fun initTts() {
@@ -217,6 +237,9 @@ class BookReaderViewModel @Inject constructor(
             }
             if (_uiState.value.engineType == TtsEngineType.NATASHA && ttsManager.isModelDownloadedFor(TtsEngineType.NATASHA)) {
                 ttsManager.initializeNatasha()
+            }
+            if (_uiState.value.engineType == TtsEngineType.ONNX_EXTERNAL) {
+                ttsManager.initializeOnnxExternal()
             }
         }
     }
@@ -242,7 +265,12 @@ class BookReaderViewModel @Inject constructor(
         }
         viewModelScope.launch {
             ttsManager.currentWordRange.collect { range ->
-                _uiState.update { it.copy(highlightRange = range) }
+                _uiState.update { state ->
+                    state.copy(
+                        highlightRange = range,
+                        currentChapterPosition = range?.first ?: state.currentChapterPosition
+                    )
+                }
             }
         }
     }
@@ -277,6 +305,11 @@ class BookReaderViewModel @Inject constructor(
         }
     }
 
+    private fun buildOnnxPackKey(modelId: String?, precision: String?): String? {
+        if (modelId.isNullOrBlank() || precision.isNullOrBlank()) return null
+        return "$modelId|$precision"
+    }
+
     fun importBook(uri: Uri) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -305,7 +338,8 @@ class BookReaderViewModel @Inject constructor(
                         currentBook = epubBook,
                         currentBookEntity = bookEntity,
                         currentChapter = epubBook.chapters.getOrNull(chapterIndex),
-                        currentChapterIndex = chapterIndex
+                        currentChapterIndex = chapterIndex,
+                        currentChapterPosition = bookEntity.currentPosition
                     )
                 }
             } else {
@@ -323,7 +357,8 @@ class BookReaderViewModel @Inject constructor(
                 currentBook = null,
                 currentBookEntity = null,
                 currentChapter = null,
-                currentChapterIndex = 0
+                currentChapterIndex = 0,
+                currentChapterPosition = 0
             )
         }
     }
@@ -336,7 +371,8 @@ class BookReaderViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 currentChapter = book.chapters[index],
-                currentChapterIndex = index
+                currentChapterIndex = index,
+                currentChapterPosition = 0
             )
         }
     }
@@ -348,7 +384,8 @@ class BookReaderViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 currentChapter = book.chapters[index],
-                currentChapterIndex = index
+                currentChapterIndex = index,
+                currentChapterPosition = 0
             )
         }
         val chapter = book.chapters[index]
@@ -366,6 +403,7 @@ class BookReaderViewModel @Inject constructor(
 
     fun playTts() {
         val chapter = _uiState.value.currentChapter ?: return
+        saveProgress()
 
         if (_uiState.value.engineType == TtsEngineType.SILERO && !ttsManager.isEngineReady(TtsEngineType.SILERO)) {
             viewModelScope.launch {
@@ -399,6 +437,18 @@ class BookReaderViewModel @Inject constructor(
             }
             return
         }
+        if (_uiState.value.engineType == TtsEngineType.ONNX_EXTERNAL && !ttsManager.isEngineReady(TtsEngineType.ONNX_EXTERNAL)) {
+            viewModelScope.launch {
+                val success = ttsManager.initializeOnnxExternal()
+                if (success) startPlayback(chapter)
+                else _events.emit(
+                    BookReaderEvent.ShowError(
+                        "Не найдены установленные ONNX модели. Подготовьте пак через tools/tts/prepare_onnx_pack.py.",
+                    ),
+                )
+            }
+            return
+        }
 
         startPlayback(chapter)
     }
@@ -419,6 +469,7 @@ class BookReaderViewModel @Inject constructor(
     }
 
     fun stopTts() {
+        saveProgress()
         ttsManager.stop()
         TtsService.stop(appContext)
     }
@@ -449,6 +500,7 @@ class BookReaderViewModel @Inject constructor(
             TtsEngineType.SILERO -> "silero"
             TtsEngineType.UTROBIN -> "utrobin"
             TtsEngineType.NATASHA -> "natasha"
+            TtsEngineType.ONNX_EXTERNAL -> "onnx_external"
             TtsEngineType.SYSTEM -> "system"
         }
         if (type == TtsEngineType.UTROBIN) {
@@ -477,6 +529,9 @@ class BookReaderViewModel @Inject constructor(
                 ttsManager.initializeSilero()
                 _uiState.update { it.copy(sileroModelDownloaded = ttsManager.isModelDownloaded()) }
             }
+        }
+        if (type == TtsEngineType.ONNX_EXTERNAL && !ttsManager.isEngineReady(TtsEngineType.ONNX_EXTERNAL)) {
+            viewModelScope.launch { ttsManager.initializeOnnxExternal() }
         }
     }
 
@@ -535,6 +590,60 @@ class BookReaderViewModel @Inject constructor(
         _uiState.update { it.copy(availableEngines = ttsManager.getAvailableEngines()) }
     }
 
+    /** Импорт из папки (SAF): копирует пакеты в приложение и обновляет список. */
+    fun importOnnxPacksFromUserFolder(treeUri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { onnxModelPackManager.importPacksFromTreeUri(treeUri) }
+            }
+            result.fold(
+                onFailure = { e ->
+                    _events.emit(BookReaderEvent.ShowError(e.message ?: "Импорт ONNX не удался"))
+                },
+                onSuccess = { count ->
+                    settingsRepository.ttsOnnxImportTreeUri = treeUri.toString()
+                    refreshOnnxPacks()
+                    if (count > 0) {
+                        _events.emit(BookReaderEvent.OnnxPacksImported(count))
+                    } else {
+                        _events.emit(
+                            BookReaderEvent.ShowError(
+                                "В выбранной папке нет готовых пакетов с model_manifest.json.",
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun refreshOnnxPacks() {
+        val packs = onnxModelPackManager.listInstalledPacks()
+        val selected = packs.firstOrNull {
+            buildOnnxPackKey(it.modelId, it.precision) == _uiState.value.selectedOnnxPackKey
+        } ?: onnxModelPackManager.pickBestRussianPack()
+        ttsManager.setSelectedOnnxPack(selected)
+        _uiState.update {
+            it.copy(
+                installedOnnxPacks = packs,
+                selectedOnnxPackKey = selected?.let { p -> buildOnnxPackKey(p.modelId, p.precision) },
+            )
+        }
+    }
+
+    fun selectOnnxPack(modelId: String, precision: String) {
+        val selected = _uiState.value.installedOnnxPacks.firstOrNull {
+            it.modelId == modelId && it.precision == precision
+        } ?: return
+        ttsManager.setSelectedOnnxPack(selected)
+        settingsRepository.ttsOnnxModelId = modelId
+        settingsRepository.ttsOnnxPrecision = precision
+        _uiState.update { it.copy(selectedOnnxPackKey = buildOnnxPackKey(modelId, precision)) }
+        if (_uiState.value.engineType == TtsEngineType.ONNX_EXTERNAL) {
+            viewModelScope.launch { ttsManager.initializeOnnxExternal() }
+        }
+    }
+
     fun deleteBook(bookEntity: BookEntity) {
         viewModelScope.launch {
             bookRepository.deleteBook(bookEntity.id)
@@ -544,10 +653,33 @@ class BookReaderViewModel @Inject constructor(
     private fun saveProgress() {
         val bookEntity = _uiState.value.currentBookEntity ?: return
         val chapterIndex = _uiState.value.currentChapterIndex
+        val chapterLength = _uiState.value.currentChapter?.content?.length ?: 0
+        val position = _uiState.value.currentChapterPosition.coerceIn(0, chapterLength)
         viewModelScope.launch {
             bookRepository.updateReadingProgress(
                 bookId = bookEntity.id,
                 chapter = chapterIndex,
+                position = position
+            )
+        }
+    }
+
+    fun resetCurrentBookProgress() {
+        val book = _uiState.value.currentBook ?: return
+        val bookEntity = _uiState.value.currentBookEntity ?: return
+        stopTts()
+        _uiState.update {
+            it.copy(
+                currentChapterIndex = 0,
+                currentChapter = book.chapters.firstOrNull(),
+                currentChapterPosition = 0,
+                highlightRange = null
+            )
+        }
+        viewModelScope.launch {
+            bookRepository.updateReadingProgress(
+                bookId = bookEntity.id,
+                chapter = 0,
                 position = 0
             )
         }

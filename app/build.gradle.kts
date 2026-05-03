@@ -1,4 +1,3 @@
-import org.gradle.api.tasks.bundling.Zip
 import java.io.InputStream
 import java.net.URL
 
@@ -9,31 +8,7 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Sherpa Android jni is built against ONNX Runtime from their scripts (see k2-fsa sherpa-onnx
-// build-android-*.sh: onnxruntime_version=1.24.3). The Maven AAR must use the *same* native
-// libonnxruntime.so as Sherpa; we strip only Microsoft's duplicate .so from the dependency AAR.
 private val onnxRuntimeAndroidVersion = "1.24.3"
-
-private val onnxRuntimeAndroidBase: Configuration =
-    configurations.create("onnxRuntimeAndroidBase").apply {
-        isCanBeConsumed = false
-        isCanBeResolved = true
-    }
-
-private val stripMicrosoftOnnxRuntimeSo by tasks.registering(Zip::class) {
-    group = "prepare"
-    description =
-        "Rebuild onnxruntime-android AAR without jni/*/libonnxruntime.so (use Sherpa's copy only)"
-    archiveFileName.set("onnxruntime-android-no-libonnxruntime-so.aar")
-    destinationDirectory.set(layout.buildDirectory.dir("stripped-onnx-android"))
-    dependsOn(onnxRuntimeAndroidBase)
-    from(zipTree(onnxRuntimeAndroidBase.singleFile)) {
-        exclude("jni/**/libonnxruntime.so")
-    }
-}
-
-private val strippedOnnxAndroidAar =
-    objects.fileCollection().from(stripMicrosoftOnnxRuntimeSo.flatMap { it.archiveFile })
 
 private val downloadNatashaAsset by tasks.registering {
     group = "prepare"
@@ -134,10 +109,7 @@ tasks.named("preBuild") {
 }
 
 dependencies {
-    add(
-        onnxRuntimeAndroidBase.name,
-        "com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeAndroidVersion",
-    )
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeAndroidVersion")
 
     // Core Android
     implementation(libs.androidx.core.ktx)
@@ -178,6 +150,7 @@ dependencies {
     // Storage
     implementation(libs.datastore.preferences)
     implementation(libs.security.crypto)
+    implementation(libs.androidx.documentfile)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
@@ -188,10 +161,6 @@ dependencies {
 
     // Media session for TTS controls
     implementation("androidx.media:media:1.7.0")
-
-    // Utrobin: Java onnxruntime API + JNI from stripped AAR; libonnxruntime.so comes from Sherpa AAR.
-    implementation(strippedOnnxAndroidAar)
-    implementation(files("libs/sherpa-onnx.aar"))
 
     // Logging
     implementation(libs.timber)

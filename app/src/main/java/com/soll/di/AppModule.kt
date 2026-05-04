@@ -5,7 +5,7 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.soll.BuildConfig
@@ -15,9 +15,11 @@ import com.soll.data.local.dao.BookDao
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.dao.BreathingSessionDao
 import com.soll.data.local.dao.CommandLogDao
+import com.soll.data.local.dao.CourseProgramDao
 import com.soll.data.local.dao.MessageLogDao
 import com.soll.data.repository.BookRepository
 import com.soll.data.repository.BreathingRepository
+import com.soll.data.repository.CourseProgramRepository
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.TelegramRepository
 import com.soll.domain.command.CommandProcessor
@@ -53,6 +55,142 @@ object AppModule {
                 )
                 """.trimIndent()
             )
+        }
+    }
+
+    private val migration3To4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `courses` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `slug` TEXT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `description` TEXT NOT NULL,
+                    `version` TEXT NOT NULL,
+                    `reviewStatus` TEXT NOT NULL,
+                    `contentQuality` TEXT,
+                    `mascotStyle` TEXT,
+                    `sourceFolder` TEXT NOT NULL,
+                    `packageFileName` TEXT NOT NULL,
+                    `totalDays` INTEGER NOT NULL,
+                    `installedAt` INTEGER NOT NULL,
+                    `lastUpdatedAt` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_courses_slug` ON `courses` (`slug`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `course_modules` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `courseId` INTEGER NOT NULL,
+                    `moduleKey` TEXT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `orderIndex` INTEGER NOT NULL,
+                    `summary` TEXT NOT NULL,
+                    FOREIGN KEY(`courseId`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_modules_courseId` ON `course_modules` (`courseId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_course_modules_courseId_moduleKey` ON `course_modules` (`courseId`, `moduleKey`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `course_lessons` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `courseId` INTEGER NOT NULL,
+                    `moduleKey` TEXT NOT NULL,
+                    `lessonKey` TEXT NOT NULL,
+                    `orderIndex` INTEGER NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `summary` TEXT NOT NULL,
+                    `sourceName` TEXT NOT NULL,
+                    `sourcePath` TEXT,
+                    `lessonType` TEXT NOT NULL,
+                    `sessionTag` TEXT,
+                    `required` INTEGER NOT NULL,
+                    `estimatedMinutes` INTEGER,
+                    FOREIGN KEY(`courseId`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_lessons_courseId` ON `course_lessons` (`courseId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_course_lessons_courseId_lessonKey` ON `course_lessons` (`courseId`, `lessonKey`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `course_day_plans` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `courseId` INTEGER NOT NULL,
+                    `dayIndex` INTEGER NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `theme` TEXT NOT NULL,
+                    `morningPayloadJson` TEXT,
+                    `eveningPayloadJson` TEXT,
+                    `diaryPromptJson` TEXT,
+                    FOREIGN KEY(`courseId`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_day_plans_courseId` ON `course_day_plans` (`courseId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_course_day_plans_courseId_dayIndex` ON `course_day_plans` (`courseId`, `dayIndex`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `course_day_progress` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `courseId` INTEGER NOT NULL,
+                    `dayIndex` INTEGER NOT NULL,
+                    `morningCompletedAtMillis` INTEGER,
+                    `eveningCompletedAtMillis` INTEGER,
+                    `skippedAtMillis` INTEGER,
+                    `updatedAtMillis` INTEGER NOT NULL,
+                    FOREIGN KEY(`courseId`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_day_progress_courseId` ON `course_day_progress` (`courseId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_course_day_progress_courseId_dayIndex` ON `course_day_progress` (`courseId`, `dayIndex`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `course_session_logs` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `courseId` INTEGER NOT NULL,
+                    `dayIndex` INTEGER NOT NULL,
+                    `sessionType` TEXT NOT NULL,
+                    `startedAtMillis` INTEGER NOT NULL,
+                    `endedAtMillis` INTEGER NOT NULL,
+                    `completed` INTEGER NOT NULL,
+                    `completedExercises` INTEGER NOT NULL,
+                    `totalExercises` INTEGER NOT NULL,
+                    `durationSeconds` INTEGER NOT NULL,
+                    FOREIGN KEY(`courseId`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_session_logs_courseId` ON `course_session_logs` (`courseId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_session_logs_endedAtMillis` ON `course_session_logs` (`endedAtMillis`)")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `course_reminders` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `courseId` INTEGER NOT NULL,
+                    `sessionType` TEXT NOT NULL,
+                    `enabled` INTEGER NOT NULL,
+                    `hour` INTEGER NOT NULL,
+                    `minute` INTEGER NOT NULL,
+                    FOREIGN KEY(`courseId`) REFERENCES `courses`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_course_reminders_courseId` ON `course_reminders` (`courseId`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_course_reminders_courseId_sessionType` ON `course_reminders` (`courseId`, `sessionType`)")
         }
     }
 
@@ -112,7 +250,7 @@ object AppModule {
             SollDatabase::class.java,
             "soll_database"
         )
-            .addMigrations(migration2To3)
+            .addMigrations(migration2To3, migration3To4)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -143,21 +281,32 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideCourseProgramDao(database: SollDatabase): CourseProgramDao =
+        database.courseProgramDao()
+
+    @Provides
+    @Singleton
     fun provideBreathingRepository(dao: BreathingSessionDao): BreathingRepository =
         BreathingRepository(dao)
 
     @Provides
     @Singleton
+    fun provideCourseProgramRepository(
+        @ApplicationContext context: Context,
+        database: SollDatabase,
+        dao: CourseProgramDao
+    ): CourseProgramRepository = CourseProgramRepository(context, database, dao)
+
+    @Provides
+    @Singleton
     fun provideEncryptedSharedPreferences(@ApplicationContext context: Context): android.content.SharedPreferences {
         return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
+            val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
 
             EncryptedSharedPreferences.create(
-                context,
                 ENCRYPTED_PREFS_NAME,
-                masterKey,
+                masterKeyAlias,
+                context,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )

@@ -8,6 +8,8 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import com.soll.domain.tts.book.TtsPrepareResult
+import com.soll.domain.tts.catalog.TtsPackLibrary
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,10 +21,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
-import java.io.FileOutputStream
-import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
@@ -34,7 +35,8 @@ import java.util.Locale
  */
 @Singleton
 class UtrobinTtsEngine @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val packLibrary: TtsPackLibrary,
 ) {
     private var ortSession: OrtSession? = null
     private var token2id: Map<Char, Int> = emptyMap()
@@ -71,6 +73,7 @@ class UtrobinTtsEngine @Inject constructor(
     private val sessionLock = Any()
     private var cachedModelPath: String? = null
     private var ortIntraThreads: Int = 2
+    private var selectedPackId: String? = null
     @Volatile
     private var sessionStale: Boolean = false
 
@@ -83,9 +86,6 @@ class UtrobinTtsEngine @Inject constructor(
     }
 
     companion object {
-        private const val ASSETS_DIR = "utrobin_tts"
-        private const val FILES_DIR = "utrobin_tts_extracted"
-        private const val MODEL_NAME = "model.onnx"
         private const val MIN_MODEL_BYTES = 10_000_000L
         val SPEAKERS = listOf("Женский" to 0, "Мужской" to 1)
 
@@ -106,8 +106,11 @@ class UtrobinTtsEngine @Inject constructor(
     data class SentenceInfo(val text: String, val startOffset: Int, val endOffset: Int)
 
     fun isModelDownloaded(): Boolean {
-        val f = File(File(context.filesDir, FILES_DIR), MODEL_NAME)
-        return f.exists() && f.length() >= MIN_MODEL_BYTES
+        return packLibrary.findBestPack(TtsEngineType.UTROBIN)?.isRunnable == true
+    }
+
+    fun setSelectedPackId(packId: String?) {
+        selectedPackId = packId
     }
 
     fun setSpeaker(id: Int) { speakerId = id }
@@ -121,62 +124,63 @@ class UtrobinTtsEngine @Inject constructor(
         if (ortSession != null) sessionStale = true
     }
 
-    suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun initialize(): TtsPrepareResult = withContext(Dispatchers.IO) {
         try {
-            val dir = File(context.filesDir, FILES_DIR)
-            dir.mkdirs()
-
-            val modelFile = File(dir, MODEL_NAME)
+            val pack = selectedPackId?.let(packLibrary::findPackById)
+                ?.takeIf { it.engineFamily == com.soll.domain.tts.catalog.TtsPackEngineFamily.UTROBIN }
+                ?: packLibrary.findBestPack(TtsEngineType.UTROBIN)
+                ?: return@withContext failedPrepare("Не найден pack Utrobin в локальной папке tts")
+            val dir = File(pack.rootDir)
+            val modelFile = File(dir, "model.onnx")
             val tokensFile = File(dir, "tokens.txt")
-            val assetModel = "$ASSETS_DIR/$MODEL_NAME"
-            val assetTokens = "$ASSETS_DIR/tokens.txt"
-
-            if (!modelFile.exists() || modelFile.length() < MIN_MODEL_BYTES) {
-                if (!assetExists(assetModel)) {
-                    Timber.e(
-                        "Utrobin: missing asset $assetModel (dir: ${listAssetsSafe(ASSETS_DIR)})",
-                    )
-                    _isReady.value = false
-                    return@withContext false
-                }
-                Timber.d("Extracting UtrobinTTS from assets...")
-                _downloadProgress.value = 0.1f
-                copyAsset(assetModel, modelFile)
-                _downloadProgress.value = null
-                if (modelFile.length() < MIN_MODEL_BYTES) {
-                    Timber.e("Utrobin: model too small after copy: ${modelFile.length()} bytes")
-                    _isReady.value = false
-                    return@withContext false
-                }
-                Timber.d("Extracted: ${modelFile.length() / 1024 / 1024}MB")
+            if (!modelFile.exists()) {
+                return@withContext failedPrepare(
+                    message = "В pack Utrobin нет model.onnx",
+                    path = dir.absolutePath,
+                )
             }
-
-            if (!assetExists(assetTokens)) {
-                Timber.e("Utrobin: missing $assetTokens")
-                _isReady.value = false
-                return@withContext false
+            if (modelFile.length() < MIN_MODEL_BYTES) {
+                return@withContext failedPrepare(
+                    message = "Файл Utrobin слишком маленький: ${modelFile.length()} bytes",
+                    path = modelFile.absolutePath,
+                )
             }
-            copyTokensAsset(assetTokens, tokensFile)
+            if (!tokensFile.exists()) {
+                return@withContext failedPrepare(
+                    message = "В pack Utrobin нет tokens.txt. Нужен экспортированный словарь токенов.",
+                    path = dir.absolutePath,
+                )
+            }
             token2id = UtrobinCharTokenizer.loadTokenMap(tokensFile)
             if (token2id.isEmpty() || !token2id.containsKey(' ')) {
-                Timber.e("Invalid tokens.txt (no space id)")
-                _isReady.value = false
-                return@withContext false
+                return@withContext failedPrepare(
+                    message = "tokens.txt не распознан: нет корректного id для пробела",
+                    path = tokensFile.absolutePath,
+                )
             }
             maxTokenId = token2id.values.maxOrNull() ?: 42
 
             cachedModelPath = modelFile.absolutePath
             buildOrtSession(modelFile.absolutePath)
             logSessionIoSummary()
-            sampleRate = 16000
+            sampleRate = readSampleRateFromConfig(dir) ?: 16000
             maxSpeakerIndex = 1
             _isReady.value = true
             Timber.d("UtrobinTTS (HF ONNX Runtime) ready, sampleRate=$sampleRate, speakers=${maxSpeakerIndex + 1}")
-            true
+            TtsPrepareResult(
+                success = true,
+                engineType = TtsEngineType.UTROBIN,
+                resolvedPackPath = dir.absolutePath,
+                resolvedVoiceId = speakerId.toString(),
+            )
         } catch (e: Exception) {
             Timber.e(e, "Failed to init UtrobinTTS")
             _isReady.value = false
-            false
+            TtsPrepareResult(
+                success = false,
+                engineType = TtsEngineType.UTROBIN,
+                message = e.message ?: "Failed to init UtrobinTTS",
+            )
         }
     }
 
@@ -214,33 +218,6 @@ class UtrobinTtsEngine @Inject constructor(
         buildOrtSession(path)
     }
 
-    private fun copyAsset(assetPath: String, target: File) {
-        context.assets.open(assetPath).use { inp ->
-            FileOutputStream(target).use { out -> inp.copyTo(out) }
-        }
-    }
-
-    private fun copyTokensAsset(assetPath: String, target: File) {
-        context.assets.open(assetPath).use { inp ->
-            val text = inp.bufferedReader(StandardCharsets.UTF_8).readText()
-            val normalized = text.replace("\r\n", "\n").replace('\r', '\n').trimEnd()
-            target.writeText(normalized, StandardCharsets.UTF_8)
-        }
-    }
-
-    private fun assetExists(assetPath: String): Boolean = try {
-        context.assets.open(assetPath).close()
-        true
-    } catch (_: Exception) {
-        false
-    }
-
-    private fun listAssetsSafe(path: String): List<String> = try {
-        context.assets.list(path)?.toList().orEmpty()
-    } catch (_: Exception) {
-        emptyList()
-    }
-
     private fun normalizeForUtrobinTts(text: String): String {
         val lower = text.lowercase(Locale("ru", "RU"))
         val sb = StringBuilder(lower.length)
@@ -252,6 +229,27 @@ class UtrobinTtsEngine @Inject constructor(
             }
         }
         return sb.toString().replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun readSampleRateFromConfig(root: File): Int? {
+        val config = File(root, "config.json")
+        if (!config.exists()) return null
+        return runCatching {
+            val json = JSONObject(config.readText())
+            json.optInt("sampling_rate").takeIf { it > 0 }
+                ?: json.optJSONObject("audio")?.optInt("sample_rate")?.takeIf { it > 0 }
+                ?: json.optJSONObject("data")?.optInt("sampling_rate")?.takeIf { it > 0 }
+        }.getOrNull()
+    }
+
+    private fun failedPrepare(message: String, path: String? = null): TtsPrepareResult {
+        _isReady.value = false
+        return TtsPrepareResult(
+            success = false,
+            engineType = TtsEngineType.UTROBIN,
+            resolvedPackPath = path,
+            message = message,
+        )
     }
 
     private fun clampedSpeakerId(): Int = speakerId.coerceIn(0, maxSpeakerIndex)

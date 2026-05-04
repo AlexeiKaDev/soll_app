@@ -49,6 +49,16 @@ class SollApplication : Application() {
             }
             notificationManager.createNotificationChannel(ttsChannel)
 
+            val courseReminderChannel = NotificationChannel(
+                COURSE_REMINDER_CHANNEL_ID,
+                "Course reminders",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Daily morning and evening exercise reminders"
+                setShowBadge(true)
+            }
+            notificationManager.createNotificationChannel(courseReminderChannel)
+
             Timber.d("Notification channels created")
         }
     }
@@ -58,5 +68,6 @@ class SollApplication : Application() {
         const val NOTIFICATION_ID = 1001
         const val TTS_NOTIFICATION_CHANNEL_ID = "soll_tts_service"
         const val TTS_NOTIFICATION_ID = 1002
+        const val COURSE_REMINDER_CHANNEL_ID = "soll_course_reminders"
     }
 }

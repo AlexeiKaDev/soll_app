@@ -28,6 +28,9 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_UTROBIN_ORT_THREADS = "tts_utrobin_ort_threads"
         private const val KEY_TTS_NATASHA_ORT_THREADS = "tts_natasha_ort_threads"
         private const val KEY_TTS_SHERPA_NUM_THREADS = "tts_sherpa_num_threads"
+        private const val KEY_TTS_PIPER_PACK_ID = "tts_piper_pack_id"
+        private const val KEY_TTS_NATASHA_PACK_ID = "tts_natasha_pack_id"
+        private const val KEY_TTS_UTROBIN_PACK_ID = "tts_utrobin_pack_id"
         private const val KEY_TTS_BOOK_PERF_PROFILE = "tts_book_perf_profile"
         private const val KEY_BOOK_READER_S200_BOOTSTRAP = "book_reader_s200_bootstrap_done"
         private const val KEY_TTS_SYSTEM_PITCH = "tts_system_pitch"
@@ -35,6 +38,7 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_ONNX_PRECISION = "tts_onnx_precision"
         /** Последний URI дерева для импортa ONNX-паков (SAF); для повтора «указать ту же папку». */
         private const val KEY_TTS_ONNX_IMPORT_TREE_URI = "tts_onnx_import_tree_uri"
+        private const val KEY_TTS_MODEL_ROOT_URI = "tts_model_root_uri"
     }
 
     // Bot Token (encrypted storage)
@@ -119,6 +123,18 @@ class SettingsRepository @Inject constructor(
             .putInt(KEY_TTS_SHERPA_NUM_THREADS, value.coerceIn(1, 4))
             .apply()
 
+    var ttsPiperPackId: String?
+        get() = sharedPreferences.getString(KEY_TTS_PIPER_PACK_ID, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_PIPER_PACK_ID, value).apply()
+
+    var ttsNatashaPackId: String?
+        get() = sharedPreferences.getString(KEY_TTS_NATASHA_PACK_ID, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_NATASHA_PACK_ID, value).apply()
+
+    var ttsUtrobinPackId: String?
+        get() = sharedPreferences.getString(KEY_TTS_UTROBIN_PACK_ID, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_UTROBIN_PACK_ID, value).apply()
+
     /**
      * Book reader preset: battery / balanced / quality (threads + chunk merge).
      * See [com.soll.domain.tts.TtsBookPerformanceProfile] and docs/tts-s200-model-shortlist.md.
@@ -165,6 +181,13 @@ class SettingsRepository @Inject constructor(
     var ttsOnnxImportTreeUri: String?
         get() = sharedPreferences.getString(KEY_TTS_ONNX_IMPORT_TREE_URI, null)
         set(value) = sharedPreferences.edit().putString(KEY_TTS_ONNX_IMPORT_TREE_URI, value).apply()
+
+    var ttsModelRootUri: String?
+        get() = sharedPreferences.getString(KEY_TTS_MODEL_ROOT_URI, ttsOnnxImportTreeUri)
+        set(value) = sharedPreferences.edit()
+            .putString(KEY_TTS_MODEL_ROOT_URI, value)
+            .putString(KEY_TTS_ONNX_IMPORT_TREE_URI, value)
+            .apply()
 
     // Bot configs from database
     fun getAllBotConfigs(): Flow<List<BotConfigEntity>> = botConfigDao.getAllConfigs()

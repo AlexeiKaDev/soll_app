@@ -21,7 +21,7 @@ interface TtsBookEngine {
      * Load models / warm up. For system engine may be a no-op; use [SystemAndroidBookEngine.setup]
      * for TextToSpeech construction.
      */
-    suspend fun prepare(): Boolean
+    suspend fun prepare(): TtsPrepareResult
 
     suspend fun speakChapter(text: String, onChapterFinished: () -> Unit)
 
@@ -33,6 +33,9 @@ interface TtsBookEngine {
 
     /** Applied only if [voiceOptions] is non-empty. */
     fun setVoiceId(voiceId: String) {}
+
+    /** Applied only for offline engines that manage multiple local packs. */
+    fun setPackId(packId: String?) {}
 
     fun shutdown()
 
@@ -49,6 +52,14 @@ interface TtsBookEngine {
     /** CPU/thread budget and chunking for offline book engines. */
     fun applyPerformanceProfile(profile: TtsBookPerformanceProfile) {}
 }
+
+data class TtsPrepareResult(
+    val success: Boolean,
+    val engineType: TtsEngineType,
+    val resolvedPackPath: String? = null,
+    val resolvedVoiceId: String? = null,
+    val message: String? = null,
+)
 
 data class TtsVoiceOption(
     val id: String,

@@ -8,6 +8,8 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import com.soll.domain.tts.book.TtsPrepareResult
+import com.soll.domain.tts.catalog.TtsPackLibrary
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,20 +21,21 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
-import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
 
 /**
  * Offline Natasha VITS2 ONNX engine.
- * Model must be bundled inside APK assets and extracted on first run.
+ * Model is imported from the user-provided local `tts` folder into app-private storage.
  */
 @Singleton
 class NatashaTtsEngine @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val packLibrary: TtsPackLibrary,
 ) {
     private var ortSession: OrtSession? = null
     private var audioTrack: AudioTrack? = null
@@ -65,8 +68,10 @@ class NatashaTtsEngine @Inject constructor(
     private val sessionLock = Any()
     private var cachedModelPath: String? = null
     private var ortIntraThreads: Int = 2
+    private var selectedPackId: String? = null
     @Volatile
     private var sessionStale: Boolean = false
+    private var tokenizerProfile: NatashaSymbolTokenizer.Profile = NatashaSymbolTokenizer.defaultProfile()
 
     fun applyPerformanceProfile(profile: TtsBookPerformanceProfile) {
         val (a, b) = TtsBookPerformanceProfile.chunkMergeLimits(profile)
@@ -85,64 +90,77 @@ class NatashaTtsEngine @Inject constructor(
     }
 
     companion object {
-        private const val ASSETS_DIR = "natasha_vits2"
-        private const val FILES_DIR = "natasha_vits2_extracted"
-        private const val MODEL_NAME = "model.onnx"
-        private val ASSET_MODEL_CANDIDATES = listOf(
+        private val MODEL_CANDIDATES = listOf(
             "model.onnx",
             "natasha.onnx",
         )
         private const val MIN_MODEL_BYTES = 10_000_000L
 
-        /** (noise_scale, length_scale, noise_scale_w) to speaker id — try in order on failure. */
+        /**
+         * Upstream shigabeev/vits2-inference runs `frappuccino/vits2_ru_natasha` with
+         * scales=[0.667, 1.0, 0.8] and sid=[3]. Keep the exact known-good contract first.
+         */
         private val SCALES_SID_FALLBACKS: List<Pair<FloatArray, Long>> = listOf(
+            floatArrayOf(0.667f, 1f, 0.8f) to 3L,
             floatArrayOf(0.667f, 1f, 0.8f) to 0L,
-            floatArrayOf(1f, 1f, 1f) to 0L,
-            floatArrayOf(0.8f, 1f, 0.8f) to 0L,
             floatArrayOf(0.667f, 1f, 0.8f) to 1L,
+            floatArrayOf(1f, 1f, 1f) to 3L,
         )
     }
 
     data class SentenceInfo(val text: String, val startOffset: Int, val endOffset: Int)
 
     fun isModelDownloaded(): Boolean {
-        val f = File(File(context.filesDir, FILES_DIR), MODEL_NAME)
-        return f.exists() && f.length() >= MIN_MODEL_BYTES
+        return packLibrary.findBestPack(TtsEngineType.NATASHA)?.isRunnable == true
     }
 
-    suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
+    fun setSelectedPackId(packId: String?) {
+        selectedPackId = packId
+    }
+
+    suspend fun initialize(): TtsPrepareResult = withContext(Dispatchers.IO) {
         try {
-            val dir = File(context.filesDir, FILES_DIR)
-            dir.mkdirs()
-            val modelFile = File(dir, MODEL_NAME)
-            if (!modelFile.exists() || modelFile.length() < MIN_MODEL_BYTES) {
-                Timber.d("Extracting Natasha VITS2 from assets...")
-                _downloadProgress.value = 0.1f
-                val sourceAsset = ASSET_MODEL_CANDIDATES
-                    .map { "$ASSETS_DIR/$it" }
-                    .firstOrNull { assetExists(it) }
-                    ?: throw IllegalStateException(
-                        "No Natasha model in assets/$ASSETS_DIR. Expected one of: $ASSET_MODEL_CANDIDATES. " +
-                            "Found: ${listAssetsSafe(ASSETS_DIR)}",
-                    )
-                copyAsset(sourceAsset, modelFile)
-                _downloadProgress.value = null
-                Timber.d("Extracted Natasha model from $sourceAsset: ${modelFile.length() / 1024 / 1024}MB")
+            val pack = selectedPackId?.let(packLibrary::findPackById)
+                ?.takeIf { it.engineFamily == com.soll.domain.tts.catalog.TtsPackEngineFamily.NATASHA }
+                ?: packLibrary.findBestPack(TtsEngineType.NATASHA)
+                ?: return@withContext failedPrepare("Не найден pack Natasha VITS2 в локальной папке tts")
+            val dir = File(pack.rootDir)
+            val modelFile = MODEL_CANDIDATES
+                .map { File(dir, it) }
+                .firstOrNull { it.exists() }
+                ?: return@withContext failedPrepare(
+                    message = "В pack Natasha нет model.onnx/natasha.onnx",
+                    path = dir.absolutePath,
+                )
+            if (modelFile.length() < MIN_MODEL_BYTES) {
+                return@withContext failedPrepare(
+                    message = "Файл Natasha слишком маленький: ${modelFile.length()} bytes",
+                    path = modelFile.absolutePath,
+                )
             }
             cachedModelPath = modelFile.absolutePath
+            tokenizerProfile = NatashaSymbolTokenizer.loadProfileFromPack(dir)
+                ?: NatashaSymbolTokenizer.defaultProfile()
             buildOrtSession(modelFile.absolutePath)
-            sampleRate = 22050
+            sampleRate = readSampleRateFromConfig(dir) ?: 22050
             logModelProfile()
             _isReady.value = true
-            Timber.d("Natasha VITS2 ready, sampleRate=$sampleRate, ortThreads=$ortIntraThreads")
-            true
-        } catch (e: Exception) {
-            Timber.e(
-                e,
-                "Natasha init failed. Place model at app/src/main/assets/$ASSETS_DIR/$MODEL_NAME",
+            Timber.d(
+                "Natasha VITS2 ready, sampleRate=$sampleRate, ortThreads=$ortIntraThreads, tokenizer=${tokenizerProfile.sourceLabel}",
             )
+            TtsPrepareResult(
+                success = true,
+                engineType = TtsEngineType.NATASHA,
+                resolvedPackPath = dir.absolutePath,
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Natasha init failed")
             _isReady.value = false
-            false
+            TtsPrepareResult(
+                success = false,
+                engineType = TtsEngineType.NATASHA,
+                message = e.message ?: "Natasha init failed",
+            )
         }
     }
 
@@ -178,25 +196,6 @@ class NatashaTtsEngine @Inject constructor(
         if (!sessionStale) return
         val path = cachedModelPath ?: return
         buildOrtSession(path)
-    }
-
-    private fun copyAsset(assetPath: String, target: File) {
-        context.assets.open(assetPath).use { inp ->
-            FileOutputStream(target).use { out -> inp.copyTo(out) }
-        }
-    }
-
-    private fun assetExists(assetPath: String): Boolean = try {
-        context.assets.open(assetPath).close()
-        true
-    } catch (_: Exception) {
-        false
-    }
-
-    private fun listAssetsSafe(path: String): List<String> = try {
-        context.assets.list(path)?.toList().orEmpty()
-    } catch (_: Exception) {
-        emptyList()
     }
 
     suspend fun speakChapter(text: String, onChapterFinished: () -> Unit = {}) = coroutineScope {
@@ -249,7 +248,7 @@ class NatashaTtsEngine @Inject constructor(
         if (text.isBlank()) return null
         val normalized = NatashaSymbolTokenizer.normalizeLight(text)
         if (normalized.isBlank()) return null
-        val ids = NatashaSymbolTokenizer.textToIds(normalized)
+        val ids = NatashaSymbolTokenizer.textToIds(normalized, tokenizerProfile)
         if (ids.isEmpty()) {
             Timber.w("Natasha: empty token sequence")
             return null
@@ -508,20 +507,66 @@ class NatashaTtsEngine @Inject constructor(
 
     private fun splitIntoSentences(text: String): List<SentenceInfo> {
         val result = mutableListOf<SentenceInfo>()
-        val pattern = Regex("""[.!?]+[\s\n]+|[.!?]+$|\n\n+""")
+        val pattern = Regex("""\n{2,}|[.!?…]+[\s\n]+|[:;]+[\s\n]+|[.!?…]+$""")
         var last = 0
         pattern.findAll(text).forEach { m ->
             val end = m.range.last + 1
             val t = text.substring(last, end).trim()
-            if (t.isNotBlank()) result.add(SentenceInfo(t, last, end))
+            if (t.isNotBlank()) splitLargeChunk(t, last, end).forEach(result::add)
             last = end
         }
         if (last < text.length) {
             val t = text.substring(last).trim()
-            if (t.isNotBlank()) result.add(SentenceInfo(t, last, text.length))
+            if (t.isNotBlank()) splitLargeChunk(t, last, text.length).forEach(result::add)
         }
-        if (result.isEmpty() && text.isNotBlank()) result.add(SentenceInfo(text.trim(), 0, text.length))
+        if (result.isEmpty() && text.isNotBlank()) {
+            splitLargeChunk(text.trim(), 0, text.length).forEach(result::add)
+        }
         return mergeNearbySentences(result)
+    }
+
+    private fun splitLargeChunk(chunk: String, start: Int, end: Int): List<SentenceInfo> {
+        if (chunk.length <= 240) return listOf(SentenceInfo(chunk, start, end))
+        val out = mutableListOf<SentenceInfo>()
+        var cursor = 0
+        while (cursor < chunk.length) {
+            val rawEnd = (cursor + 220).coerceAtMost(chunk.length)
+            if (rawEnd >= chunk.length) {
+                val last = chunk.substring(cursor).trim()
+                if (last.isNotBlank()) out += SentenceInfo(last, start + cursor, end)
+                break
+            }
+            val region = chunk.substring(cursor, rawEnd)
+            val splitAt = maxOf(region.lastIndexOf(", "), region.lastIndexOf(" - "), region.lastIndexOf(' '))
+                .takeIf { it > 32 } ?: region.length
+            val pieceEnd = (cursor + splitAt).coerceAtMost(chunk.length)
+            val piece = chunk.substring(cursor, pieceEnd).trim()
+            if (piece.isNotBlank()) {
+                out += SentenceInfo(piece, start + cursor, start + pieceEnd)
+            }
+            cursor = pieceEnd.coerceAtLeast(cursor + 1)
+        }
+        return out
+    }
+
+    private fun readSampleRateFromConfig(root: File): Int? {
+        val config = File(root, "config.json")
+        if (!config.exists()) return null
+        return runCatching {
+            val json = JSONObject(config.readText())
+            json.optInt("sampling_rate").takeIf { it > 0 }
+                ?: json.optJSONObject("data")?.optInt("sampling_rate")?.takeIf { it > 0 }
+        }.getOrNull()
+    }
+
+    private fun failedPrepare(message: String, path: String? = null): TtsPrepareResult {
+        _isReady.value = false
+        return TtsPrepareResult(
+            success = false,
+            engineType = TtsEngineType.NATASHA,
+            resolvedPackPath = path,
+            message = message,
+        )
     }
 
     /** Merge short neighbour sentences to reduce synthesis gaps between chunks. */

@@ -13,6 +13,7 @@ import com.soll.data.repository.SettingsRepository
 import com.soll.data.service.TtsService
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TextToSpeechManager
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
@@ -20,6 +21,10 @@ import com.soll.domain.tts.TtsServiceAction
 import com.soll.domain.tts.TtsState
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
+import com.soll.domain.tts.catalog.DetectedTtsPack
+import com.soll.domain.tts.catalog.DownloadableTtsPack
+import com.soll.domain.tts.catalog.TtsPackEngineFamily
+import com.soll.domain.tts.catalog.TtsPackLibrary
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import com.soll.domain.tts.onnx.OnnxModelPackManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import kotlin.math.roundToInt
 import javax.inject.Inject
 
@@ -65,12 +71,21 @@ data class BookReaderUiState(
     /** Слайдеры и др. из [TtsBookEngine.tunableSettings] активного движка. */
     val engineTunables: List<TtsEngineTunable> = emptyList(),
     val systemPitch: Float = 1.0f,
+    val detectedTtsPacks: List<DetectedTtsPack> = emptyList(),
+    val downloadableTtsPacks: List<DownloadableTtsPack> = emptyList(),
+    val packDownloadProgress: Float? = null,
+    val packDownloadLabel: String? = null,
+    val lastTtsModelRootUri: String? = null,
+    val selectedPiperPackId: String? = null,
+    val selectedNatashaPackId: String? = null,
+    val selectedUtrobinPackId: String? = null,
+    val piperDiagnostics: PiperPlaybackDiagnostics = PiperPlaybackDiagnostics(),
 )
 
 sealed class BookReaderEvent {
     data class ShowError(val message: String) : BookReaderEvent()
     data class BookImported(val title: String) : BookReaderEvent()
-    data class OnnxPacksImported(val count: Int) : BookReaderEvent()
+    data class TtsPacksImported(val count: Int) : BookReaderEvent()
 }
 
 @HiltViewModel
@@ -80,6 +95,7 @@ class BookReaderViewModel @Inject constructor(
     private val ttsManager: TextToSpeechManager,
     private val settingsRepository: SettingsRepository,
     private val onnxModelPackManager: OnnxModelPackManager,
+    private val ttsPackLibrary: TtsPackLibrary,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookReaderUiState())
@@ -87,6 +103,7 @@ class BookReaderViewModel @Inject constructor(
 
     private val _events = MutableSharedFlow<BookReaderEvent>()
     val events: SharedFlow<BookReaderEvent> = _events.asSharedFlow()
+    private var lastPackDownloadErrorMessage: String? = null
 
     init {
         loadBooks()
@@ -95,6 +112,7 @@ class BookReaderViewModel @Inject constructor(
         observeTtsState()
         observeChapterFinished()
         observeServiceActions()
+        observePackDownloads()
     }
 
     private fun loadBooks() {
@@ -109,6 +127,8 @@ class BookReaderViewModel @Inject constructor(
         ensureS200BookReaderBootstrap()
         val profile = TtsBookPerformanceProfile.fromStorage(settingsRepository.ttsBookPerformanceProfile)
         ttsManager.applyBookPerformanceProfile(profile)
+        val detectedPacks = ttsPackLibrary.listDetectedPacks()
+        val downloadablePacks = ttsPackLibrary.listDownloadableRussianPacks()
 
         val engineType = when (settingsRepository.ttsEngineType) {
             "silero" -> TtsEngineType.SILERO
@@ -119,13 +139,22 @@ class BookReaderViewModel @Inject constructor(
         }
         val sileroVoice = settingsRepository.ttssileroSpeaker
         val utrobinVoice = settingsRepository.ttsUtrobinSpeaker
+        val piperPackId = resolveSavedPiperPackId(
+            detected = detectedPacks,
+            savedPackId = settingsRepository.ttsPiperPackId,
+            legacyVoiceId = sileroVoice,
+        )
+        val natashaPackId = settingsRepository.ttsNatashaPackId
+        val utrobinPackId = settingsRepository.ttsUtrobinPackId
         val utrobinOrt = settingsRepository.ttsUtrobinOrtIntraThreads
         val natashaOrt = settingsRepository.ttsNatashaOrtIntraThreads
         val sherpaTh = settingsRepository.ttsSherpaNumThreads
         val pitch = settingsRepository.ttsSystemPitch
         ttsManager.setEngineType(engineType)
-        ttsManager.setVoiceIdForEngine(TtsEngineType.SILERO, sileroVoice)
         ttsManager.setVoiceIdForEngine(TtsEngineType.UTROBIN, utrobinVoice)
+        ttsManager.setPackIdForEngine(TtsEngineType.SILERO, piperPackId)
+        ttsManager.setPackIdForEngine(TtsEngineType.NATASHA, natashaPackId)
+        ttsManager.setPackIdForEngine(TtsEngineType.UTROBIN, utrobinPackId)
         ttsManager.applyTunableForEngine(TtsEngineType.UTROBIN, "ort_intra_threads", utrobinOrt.toFloat())
         ttsManager.applyTunableForEngine(TtsEngineType.NATASHA, "natasha_ort_intra_threads", natashaOrt.toFloat())
         ttsManager.applyTunableForEngine(TtsEngineType.SILERO, "sherpa_num_threads", sherpaTh.toFloat())
@@ -135,6 +164,13 @@ class BookReaderViewModel @Inject constructor(
         val selectedOnnxPack = installedOnnxPacks.firstOrNull {
             buildOnnxPackKey(it.modelId, it.precision) == savedPackKey
         } ?: onnxModelPackManager.pickBestRussianPack()
+        Timber.d(
+            "BookReader loadSettings engine=%s detectedPacks=%d downloadable=%d savedTtsRoot=%s",
+            engineType,
+            detectedPacks.size,
+            downloadablePacks.size,
+            settingsRepository.ttsModelRootUri,
+        )
         ttsManager.setSelectedOnnxPack(selectedOnnxPack)
         _uiState.update {
             it.copy(
@@ -143,17 +179,24 @@ class BookReaderViewModel @Inject constructor(
                 speechRate = settingsRepository.ttsSpeechRate,
                 engineType = engineType,
                 sileroModelDownloaded = ttsManager.isModelDownloaded(),
-                sileroVoiceId = sileroVoice,
+                sileroVoiceId = resolvePiperVoiceId(detectedPacks, piperPackId) ?: sileroVoice,
                 utrobinVoiceId = utrobinVoice,
                 utrobinOrtThreads = utrobinOrt,
                 natashaOrtThreads = natashaOrt,
                 sherpaThreads = sherpaTh,
                 performanceProfile = profile,
                 systemPitch = pitch,
-                ttsVoiceOptions = ttsManager.voiceOptions(engineType),
+                ttsVoiceOptions = if (engineType == TtsEngineType.SILERO) emptyList() else ttsManager.voiceOptions(engineType),
                 engineTunables = ttsManager.tunableSettingsFor(engineType),
                 installedOnnxPacks = installedOnnxPacks,
                 selectedOnnxPackKey = selectedOnnxPack?.let { p -> buildOnnxPackKey(p.modelId, p.precision) },
+                detectedTtsPacks = detectedPacks,
+                downloadableTtsPacks = downloadablePacks,
+                lastTtsModelRootUri = settingsRepository.ttsModelRootUri,
+                selectedPiperPackId = piperPackId,
+                selectedNatashaPackId = natashaPackId,
+                selectedUtrobinPackId = utrobinPackId,
+                piperDiagnostics = ttsManager.piperDiagnostics.value,
             )
         }
     }
@@ -161,7 +204,11 @@ class BookReaderViewModel @Inject constructor(
     private fun ensureS200BookReaderBootstrap() {
         if (settingsRepository.bookReaderS200BootstrapDone) return
         if (isLikelyDoogeeS200()) {
-            settingsRepository.ttsEngineType = "silero"
+            settingsRepository.ttsEngineType = when {
+                ttsPackLibrary.findBestPack(TtsEngineType.NATASHA) != null -> "natasha"
+                ttsPackLibrary.findBestPack(TtsEngineType.UTROBIN) != null -> "utrobin"
+                else -> "system"
+            }
             settingsRepository.ttsBookPerformanceProfile = TtsBookPerformanceProfile.BALANCED.storageKey
             settingsRepository.syncThreadPrefsFromProfile(TtsBookPerformanceProfile.BALANCED)
         }
@@ -237,6 +284,9 @@ class BookReaderViewModel @Inject constructor(
             }
             if (_uiState.value.engineType == TtsEngineType.NATASHA && ttsManager.isModelDownloadedFor(TtsEngineType.NATASHA)) {
                 ttsManager.initializeNatasha()
+            }
+            if (_uiState.value.engineType == TtsEngineType.UTROBIN && ttsManager.isModelDownloadedFor(TtsEngineType.UTROBIN)) {
+                ttsManager.initializeUtrobin()
             }
             if (_uiState.value.engineType == TtsEngineType.ONNX_EXTERNAL) {
                 ttsManager.initializeOnnxExternal()
@@ -409,7 +459,11 @@ class BookReaderViewModel @Inject constructor(
             viewModelScope.launch {
                 val success = ttsManager.initializeSilero()
                 if (success) startPlayback(chapter)
-                else _events.emit(BookReaderEvent.ShowError("Не удалось загрузить модель. Проверьте интернет."))
+                else _events.emit(
+                    BookReaderEvent.ShowError(
+                        "Piper/Sherpa не готов: проверь локальный Piper pack в папке tts. Нужны ONNX-голос, tokens.txt и espeak-ng-data.",
+                    ),
+                )
             }
             return
         }
@@ -419,7 +473,7 @@ class BookReaderViewModel @Inject constructor(
                 if (success) startPlayback(chapter)
                 else _events.emit(
                     BookReaderEvent.ShowError(
-                        "Не удалось инициализировать UtrobinTTS (модель в приложении). Пересоберите APK или сообщите об ошибке.",
+                        "Не удалось инициализировать UtrobinTTS. Проверь локальный pack Utrobin в папке tts: model.onnx и tokens.txt.",
                     ),
                 )
             }
@@ -431,7 +485,7 @@ class BookReaderViewModel @Inject constructor(
                 if (success) startPlayback(chapter)
                 else _events.emit(
                     BookReaderEvent.ShowError(
-                        "Не удалось инициализировать Natasha VITS2. Проверьте assets: app/src/main/assets/natasha_vits2/model.onnx",
+                        "Не удалось инициализировать Natasha VITS2. Проверь локальный pack Natasha в папке tts.",
                     ),
                 )
             }
@@ -443,7 +497,7 @@ class BookReaderViewModel @Inject constructor(
                 if (success) startPlayback(chapter)
                 else _events.emit(
                     BookReaderEvent.ShowError(
-                        "Не найдены установленные ONNX модели. Подготовьте пак через tools/tts/prepare_onnx_pack.py.",
+                        "Не найден runnable русский ONNX pack. Неподдержанные и нерусские паки смотри в списке моделей.",
                     ),
                 )
             }
@@ -510,7 +564,7 @@ class BookReaderViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 engineType = type,
-                ttsVoiceOptions = ttsManager.voiceOptions(type),
+                ttsVoiceOptions = if (type == TtsEngineType.SILERO) emptyList() else ttsManager.voiceOptions(type),
                 engineTunables = ttsManager.tunableSettingsFor(type),
                 utrobinOrtThreads = settingsRepository.ttsUtrobinOrtIntraThreads,
                 natashaOrtThreads = settingsRepository.ttsNatashaOrtIntraThreads,
@@ -538,14 +592,8 @@ class BookReaderViewModel @Inject constructor(
     fun setEngineVoice(voiceId: String) {
         when (_uiState.value.engineType) {
             TtsEngineType.SILERO -> {
-                settingsRepository.ttssileroSpeaker = voiceId
-                _uiState.update { it.copy(sileroVoiceId = voiceId) }
-                ttsManager.setVoiceIdForEngine(TtsEngineType.SILERO, voiceId)
-                stopTts()
-                viewModelScope.launch {
-                    ttsManager.initializeSilero()
-                    _uiState.update { it.copy(sileroModelDownloaded = ttsManager.isModelDownloaded()) }
-                }
+                val targetPackId = resolvePiperPackIdByVoiceId(_uiState.value.detectedTtsPacks, voiceId) ?: return
+                selectEnginePack(targetPackId)
             }
             TtsEngineType.UTROBIN -> {
                 settingsRepository.ttsUtrobinSpeaker = voiceId
@@ -591,24 +639,27 @@ class BookReaderViewModel @Inject constructor(
     }
 
     /** Импорт из папки (SAF): копирует пакеты в приложение и обновляет список. */
-    fun importOnnxPacksFromUserFolder(treeUri: Uri) {
+    fun importTtsPacksFromUserFolder(treeUri: Uri) {
+        Timber.i("Importing TTS packs from picker uri=%s", treeUri)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { onnxModelPackManager.importPacksFromTreeUri(treeUri) }
+                runCatching { ttsPackLibrary.importFromTreeUri(treeUri) }
             }
             result.fold(
                 onFailure = { e ->
-                    _events.emit(BookReaderEvent.ShowError(e.message ?: "Импорт ONNX не удался"))
+                    Timber.e(e, "TTS pack import failed for uri=%s", treeUri)
+                    _events.emit(BookReaderEvent.ShowError(e.message ?: "Импорт TTS-паков не удался"))
                 },
                 onSuccess = { count ->
-                    settingsRepository.ttsOnnxImportTreeUri = treeUri.toString()
+                    Timber.i("TTS pack import finished uri=%s imported=%d", treeUri, count)
+                    settingsRepository.ttsModelRootUri = treeUri.toString()
                     refreshOnnxPacks()
                     if (count > 0) {
-                        _events.emit(BookReaderEvent.OnnxPacksImported(count))
+                        _events.emit(BookReaderEvent.TtsPacksImported(count))
                     } else {
                         _events.emit(
                             BookReaderEvent.ShowError(
-                                "В выбранной папке нет готовых пакетов с model_manifest.json.",
+                                "В выбранной папке tts не найдены поддерживаемые паки.",
                             ),
                         )
                     }
@@ -617,16 +668,50 @@ class BookReaderViewModel @Inject constructor(
         }
     }
 
+    fun importOnnxPacksFromUserFolder(treeUri: Uri) = importTtsPacksFromUserFolder(treeUri)
+
     fun refreshOnnxPacks() {
+        val detected = ttsPackLibrary.listDetectedPacks()
+        val downloadable = ttsPackLibrary.listDownloadableRussianPacks()
+        val piperPackId = resolveSavedPiperPackId(
+            detected = detected,
+            savedPackId = settingsRepository.ttsPiperPackId,
+            legacyVoiceId = settingsRepository.ttssileroSpeaker,
+        )
+        val natashaPackId = settingsRepository.ttsNatashaPackId?.takeIf { id -> detected.any { it.packId == id } }
+        val utrobinPackId = settingsRepository.ttsUtrobinPackId?.takeIf { id -> detected.any { it.packId == id } }
+        if (piperPackId == null) settingsRepository.ttsPiperPackId = null
+        if (natashaPackId == null) settingsRepository.ttsNatashaPackId = null
+        if (utrobinPackId == null) settingsRepository.ttsUtrobinPackId = null
         val packs = onnxModelPackManager.listInstalledPacks()
         val selected = packs.firstOrNull {
             buildOnnxPackKey(it.modelId, it.precision) == _uiState.value.selectedOnnxPackKey
         } ?: onnxModelPackManager.pickBestRussianPack()
         ttsManager.setSelectedOnnxPack(selected)
+        ttsManager.setPackIdForEngine(TtsEngineType.SILERO, piperPackId)
+        ttsManager.setPackIdForEngine(TtsEngineType.NATASHA, natashaPackId)
+        ttsManager.setPackIdForEngine(TtsEngineType.UTROBIN, utrobinPackId)
+        Timber.d(
+            "refreshOnnxPacks detected=%d downloadable=%d selectedPiper=%s selectedNatasha=%s selectedUtrobin=%s savedRoot=%s",
+            detected.size,
+            downloadable.size,
+            piperPackId,
+            natashaPackId,
+            utrobinPackId,
+            settingsRepository.ttsModelRootUri,
+        )
         _uiState.update {
             it.copy(
+                sileroModelDownloaded = ttsManager.isModelDownloaded(),
                 installedOnnxPacks = packs,
                 selectedOnnxPackKey = selected?.let { p -> buildOnnxPackKey(p.modelId, p.precision) },
+                detectedTtsPacks = detected,
+                downloadableTtsPacks = downloadable,
+                lastTtsModelRootUri = settingsRepository.ttsModelRootUri,
+                sileroVoiceId = resolvePiperVoiceId(detected, piperPackId) ?: settingsRepository.ttssileroSpeaker,
+                selectedPiperPackId = piperPackId,
+                selectedNatashaPackId = natashaPackId,
+                selectedUtrobinPackId = utrobinPackId,
             )
         }
     }
@@ -647,6 +732,129 @@ class BookReaderViewModel @Inject constructor(
     fun deleteBook(bookEntity: BookEntity) {
         viewModelScope.launch {
             bookRepository.deleteBook(bookEntity.id)
+        }
+    }
+
+    fun deleteTtsPack(packId: String) {
+        val deleted = ttsPackLibrary.deletePack(packId)
+        if (deleted) {
+            when (packId) {
+                _uiState.value.selectedPiperPackId -> {
+                    settingsRepository.ttsPiperPackId = null
+                    settingsRepository.ttssileroSpeaker = "irina"
+                }
+                _uiState.value.selectedNatashaPackId -> settingsRepository.ttsNatashaPackId = null
+                _uiState.value.selectedUtrobinPackId -> settingsRepository.ttsUtrobinPackId = null
+            }
+            refreshOnnxPacks()
+        } else {
+            viewModelScope.launch {
+                _events.emit(BookReaderEvent.ShowError("Не удалось удалить pack: $packId"))
+            }
+        }
+    }
+
+    fun deleteSuggestedTtsPacks() {
+        val deleted = ttsPackLibrary.deleteSuggestedPacks()
+        if (deleted > 0) {
+            refreshOnnxPacks()
+        } else {
+            viewModelScope.launch {
+                _events.emit(BookReaderEvent.ShowError("Нет удаляемых неподдерживаемых pack-ов"))
+            }
+        }
+    }
+
+    fun downloadTtsPack(packId: String) {
+        val descriptor = _uiState.value.downloadableTtsPacks.firstOrNull { it.id == packId }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = ttsPackLibrary.downloadPack(packId)
+            if (ok) {
+                when (descriptor?.engineFamily) {
+                    TtsPackEngineFamily.PIPER -> {
+                        descriptor.suggestedEnginePackId?.let { suggestedPackId ->
+                            settingsRepository.ttsPiperPackId = suggestedPackId
+                            ttsManager.setPackIdForEngine(TtsEngineType.SILERO, suggestedPackId)
+                            settingsRepository.ttssileroSpeaker =
+                                resolvePiperVoiceId(ttsPackLibrary.listDetectedPacks(), suggestedPackId) ?: settingsRepository.ttssileroSpeaker
+                        }
+                    }
+                    TtsPackEngineFamily.NATASHA -> {
+                        descriptor.suggestedEnginePackId?.let { suggestedPackId ->
+                            settingsRepository.ttsNatashaPackId = suggestedPackId
+                            ttsManager.setPackIdForEngine(TtsEngineType.NATASHA, suggestedPackId)
+                        }
+                    }
+                    TtsPackEngineFamily.UTROBIN -> {
+                        descriptor.suggestedEnginePackId?.let { suggestedPackId ->
+                            settingsRepository.ttsUtrobinPackId = suggestedPackId
+                            ttsManager.setPackIdForEngine(TtsEngineType.UTROBIN, suggestedPackId)
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
+        viewModelScope.launch {
+            ttsManager.piperDiagnostics.collect { diagnostics ->
+                _uiState.update { it.copy(piperDiagnostics = diagnostics) }
+            }
+        }
+    }
+
+    fun selectEnginePack(packId: String) {
+        val selected = _uiState.value.detectedTtsPacks.firstOrNull { it.packId == packId } ?: return
+        when (_uiState.value.engineType) {
+            TtsEngineType.SILERO -> {
+                settingsRepository.ttsPiperPackId = packId
+                resolvePiperVoiceId(_uiState.value.detectedTtsPacks, packId)?.let { settingsRepository.ttssileroSpeaker = it }
+                ttsManager.setPackIdForEngine(TtsEngineType.SILERO, packId)
+                _uiState.update {
+                    it.copy(
+                        selectedPiperPackId = packId,
+                        sileroVoiceId = resolvePiperVoiceId(_uiState.value.detectedTtsPacks, packId) ?: it.sileroVoiceId,
+                    )
+                }
+            }
+            TtsEngineType.NATASHA -> {
+                settingsRepository.ttsNatashaPackId = packId
+                ttsManager.setPackIdForEngine(TtsEngineType.NATASHA, packId)
+                _uiState.update { it.copy(selectedNatashaPackId = packId) }
+            }
+            TtsEngineType.UTROBIN -> {
+                settingsRepository.ttsUtrobinPackId = packId
+                ttsManager.setPackIdForEngine(TtsEngineType.UTROBIN, packId)
+                _uiState.update { it.copy(selectedUtrobinPackId = packId) }
+            }
+            else -> return
+        }
+        if (selected.isRunnable) {
+            when (_uiState.value.engineType) {
+                TtsEngineType.SILERO -> viewModelScope.launch { ttsManager.initializeSilero() }
+                TtsEngineType.NATASHA -> viewModelScope.launch { ttsManager.initializeNatasha() }
+                TtsEngineType.UTROBIN -> viewModelScope.launch { ttsManager.initializeUtrobin() }
+                else -> {}
+            }
+        }
+    }
+
+    private fun observePackDownloads() {
+        viewModelScope.launch {
+            ttsPackLibrary.downloadState.collect { state ->
+                _uiState.update {
+                    it.copy(
+                        packDownloadProgress = state?.progress,
+                        packDownloadLabel = state?.label ?: state?.message,
+                    )
+                }
+                if (state == null) {
+                    lastPackDownloadErrorMessage = null
+                    refreshOnnxPacks()
+                } else if (state.isError && state.message != null && state.message != lastPackDownloadErrorMessage) {
+                    lastPackDownloadErrorMessage = state.message
+                    _events.emit(BookReaderEvent.ShowError(state.message))
+                }
+            }
         }
     }
 
@@ -697,6 +905,52 @@ class BookReaderViewModel @Inject constructor(
         if (TtsService.isRunning.value) {
             TtsService.updateNotification(appContext, getNotificationTitle(), getNotificationSubtitle())
         }
+    }
+
+    private fun resolveSavedPiperPackId(
+        detected: List<DetectedTtsPack>,
+        savedPackId: String?,
+        legacyVoiceId: String?,
+    ): String? {
+        val piperPacks = detected.filter { it.engineFamily == TtsPackEngineFamily.PIPER }
+        savedPackId?.takeIf { id -> piperPacks.any { it.packId == id } }?.let { validSaved ->
+            resolvePiperVoiceId(piperPacks, validSaved)?.let { settingsRepository.ttssileroSpeaker = it }
+            return validSaved
+        }
+        legacyVoiceId?.let { voiceId ->
+            resolvePiperPackIdByVoiceId(piperPacks, voiceId)?.let { matchedPackId ->
+                settingsRepository.ttsPiperPackId = matchedPackId
+                settingsRepository.ttssileroSpeaker = voiceId
+                return matchedPackId
+            }
+        }
+        val fallback = piperPacks.firstOrNull { it.isRunnable }?.packId
+        settingsRepository.ttsPiperPackId = fallback
+        fallback?.let { packId ->
+            resolvePiperVoiceId(piperPacks, packId)?.let { settingsRepository.ttssileroSpeaker = it }
+        }
+        return fallback
+    }
+
+    private fun resolvePiperPackIdByVoiceId(
+        detected: List<DetectedTtsPack>,
+        voiceId: String,
+    ): String? {
+        return detected
+            .asSequence()
+            .filter { it.engineFamily == TtsPackEngineFamily.PIPER }
+            .firstOrNull { pack ->
+                pack.voices.any { it.id.equals(voiceId, ignoreCase = true) }
+            }
+            ?.packId
+    }
+
+    private fun resolvePiperVoiceId(
+        detected: List<DetectedTtsPack>,
+        packId: String?,
+    ): String? {
+        val pack = packId?.let { id -> detected.firstOrNull { it.packId == id } } ?: return null
+        return pack.voices.firstOrNull()?.id
     }
 
     override fun onCleared() {

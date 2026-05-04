@@ -21,7 +21,7 @@ class NatashaVitsBookEngine @Inject constructor(
 
     override fun voiceOptions(): List<TtsVoiceOption> = emptyList()
 
-    override suspend fun prepare(): Boolean = impl.initialize()
+    override suspend fun prepare(): TtsPrepareResult = impl.initialize()
 
     override suspend fun speakChapter(text: String, onChapterFinished: () -> Unit) {
         impl.speakChapter(text, onChapterFinished)
@@ -31,6 +31,7 @@ class NatashaVitsBookEngine @Inject constructor(
     override suspend fun resume() = impl.resume()
     override fun stop() = impl.stop()
     override fun setSpeechRate(rate: Float) = impl.setSpeechRate(rate)
+    override fun setPackId(packId: String?) = impl.setSelectedPackId(packId)
 
     override fun tunableSettings(): List<TtsEngineTunable> = listOf(
         TtsEngineTunable.Slider(

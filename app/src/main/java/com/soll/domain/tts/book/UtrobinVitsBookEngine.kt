@@ -22,7 +22,7 @@ class UtrobinVitsBookEngine @Inject constructor(
     override fun voiceOptions(): List<TtsVoiceOption> =
         UtrobinTtsEngine.SPEAKERS.map { (label, id) -> TtsVoiceOption(id.toString(), label) }
 
-    override suspend fun prepare(): Boolean = impl.initialize()
+    override suspend fun prepare(): TtsPrepareResult = impl.initialize()
 
     override suspend fun speakChapter(text: String, onChapterFinished: () -> Unit) {
         impl.speakChapter(text, onChapterFinished)
@@ -36,6 +36,8 @@ class UtrobinVitsBookEngine @Inject constructor(
     override fun setVoiceId(voiceId: String) {
         impl.setSpeaker(voiceId.toIntOrNull() ?: 0)
     }
+
+    override fun setPackId(packId: String?) = impl.setSelectedPackId(packId)
 
     override fun tunableSettings(): List<TtsEngineTunable> = listOf(
         TtsEngineTunable.Slider(

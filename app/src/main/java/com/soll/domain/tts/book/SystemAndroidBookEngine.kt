@@ -58,7 +58,10 @@ class SystemAndroidBookEngine @Inject constructor(
         if (key == "pitch") setPitch(value)
     }
 
-    override suspend fun prepare(): Boolean = true
+    override suspend fun prepare(): TtsPrepareResult = TtsPrepareResult(
+        success = true,
+        engineType = type,
+    )
 
     fun setup(enginePackage: String?, onInitialized: (Boolean) -> Unit = {}) {
         shutdownTtsOnly()

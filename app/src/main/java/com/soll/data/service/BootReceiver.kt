@@ -3,11 +3,13 @@ package com.soll.data.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.soll.data.repository.CourseProgramRepository
 import com.soll.data.repository.SettingsRepository
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
 class BootReceiver : BroadcastReceiver() {
@@ -16,6 +18,7 @@ class BootReceiver : BroadcastReceiver() {
     @InstallIn(SingletonComponent::class)
     interface BootReceiverEntryPoint {
         fun settingsRepository(): SettingsRepository
+        fun courseProgramRepository(): CourseProgramRepository
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -29,6 +32,11 @@ class BootReceiver : BroadcastReceiver() {
                 BootReceiverEntryPoint::class.java
             )
             val settingsRepository = entryPoint.settingsRepository()
+            val courseProgramRepository = entryPoint.courseProgramRepository()
+
+            runBlocking {
+                courseProgramRepository.rescheduleAllReminders()
+            }
 
             if (settingsRepository.autoStartEnabled && settingsRepository.hasValidToken()) {
                 Timber.d("Auto-starting bot service")

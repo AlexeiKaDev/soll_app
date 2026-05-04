@@ -101,6 +101,11 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".data.service.CourseReminderReceiver"
+            android:exported="false"
+            android:enabled="true" />
+
         <!-- File Provider for sharing files -->
         <provider
             android:name="androidx.core.content.FileProvider"

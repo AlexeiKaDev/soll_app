@@ -29,7 +29,9 @@ fun LogsScreen(
     var showClearDialog by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
     ) {
         // Header with clear button
         Row(

@@ -2,10 +2,12 @@ package com.soll.domain.tts
 
 import android.speech.tts.TextToSpeech
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.book.PiperSherpaBookEngine
 import com.soll.domain.tts.book.SystemAndroidBookEngine
 import com.soll.domain.tts.book.TtsBookEngine
+import com.soll.domain.tts.book.TtsPrepareResult
 import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.book.NatashaVitsBookEngine
 import com.soll.domain.tts.book.OnnxExternalBookEngine
@@ -89,6 +91,7 @@ class TextToSpeechManager @Inject constructor(
 
     private val _serviceActions = MutableSharedFlow<TtsServiceAction>(extraBufferCapacity = 5)
     val serviceActions: SharedFlow<TtsServiceAction> = _serviceActions.asSharedFlow()
+    val piperDiagnostics: StateFlow<PiperPlaybackDiagnostics> = piperEngine.diagnostics
 
     private var currentText: String? = null
     private var isPaused = false
@@ -113,6 +116,13 @@ class TextToSpeechManager @Inject constructor(
             _engineType.flatMapLatest { engines.getValue(it).downloadProgress }.collect { progress ->
                 if (progress != null && _engineType.value != TtsEngineType.SYSTEM) {
                     _state.value = TtsState.DownloadingModel(progress)
+                }
+            }
+        }
+        scope.launch {
+            piperEngine.playbackFailures.collect { failure ->
+                if (_engineType.value == TtsEngineType.SILERO) {
+                    _state.value = TtsState.Error(failure.toUserMessage())
                 }
             }
         }
@@ -149,13 +159,13 @@ class TextToSpeechManager @Inject constructor(
     suspend fun prepareEngine(type: TtsEngineType): Boolean {
         _state.value = TtsState.Initializing
         val engine = engines.getValue(type)
-        val success = engine.prepare()
-        _state.value = if (success) {
+        val result: TtsPrepareResult = engine.prepare()
+        _state.value = if (result.success) {
             TtsState.Ready
         } else {
-            TtsState.Error("Failed to initialize ${engine.displayName}")
+            TtsState.Error(result.message ?: "Failed to initialize ${engine.displayName}")
         }
-        return success
+        return result.success
     }
 
     fun getAvailableEngines(): List<TextToSpeech.EngineInfo> = systemEngine.availableEngines()
@@ -282,6 +292,10 @@ class TextToSpeechManager @Inject constructor(
 
     fun setVoiceIdForEngine(type: TtsEngineType, voiceId: String) {
         engines.getValue(type).setVoiceId(voiceId)
+    }
+
+    fun setPackIdForEngine(type: TtsEngineType, packId: String?) {
+        engines.getValue(type).setPackId(packId)
     }
 
     fun setSelectedOnnxPack(pack: InstalledOnnxPack?) {

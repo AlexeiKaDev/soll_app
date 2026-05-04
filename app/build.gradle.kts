@@ -1,5 +1,4 @@
-import java.io.InputStream
-import java.net.URL
+import org.gradle.api.tasks.bundling.Zip
 
 plugins {
     alias(libs.plugins.android.application)
@@ -10,42 +9,26 @@ plugins {
 
 private val onnxRuntimeAndroidVersion = "1.24.3"
 
-private val downloadNatashaAsset by tasks.registering {
+private val onnxRuntimeAndroidBase: Configuration =
+    configurations.create("onnxRuntimeAndroidBase").apply {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
+
+private val stripMicrosoftOnnxRuntimeSo by tasks.registering(Zip::class) {
     group = "prepare"
-    description = "Download Natasha ONNX model into app assets"
-    val assetsDir = layout.projectDirectory.dir("src/main/assets/natasha_vits2")
-    val modelFile = assetsDir.file("model.onnx")
-    val tempFile = assetsDir.file("model.onnx.tmp")
-    outputs.file(modelFile)
-    doLast {
-        val assetsDirFile = assetsDir.asFile
-        val modelFileFile = modelFile.asFile
-        val tempFileFile = tempFile.asFile
-        if (!assetsDirFile.exists()) assetsDirFile.mkdirs()
-        val minBytes = 80L * 1024L * 1024L
-        if (modelFileFile.exists() && modelFileFile.length() >= minBytes) {
-            logger.lifecycle("Natasha asset already present: ${modelFileFile.absolutePath}")
-            return@doLast
-        }
-        val url = URL(
-            "https://huggingface.co/frappuccino/vits2_ru_natasha/resolve/main/natasha.onnx",
-        )
-        logger.lifecycle("Downloading Natasha model to assets (one-time)...")
-        url.openStream().use { input: InputStream ->
-            tempFileFile.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
-        if (tempFileFile.length() < minBytes) {
-            val actual = tempFileFile.length()
-            tempFileFile.delete()
-            error("Downloaded Natasha model is too small: $actual bytes")
-        }
-        if (modelFileFile.exists()) modelFileFile.delete()
-        tempFileFile.renameTo(modelFileFile)
-        logger.lifecycle("Natasha model saved: ${modelFileFile.absolutePath} (${modelFileFile.length()} bytes)")
+    description =
+        "Rebuild onnxruntime-android AAR without jni/*/libonnxruntime.so (use Sherpa's copy only)"
+    archiveFileName.set("onnxruntime-android-no-libonnxruntime-so.aar")
+    destinationDirectory.set(layout.buildDirectory.dir("stripped-onnx-android"))
+    dependsOn(onnxRuntimeAndroidBase)
+    from(zipTree(onnxRuntimeAndroidBase.singleFile)) {
+        exclude("jni/**/libonnxruntime.so")
     }
 }
+
+private val strippedOnnxAndroidAar =
+    objects.fileCollection().from(stripMicrosoftOnnxRuntimeSo.flatMap { it.archiveFile })
 
 android {
     namespace = "com.soll"
@@ -104,12 +87,11 @@ android {
     }
 }
 
-tasks.named("preBuild") {
-    dependsOn(downloadNatashaAsset)
-}
-
 dependencies {
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeAndroidVersion")
+    add(
+        onnxRuntimeAndroidBase.name,
+        "com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeAndroidVersion",
+    )
 
     // Core Android
     implementation(libs.androidx.core.ktx)
@@ -161,6 +143,11 @@ dependencies {
 
     // Media session for TTS controls
     implementation("androidx.media:media:1.7.0")
+    implementation("org.apache.commons:commons-compress:1.27.1")
+
+    // Java ONNX Runtime API + JNI from stripped AAR; libonnxruntime.so comes from Sherpa AAR.
+    implementation(strippedOnnxAndroidAar)
+    implementation(files("libs/sherpa-onnx.aar"))
 
     // Logging
     implementation(libs.timber)

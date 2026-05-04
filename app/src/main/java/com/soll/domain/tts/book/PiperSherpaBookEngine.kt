@@ -1,8 +1,12 @@
 package com.soll.domain.tts.book
 
+import com.soll.domain.tts.PiperPlaybackDiagnostics
+import com.soll.domain.tts.PiperPlaybackFailure
 import com.soll.domain.tts.SileroJitEngine
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,11 +22,12 @@ class PiperSherpaBookEngine @Inject constructor(
     override val isSpeaking = impl.isSpeaking
     override val downloadProgress = impl.downloadProgress
     override val currentWordRange = impl.currentWordRange
+    val diagnostics: StateFlow<PiperPlaybackDiagnostics> = impl.diagnostics
+    val playbackFailures: SharedFlow<PiperPlaybackFailure> = impl.playbackFailures
 
-    override fun voiceOptions(): List<TtsVoiceOption> =
-        SileroJitEngine.VOICES.map { TtsVoiceOption(it.id, it.label) }
+    override fun voiceOptions(): List<TtsVoiceOption> = emptyList()
 
-    override suspend fun prepare(): Boolean = impl.initialize()
+    override suspend fun prepare(): TtsPrepareResult = impl.initialize()
 
     override suspend fun speakChapter(text: String, onChapterFinished: () -> Unit) {
         impl.speakChapter(text, onChapterFinished)
@@ -34,6 +39,7 @@ class PiperSherpaBookEngine @Inject constructor(
     override fun setSpeechRate(rate: Float) = impl.setSpeechRate(rate)
 
     override fun setVoiceId(voiceId: String) = impl.setVoice(voiceId)
+    override fun setPackId(packId: String?) = impl.setSelectedPackId(packId)
 
     override fun tunableSettings(): List<TtsEngineTunable> = listOf(
         TtsEngineTunable.Slider(

@@ -1,5 +1,6 @@
 package com.soll.presentation.screens.tools.bookreader
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,12 +28,17 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.soll.data.local.entity.BookEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
+import com.soll.domain.tts.catalog.DetectedTtsPack
+import com.soll.domain.tts.catalog.DownloadableTtsPack
+import com.soll.domain.tts.catalog.TtsPackStatus
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.flow.collectLatest
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +48,13 @@ fun BookReaderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val lastTtsRootUri = remember(uiState.lastTtsModelRootUri) {
+        uiState.lastTtsModelRootUri?.let { raw ->
+            runCatching { Uri.parse(raw) }
+                .onFailure { Timber.w(it, "Failed to parse saved TTS root uri=%s", raw) }
+                .getOrNull()
+        }
+    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -49,10 +62,11 @@ fun BookReaderScreen(
         uri?.let { viewModel.importBook(it) }
     }
 
-    val onnxModelsFolderLauncher = rememberLauncherForActivityResult(
+    val ttsModelsFolderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        uri?.let { viewModel.importOnnxPacksFromUserFolder(it) }
+        Timber.d("OpenDocumentTree result for TTS root: %s", uri)
+        uri?.let { viewModel.importTtsPacksFromUserFolder(it) }
     }
 
     LaunchedEffect(Unit) {
@@ -64,10 +78,10 @@ fun BookReaderScreen(
                 is BookReaderEvent.BookImported -> {
                     Toast.makeText(context, "Imported: ${event.title}", Toast.LENGTH_SHORT).show()
                 }
-                is BookReaderEvent.OnnxPacksImported -> {
+                is BookReaderEvent.TtsPacksImported -> {
                     Toast.makeText(
                         context,
-                        "Импортировано ONNX-пакетов: ${event.count}",
+                        "Импортировано TTS-паков: ${event.count}",
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
@@ -97,6 +111,15 @@ fun BookReaderScreen(
             systemPitch = uiState.systemPitch,
             engineTunables = uiState.engineTunables,
             sileroDownloadProgress = uiState.sileroDownloadProgress,
+            detectedTtsPacks = uiState.detectedTtsPacks,
+            downloadableTtsPacks = uiState.downloadableTtsPacks,
+            packDownloadProgress = uiState.packDownloadProgress,
+            packDownloadLabel = uiState.packDownloadLabel,
+            lastTtsModelRootUri = uiState.lastTtsModelRootUri,
+            selectedPiperPackId = uiState.selectedPiperPackId,
+            selectedNatashaPackId = uiState.selectedNatashaPackId,
+            selectedUtrobinPackId = uiState.selectedUtrobinPackId,
+            piperDiagnostics = uiState.piperDiagnostics,
             installedOnnxPacks = uiState.installedOnnxPacks,
             selectedOnnxPackKey = uiState.selectedOnnxPackKey,
             onBack = { viewModel.closeBook() },
@@ -113,8 +136,15 @@ fun BookReaderScreen(
             onEngineTunableChange = { key, value -> viewModel.applyEngineTunable(key, value) },
             onPerformanceProfileChange = { viewModel.setPerformanceProfile(it) },
             onRefreshOnnxPacks = { viewModel.refreshOnnxPacks() },
-            onPickOnnxImportFolder = { onnxModelsFolderLauncher.launch(null) },
+            onPickOnnxImportFolder = {
+                Timber.d("Launching TTS folder picker with initialUri=%s", lastTtsRootUri)
+                ttsModelsFolderLauncher.launch(lastTtsRootUri)
+            },
             onSelectOnnxPack = { modelId, precision -> viewModel.selectOnnxPack(modelId, precision) },
+            onDeleteTtsPack = { viewModel.deleteTtsPack(it) },
+            onDeleteSuggestedTtsPacks = { viewModel.deleteSuggestedTtsPacks() },
+            onDownloadTtsPack = { viewModel.downloadTtsPack(it) },
+            onSelectEnginePack = { viewModel.selectEnginePack(it) },
             onResetProgress = { viewModel.resetCurrentBookProgress() },
         )
     } else {
@@ -348,6 +378,15 @@ private fun BookReadingScreen(
     systemPitch: Float,
     engineTunables: List<TtsEngineTunable>,
     sileroDownloadProgress: Float?,
+    detectedTtsPacks: List<DetectedTtsPack>,
+    downloadableTtsPacks: List<DownloadableTtsPack>,
+    packDownloadProgress: Float?,
+    packDownloadLabel: String?,
+    lastTtsModelRootUri: String?,
+    selectedPiperPackId: String?,
+    selectedNatashaPackId: String?,
+    selectedUtrobinPackId: String?,
+    piperDiagnostics: PiperPlaybackDiagnostics,
     installedOnnxPacks: List<InstalledOnnxPack>,
     selectedOnnxPackKey: String?,
     onBack: () -> Unit,
@@ -366,6 +405,10 @@ private fun BookReadingScreen(
     onRefreshOnnxPacks: () -> Unit,
     onPickOnnxImportFolder: () -> Unit,
     onSelectOnnxPack: (String, String) -> Unit,
+    onDeleteTtsPack: (String) -> Unit,
+    onDeleteSuggestedTtsPacks: () -> Unit,
+    onDownloadTtsPack: (String) -> Unit,
+    onSelectEnginePack: (String) -> Unit,
     onResetProgress: () -> Unit,
 ) {
     var showChapterList by remember { mutableStateOf(false) }
@@ -705,6 +748,179 @@ private fun BookReadingScreen(
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    Text(
+                        text = "Локальные модели и голоса",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = onPickOnnxImportFolder,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Папка tts", style = MaterialTheme.typography.labelLarge)
+                        }
+                        OutlinedButton(
+                            onClick = onRefreshOnnxPacks,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Обновить", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Выбери корневую папку tts. Приложение импортирует локальные паки во внутреннее хранилище и покажет, что реально runnable на Android.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    lastTtsModelRootUri?.let { savedRoot ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Последняя папка tts: $savedRoot",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    val removableSuggestedPacks = detectedTtsPacks.filter { it.suggestedDeletion && it.canDelete }
+                    if (removableSuggestedPacks.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onDeleteSuggestedTtsPacks,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Удалить всё на удаление (${removableSuggestedPacks.size})")
+                        }
+                    }
+                    if (downloadableTtsPacks.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        downloadableTtsPacks.forEach { pack ->
+                            OutlinedButton(
+                                onClick = { onDownloadTtsPack(pack.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Скачать ${pack.displayName}")
+                            }
+                            Text(
+                                text = pack.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (packDownloadLabel != null || packDownloadProgress != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = packDownloadLabel ?: "Загрузка модели",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        if (packDownloadProgress != null) {
+                            LinearProgressIndicator(
+                                progress = { packDownloadProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
+                            )
+                        }
+                    }
+                    if (detectedTtsPacks.isEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Паки пока не найдены.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        detectedTtsPacks.forEach { pack ->
+                            val statusColor = when (pack.status) {
+                                TtsPackStatus.READY -> MaterialTheme.colorScheme.primary
+                                TtsPackStatus.READY_NON_RUSSIAN -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.error
+                            }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.Top,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = when (pack.status) {
+                                            TtsPackStatus.READY -> Icons.Default.CheckCircle
+                                            TtsPackStatus.READY_NON_RUSSIAN -> Icons.Default.Info
+                                            else -> Icons.Default.Warning
+                                        },
+                                        contentDescription = null,
+                                        tint = statusColor,
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = pack.displayName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        Text(
+                                            text = "${pack.engineFamily.name} · ${pack.status.name}" +
+                                                if (pack.suggestedDeletion) " · на удаление" else "",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = statusColor,
+                                        )
+                                        pack.voiceSummary()?.let { summary ->
+                                            Text(
+                                                text = summary,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        pack.reason?.let { reason ->
+                                            Text(
+                                                text = reason,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Text(
+                                            text = pack.rootDir,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    if (pack.canDelete) {
+                                        IconButton(onClick = { onDeleteTtsPack(pack.packId) }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Удалить pack",
+                                                tint = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     // Engine type selector
                     Text(
                         text = "TTS Engine",
@@ -728,10 +944,132 @@ private fun BookReadingScreen(
                         Column {
                             Text("Piper / Sherpa (оффлайн) — базовый режим", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Низкая нагрузка, стабильно; интонация проще, чем у VITS2. Для S200 рекомендован как дефолт.",
+                                "Низкая нагрузка, стабильно; нужен локальный Piper pack с ONNX-голосом, tokens.txt и espeak-ng-data. Если pack-а нет, скачай Piper Irina ниже.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                    if (engineType == TtsEngineType.SILERO) {
+                        val piperPacks = detectedTtsPacks.filter { it.engineFamily.name == "PIPER" }
+                        if (piperPacks.isEmpty()) {
+                            Text(
+                                text = "Локальные Piper pack-и не найдены.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            piperPacks.forEach { pack ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectEnginePack(pack.packId) }
+                                        .padding(vertical = 2.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = pack.packId == selectedPiperPackId,
+                                        onClick = { onSelectEnginePack(pack.packId) },
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Column {
+                                        Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
+                                        pack.voiceSummary()?.let {
+                                            Text(it, style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
+                                        pack.reason?.let {
+                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Диагностика Piper",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Голос: ${piperDiagnostics.voiceLabel ?: "—"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Text(
+                                    text = "Pack: ${piperDiagnostics.packId ?: "—"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "Чанки: ${piperDiagnostics.completedChunks}/${piperDiagnostics.totalChunks} · recovery ${piperDiagnostics.recoveredChunks} · ошибки ${piperDiagnostics.failedChunks}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Text(
+                                    text = "Rate ${String.format("%.1f", piperDiagnostics.speechRate)}x · threads ${piperDiagnostics.sherpaThreads}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                piperDiagnostics.lastRecoveryAction?.let { note ->
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = note,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                    )
+                                }
+                                piperDiagnostics.lastChunkPreview?.let { preview ->
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Последний chunk: $preview",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    piperDiagnostics.lastChunkRange?.let { range ->
+                                        Text(
+                                            text = "Диапазон: ${range.asDisplayRange()} · depth ${piperDiagnostics.lastChunkSplitDepth}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                piperDiagnostics.lastFailureMessage?.let { message ->
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Последняя ошибка: $message",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 4,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    piperDiagnostics.lastFailurePreview?.let { preview ->
+                                        Text(
+                                            text = "Проблемный фрагмент: $preview",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 4,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    piperDiagnostics.lastFailureRange?.let { range ->
+                                        Text(
+                                            text = "Сбой в диапазоне: ${range.asDisplayRange()}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -752,10 +1090,43 @@ private fun BookReadingScreen(
                         Column {
                             Text("Natasha VITS2 (оффлайн)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Лучшая русская интонация среди оффлайн вариантов; выше CPU и расход батареи, модель в assets.",
+                                "Лучшая русская интонация среди оффлайн вариантов; выше CPU и расход батареи, модель берётся из локальной папки tts.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                    if (engineType == TtsEngineType.NATASHA) {
+                        val natashaPacks = detectedTtsPacks.filter { it.engineFamily.name == "NATASHA" }
+                        if (natashaPacks.isEmpty()) {
+                            Text(
+                                text = "Локальные Natasha pack-и не найдены.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            natashaPacks.forEach { pack ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectEnginePack(pack.packId) }
+                                        .padding(vertical = 2.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = pack.packId == selectedNatashaPackId,
+                                        onClick = { onSelectEnginePack(pack.packId) },
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Column {
+                                        Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
+                                        Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
+                                        pack.reason?.let {
+                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -776,10 +1147,43 @@ private fun BookReadingScreen(
                         Column {
                             Text("Utrobin VITS (оффлайн)", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Третий оффлайн вариант: ONNX из assets, средняя нагрузка; качество зависит от чанка, не дефолт.",
+                                "Русский ONNX/VITS из локального pack-а; средняя нагрузка, качество зависит от токенизации и чанков.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                    if (engineType == TtsEngineType.UTROBIN) {
+                        val utrobinPacks = detectedTtsPacks.filter { it.engineFamily.name == "UTROBIN" }
+                        if (utrobinPacks.isEmpty()) {
+                            Text(
+                                text = "Локальные Utrobin pack-и не найдены.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            utrobinPacks.forEach { pack ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectEnginePack(pack.packId) }
+                                        .padding(vertical = 2.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = pack.packId == selectedUtrobinPackId,
+                                        onClick = { onSelectEnginePack(pack.packId) },
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Column {
+                                        Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
+                                        Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
+                                        pack.reason?.let {
+                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -809,41 +1213,10 @@ private fun BookReadingScreen(
 
                     if (engineType == TtsEngineType.ONNX_EXTERNAL) {
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onPickOnnxImportFolder,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Filled.FolderOpen, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    "Папка с моделями",
-                                    maxLines = 2,
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = onRefreshOnnxPacks,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Обновить", style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Если файлы лежат в Загрузках (например Downloads/tts), нажми «Папка с моделями» и выбери эту папку — приложение само найдёт model_manifest.json и скопирует пакеты. Либо скопируй вручную в external_models/tts.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         if (installedOnnxPacks.isEmpty()) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Паки не найдены. Kokoro: python tools/tts/prepare_onnx_pack.py --model kokoro_82m ... --download — в пакете нужны onnx/, voices/*.bin и config.json (hexgrad/Kokoro-82M). Остальные модели пока без рантайма в приложении.",
+                                text = "Runnable ONNX-паки не найдены. Неподдержанные runtime и нерусские паки смотри выше в общем списке моделей.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -894,7 +1267,7 @@ private fun BookReadingScreen(
                         TtsEngineType.ONNX_EXTERNAL -> ""
                         TtsEngineType.SYSTEM -> ""
                     }
-                    if (ttsVoiceOptions.isNotEmpty()) {
+                    if (ttsVoiceOptions.isNotEmpty() && engineType != TtsEngineType.SILERO) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "Голос",
@@ -980,3 +1353,12 @@ private fun BookReadingScreen(
         )
     }
 }
+
+private fun DetectedTtsPack.voiceSummary(): String? {
+    if (voices.isEmpty()) return null
+    val preview = voices.take(4).joinToString { it.label }
+    val suffix = if (voices.size > 4) " +${voices.size - 4}" else ""
+    return "Голоса: $preview$suffix"
+}
+
+private fun IntRange.asDisplayRange(): String = "${first}..${last}"

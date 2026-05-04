@@ -47,12 +47,16 @@ class OnnxExternalBookEngine @Inject constructor(
         return voices.map { id -> TtsVoiceOption(id, id.replace('_', ' ')) }
     }
 
-    override suspend fun prepare(): Boolean {
+    override suspend fun prepare(): TtsPrepareResult {
         val pack = selectedPack ?: modelPackManager.pickBestRussianPack()
         if (pack == null) {
             Timber.w("ONNX External: no installed packs")
             _isReady.value = false
-            return false
+            return TtsPrepareResult(
+                success = false,
+                engineType = type,
+                message = "Не найден runnable русский ONNX pack в папке tts",
+            )
         }
         selectedPack = pack
         return when (pack.effectiveRuntimeFamily()) {
@@ -61,7 +65,13 @@ class OnnxExternalBookEngine @Inject constructor(
                 // иначе prepareWithPack берёт первый доступный файл в voices/.
                 val ok = kokoroEngine.prepareWithPack(pack)
                 _isReady.value = ok
-                ok
+                TtsPrepareResult(
+                    success = ok,
+                    engineType = type,
+                    resolvedPackPath = pack.rootDir,
+                    resolvedVoiceId = pack.kokoroVoice,
+                    message = if (ok) null else "Kokoro pack найден, но не прошёл инициализацию",
+                )
             }
             else -> {
                 Timber.w(
@@ -69,7 +79,12 @@ class OnnxExternalBookEngine @Inject constructor(
                         "ещё не интегрирован в приложение (нужен отдельный исполнитель графов).",
                 )
                 _isReady.value = false
-                false
+                TtsPrepareResult(
+                    success = false,
+                    engineType = type,
+                    resolvedPackPath = pack.rootDir,
+                    message = "ONNX runtime '${pack.effectiveRuntimeFamily()}' не поддержан на Android",
+                )
             }
         }
     }

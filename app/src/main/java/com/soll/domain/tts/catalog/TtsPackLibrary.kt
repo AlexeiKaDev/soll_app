@@ -38,7 +38,7 @@ class TtsPackLibrary @Inject constructor(
     private val _downloadState = MutableStateFlow<TtsPackDownloadState?>(null)
     val downloadState: StateFlow<TtsPackDownloadState?> = _downloadState.asStateFlow()
 
-    fun importFromTreeUri(treeUri: Uri): Int {
+    fun importFromTreeUri(treeUri: Uri): TtsPackImportResult {
         Timber.i("TTS import requested for treeUri=%s", treeUri)
         runCatching {
             context.contentResolver.takePersistableUriPermission(
@@ -49,12 +49,17 @@ class TtsPackLibrary @Inject constructor(
             Timber.d("Persisted read permission for treeUri=%s", treeUri)
         }.onFailure { Timber.w(it, "takePersistableUriPermission failed for %s", treeUri) }
 
-        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return 0
-        if (!root.isDirectory || !root.canRead()) return 0
+        val root = DocumentFile.fromTreeUri(context, treeUri)
+            ?: return TtsPackImportResult(detectedCount = 0, importedCount = 0, failedCount = 0)
+        if (!root.isDirectory || !root.canRead()) {
+            return TtsPackImportResult(detectedCount = 0, importedCount = 0, failedCount = 0)
+        }
 
         importedRoot.mkdirs()
         val candidates = collectImportCandidates(root)
         Timber.i("TTS import scan found %d candidates under %s", candidates.size, treeUri)
+        var importedCount = 0
+        var failedCount = 0
         candidates.forEach { candidate ->
             val dest = File(importedRoot, "${candidate.engineDirName}/${candidate.destSlug}")
             runCatching {
@@ -74,11 +79,19 @@ class TtsPackLibrary @Inject constructor(
                     }
                 }
                 Timber.d("Imported TTS candidate slug=%s files=%d", candidate.destSlug, dest.walkTopDown().count())
+            }.onSuccess {
+                importedCount++
             }.onFailure {
+                failedCount++
+                dest.deleteRecursively()
                 Timber.e(it, "Failed to import TTS pack ${candidate.destSlug}")
             }
         }
-        return candidates.size
+        return TtsPackImportResult(
+            detectedCount = candidates.size,
+            importedCount = importedCount,
+            failedCount = failedCount,
+        )
     }
 
     fun listDetectedPacks(): List<DetectedTtsPack> {
@@ -750,7 +763,7 @@ class TtsPackLibrary @Inject constructor(
 
     private fun copyDocumentDirToFiles(srcDir: DocumentFile, destDir: File) {
         destDir.mkdirs()
-        val children = srcDir.listFiles() ?: return
+        val children = srcDir.listFiles()
         for (child in children) {
             val name = child.name ?: continue
             if (child.isDirectory) {
@@ -763,11 +776,9 @@ class TtsPackLibrary @Inject constructor(
 
     private fun copyDocumentFileToFile(child: DocumentFile, outFile: File) {
         outFile.parentFile?.mkdirs()
-        runCatching {
-            context.contentResolver.openInputStream(child.uri)?.use { input ->
-                FileOutputStream(outFile).use { output -> input.copyTo(output) }
-            }
-        }.onFailure { Timber.w(it, "skip copy ${child.uri} -> ${outFile.absolutePath}") }
+        context.contentResolver.openInputStream(child.uri)?.use { input ->
+            FileOutputStream(outFile).use { output -> input.copyTo(output) }
+        } ?: error("Не удалось открыть файл ${child.name ?: child.uri}")
     }
 
     private fun mergeKokoroVoicesFromNearbyTree(destPack: File, packRootDoc: DocumentFile) {
@@ -797,7 +808,7 @@ class TtsPackLibrary @Inject constructor(
             if (dir.name?.equals("voices", ignoreCase = true) == true && dir.hasUsableBinChildren()) {
                 return dir
             }
-            dir.listFiles()?.filter { it.isDirectory }?.forEach(queue::add)
+            dir.listFiles().filter { it.isDirectory }.forEach(queue::add)
         }
         return null
     }
@@ -806,9 +817,9 @@ class TtsPackLibrary @Inject constructor(
         var cursor: DocumentFile? = packRootDoc.parentFile
         repeat(6) {
             val dir = cursor ?: return null
-            val voices = dir.listFiles()?.filter { df ->
+            val voices = dir.listFiles().filter { df ->
                 df.isDirectory && df.name?.equals("voices", ignoreCase = true) == true
-            } ?: emptyList()
+            }
             for (v in voices) {
                 if (v.hasUsableBinChildren()) return v
             }
@@ -818,10 +829,10 @@ class TtsPackLibrary @Inject constructor(
     }
 
     private fun DocumentFile.hasUsableBinChildren(): Boolean =
-        listFiles()?.any { child ->
+        listFiles().any { child ->
             val n = child.name
             n != null && n.endsWith(".bin", ignoreCase = true) && child.length() >= MIN_KOKORO_VOICE_BIN_BYTES
-        } == true
+        }
 
     private fun File.hasUsableKokoroVoiceBins(): Boolean =
         isDirectory && listFiles()?.any { f ->

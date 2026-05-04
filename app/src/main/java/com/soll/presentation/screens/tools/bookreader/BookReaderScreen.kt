@@ -85,7 +85,11 @@ fun BookReaderScreen(
                 is BookReaderEvent.TtsPacksImported -> {
                     Toast.makeText(
                         context,
-                        "Импортировано TTS-паков: ${event.count}",
+                        if (event.failedCount > 0) {
+                            "Импортировано TTS-паков: ${event.importedCount}, с ошибками: ${event.failedCount}"
+                        } else {
+                            "Импортировано TTS-паков: ${event.importedCount}"
+                        },
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
@@ -872,7 +876,7 @@ private fun BookReadingScreen(
                         subtitle = when (engineType) {
                             TtsEngineType.SILERO -> "Пакет = голос. Здесь выбирается конкретный установленный pack и видна диагностика чтения."
                             TtsEngineType.NATASHA -> "Первый следующий offline-движок после Piper. Добавлена диагностика и stop на реальном сбое вместо тихого skip."
-                            TtsEngineType.UTROBIN -> "Русский ONNX/VITS со speaker 0/1. Добавлена диагностика и recovery split вместо молчаливого skip."
+                            TtsEngineType.UTROBIN -> "Русский ONNX/VITS со спикерами 0/1. Добавлена диагностика и recovery split вместо молчаливого skip."
                             TtsEngineType.ONNX_EXTERNAL -> "Показываются только runnable пакеты. Неподдержанные runtime остаются в общей библиотеке выше."
                             TtsEngineType.SYSTEM -> "Выбор установленного системного TTS и его пользовательских параметров."
                         },
@@ -1266,18 +1270,18 @@ private fun ReaderPiperDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Pack: ${piperDiagnostics.packId ?: "—"}",
+                text = "Пак: ${piperDiagnostics.packId ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "Чанки: ${piperDiagnostics.completedChunks}/${piperDiagnostics.totalChunks} · recovery ${piperDiagnostics.recoveredChunks} · ошибки ${piperDiagnostics.failedChunks}",
+                text = "Чанки: ${piperDiagnostics.completedChunks}/${piperDiagnostics.totalChunks} · восстановлено ${piperDiagnostics.recoveredChunks} · ошибки ${piperDiagnostics.failedChunks}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Rate ${String.format("%.1f", piperDiagnostics.speechRate)}x · threads ${piperDiagnostics.sherpaThreads}",
+                text = "Скорость ${String.format("%.1f", piperDiagnostics.speechRate)}x · потоки ${piperDiagnostics.sherpaThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1292,14 +1296,14 @@ private fun ReaderPiperDiagnosticsCard(
             piperDiagnostics.lastChunkPreview?.let { preview ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Последний chunk: $preview",
+                    text = "Последний фрагмент: $preview",
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
                 piperDiagnostics.lastChunkRange?.let { range ->
                     Text(
-                        text = "Диапазон: ${range.asDisplayRange()} · depth ${piperDiagnostics.lastChunkSplitDepth}",
+                        text = "Диапазон: ${range.asDisplayRange()} · глубина ${piperDiagnostics.lastChunkSplitDepth}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1353,22 +1357,22 @@ private fun ReaderNatashaDiagnosticsCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Tokenizer: ${natashaDiagnostics.tokenizerLabel ?: "—"}",
+                text = "Токенизатор: ${natashaDiagnostics.tokenizerLabel ?: "—"}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Pack: ${natashaDiagnostics.packId ?: "—"}",
+                text = "Пак: ${natashaDiagnostics.packId ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "Чанки: ${natashaDiagnostics.completedChunks}/${natashaDiagnostics.totalChunks} · recovery ${natashaDiagnostics.recoveredChunks} · ошибки ${natashaDiagnostics.failedChunks}",
+                text = "Чанки: ${natashaDiagnostics.completedChunks}/${natashaDiagnostics.totalChunks} · восстановлено ${natashaDiagnostics.recoveredChunks} · ошибки ${natashaDiagnostics.failedChunks}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Rate ${String.format("%.1f", natashaDiagnostics.speechRate)}x · threads ${natashaDiagnostics.ortThreads}",
+                text = "Скорость ${String.format("%.1f", natashaDiagnostics.speechRate)}x · потоки ${natashaDiagnostics.ortThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1390,14 +1394,14 @@ private fun ReaderNatashaDiagnosticsCard(
             natashaDiagnostics.lastChunkPreview?.let { preview ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Последний chunk: $preview",
+                    text = "Последний фрагмент: $preview",
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
                 natashaDiagnostics.lastChunkRange?.let { range ->
                     Text(
-                        text = "Диапазон: ${range.asDisplayRange()} · depth ${natashaDiagnostics.lastChunkSplitDepth}",
+                        text = "Диапазон: ${range.asDisplayRange()} · глубина ${natashaDiagnostics.lastChunkSplitDepth}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1451,22 +1455,22 @@ private fun ReaderUtrobinDiagnosticsCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Speaker: ${utrobinDiagnostics.speakerLabel ?: utrobinDiagnostics.speakerId}",
+                text = "Спикер: ${utrobinDiagnostics.speakerLabel ?: utrobinDiagnostics.speakerId}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Pack: ${utrobinDiagnostics.packId ?: "—"}",
+                text = "Пак: ${utrobinDiagnostics.packId ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "Чанки: ${utrobinDiagnostics.completedChunks}/${utrobinDiagnostics.totalChunks} · recovery ${utrobinDiagnostics.recoveredChunks} · ошибки ${utrobinDiagnostics.failedChunks}",
+                text = "Чанки: ${utrobinDiagnostics.completedChunks}/${utrobinDiagnostics.totalChunks} · восстановлено ${utrobinDiagnostics.recoveredChunks} · ошибки ${utrobinDiagnostics.failedChunks}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Rate ${String.format("%.1f", utrobinDiagnostics.speechRate)}x · threads ${utrobinDiagnostics.ortThreads}",
+                text = "Скорость ${String.format("%.1f", utrobinDiagnostics.speechRate)}x · потоки ${utrobinDiagnostics.ortThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1488,14 +1492,14 @@ private fun ReaderUtrobinDiagnosticsCard(
             utrobinDiagnostics.lastChunkPreview?.let { preview ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Последний chunk: $preview",
+                    text = "Последний фрагмент: $preview",
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
                 utrobinDiagnostics.lastChunkRange?.let { range ->
                     Text(
-                        text = "Диапазон: ${range.asDisplayRange()} · depth ${utrobinDiagnostics.lastChunkSplitDepth}",
+                        text = "Диапазон: ${range.asDisplayRange()} · глубина ${utrobinDiagnostics.lastChunkSplitDepth}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1549,22 +1553,22 @@ private fun ReaderOnnxDiagnosticsCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Voice: ${onnxDiagnostics.voiceId ?: "—"}",
+                text = "Голос: ${onnxDiagnostics.voiceId ?: "—"}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Pack: ${onnxDiagnostics.packRoot ?: "—"}",
+                text = "Пак: ${onnxDiagnostics.packRoot ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "Чанки: ${onnxDiagnostics.completedChunks}/${onnxDiagnostics.totalChunks} · recovery ${onnxDiagnostics.recoveredChunks} · ошибки ${onnxDiagnostics.failedChunks}",
+                text = "Чанки: ${onnxDiagnostics.completedChunks}/${onnxDiagnostics.totalChunks} · восстановлено ${onnxDiagnostics.recoveredChunks} · ошибки ${onnxDiagnostics.failedChunks}",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Rate ${String.format("%.1f", onnxDiagnostics.speechRate)}x · threads ${onnxDiagnostics.ortThreads}",
+                text = "Скорость ${String.format("%.1f", onnxDiagnostics.speechRate)}x · потоки ${onnxDiagnostics.ortThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1586,14 +1590,14 @@ private fun ReaderOnnxDiagnosticsCard(
             onnxDiagnostics.lastChunkPreview?.let { preview ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Последний chunk: $preview",
+                    text = "Последний фрагмент: $preview",
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
                 onnxDiagnostics.lastChunkRange?.let { range ->
                     Text(
-                        text = "Диапазон: ${range.asDisplayRange()} · depth ${onnxDiagnostics.lastChunkSplitDepth}",
+                        text = "Диапазон: ${range.asDisplayRange()} · глубина ${onnxDiagnostics.lastChunkSplitDepth}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

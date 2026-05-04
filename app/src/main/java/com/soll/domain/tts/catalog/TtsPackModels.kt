@@ -73,3 +73,9 @@ data class TtsPackDownloadState(
     val message: String? = null,
     val isError: Boolean = false,
 )
+
+data class TtsPackImportResult(
+    val detectedCount: Int,
+    val importedCount: Int,
+    val failedCount: Int,
+)

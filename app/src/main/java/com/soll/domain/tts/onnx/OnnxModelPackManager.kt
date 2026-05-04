@@ -29,7 +29,7 @@ class OnnxModelPackManager @Inject constructor(
     private val packLibrary: TtsPackLibrary,
 ) {
     fun importPacksFromTreeUri(treeUri: Uri): Int =
-        packLibrary.importFromTreeUri(treeUri)
+        packLibrary.importFromTreeUri(treeUri).importedCount
 
     fun listInstalledPacks(): List<InstalledOnnxPack> =
         packLibrary.listDetectedPacks()

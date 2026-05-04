@@ -441,7 +441,7 @@ class CourseCoachViewModel @Inject constructor(
 
     fun resetProgress() {
         val courseId = uiState.value.course?.id ?: return
-огу        viewModelScope.launch {
+        viewModelScope.launch {
             repository.resetProgress(courseId)
             activeSession.value = null
             eventsInternal.emit("Прогресс курса сброшен.")

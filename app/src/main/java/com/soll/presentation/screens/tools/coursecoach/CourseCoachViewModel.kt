@@ -462,7 +462,7 @@ class CourseCoachViewModel @Inject constructor(
         val installed = courses.map { item ->
             CourseCoachInstalledCourseUi(
                 id = item.id,
-                title = item.title,
+                title = compactCourseTitle(item.title),
                 version = item.version,
                 isActive = item.id == course?.id,
             )
@@ -506,7 +506,7 @@ class CourseCoachViewModel @Inject constructor(
             isLoading = false,
             course = CourseCoachCourseUi(
                 id = course.id,
-                title = course.title,
+                title = compactCourseTitle(course.title),
                 description = course.description,
                 version = course.version,
                 reviewStatus = course.reviewStatus,
@@ -536,6 +536,15 @@ class CourseCoachViewModel @Inject constructor(
             stats = buildStats(days, sessionLogs),
             activeSession = activeSession,
         )
+    }
+
+    private fun compactCourseTitle(title: String): String {
+        val normalized = title.trim()
+        return if (normalized.contains("Мужской фокус", ignoreCase = true)) {
+            "Мужской фокус"
+        } else {
+            normalized
+        }
     }
 
     private fun resolveDayStatus(

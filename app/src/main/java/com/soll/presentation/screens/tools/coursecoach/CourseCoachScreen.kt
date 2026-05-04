@@ -150,7 +150,13 @@ fun CourseCoachScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(uiState.course?.title ?: "Курс") },
+                title = {
+                    Text(
+                        text = uiState.course?.title ?: "Курс",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -232,7 +238,8 @@ private fun EmptyCourseState(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(24.dp)
+            .navigationBarsPadding(),
         contentAlignment = Alignment.Center,
     ) {
         Card(
@@ -285,7 +292,7 @@ private fun TodayTab(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = courseTabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
@@ -375,7 +382,7 @@ private fun PlanTab(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = courseTabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(days, key = { it.dayIndex }) { day ->
@@ -435,7 +442,7 @@ private fun PlanTab(
 private fun StatsTab(stats: CourseCoachStatsUi) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = courseTabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
@@ -543,7 +550,7 @@ private fun LibraryTab(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = courseTabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
@@ -1486,6 +1493,19 @@ private fun InfoCard(
             Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@Composable
+private fun courseTabContentPadding(): PaddingValues {
+    val navigationBottom = WindowInsets.navigationBars
+        .asPaddingValues()
+        .calculateBottomPadding()
+    return PaddingValues(
+        start = 16.dp,
+        top = 16.dp,
+        end = 16.dp,
+        bottom = 24.dp + navigationBottom,
+    )
 }
 
 @Composable

@@ -3,10 +3,15 @@ package com.soll.domain.tts.book
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.kokoro.KokoroOnnxTtsEngine
+import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
+import com.soll.domain.tts.kokoro.KokoroPlaybackFailure
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import com.soll.domain.tts.onnx.OnnxModelPackManager
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import java.io.File
@@ -33,6 +38,11 @@ class OnnxExternalBookEngine @Inject constructor(
     override val isSpeaking: StateFlow<Boolean> = kokoroEngine.isSpeaking
     override val downloadProgress: StateFlow<Float?> = kokoroEngine.downloadProgress
     override val currentWordRange: StateFlow<IntRange?> = kokoroEngine.currentWordRange
+    val diagnostics: StateFlow<KokoroPlaybackDiagnostics> = kokoroEngine.diagnostics
+    val runtimeFailures: SharedFlow<KokoroPlaybackFailure> = kokoroEngine.playbackFailures
+
+    private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 2)
+    val errors: SharedFlow<String> = _errors.asSharedFlow()
 
     private var selectedPack: InstalledOnnxPack? = null
 
@@ -92,21 +102,21 @@ class OnnxExternalBookEngine @Inject constructor(
     override suspend fun speakChapter(text: String, onChapterFinished: () -> Unit) {
         val pack = selectedPack ?: modelPackManager.pickBestRussianPack()
         if (pack == null) {
-            onChapterFinished()
+            _errors.tryEmit("Не найден runnable русский ONNX pack в папке tts")
             return
         }
         when (pack.effectiveRuntimeFamily()) {
             "kokoro_v1" -> {
                 if (!_isReady.value) {
                     Timber.e("Kokoro: speakChapter called before successful prepare")
-                    onChapterFinished()
+                    _errors.tryEmit("Kokoro pack найден, но ещё не инициализирован")
                     return
                 }
                 kokoroEngine.speakChapter(text, onChapterFinished)
             }
             else -> {
                 Timber.w("ONNX External: unsupported runtime, skipping speech")
-                onChapterFinished()
+                _errors.tryEmit("ONNX runtime '${pack.effectiveRuntimeFamily()}' не поддержан на Android")
             }
         }
     }

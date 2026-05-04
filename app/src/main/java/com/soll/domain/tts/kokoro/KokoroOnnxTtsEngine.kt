@@ -8,6 +8,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.SystemClock
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -15,8 +16,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -66,6 +70,12 @@ class KokoroOnnxTtsEngine @Inject constructor(
     private val _currentWordRange = MutableStateFlow<IntRange?>(null)
     val currentWordRange: StateFlow<IntRange?> = _currentWordRange.asStateFlow()
 
+    private val _diagnostics = MutableStateFlow(KokoroPlaybackDiagnostics())
+    val diagnostics: StateFlow<KokoroPlaybackDiagnostics> = _diagnostics.asStateFlow()
+
+    private val _playbackFailures = MutableSharedFlow<KokoroPlaybackFailure>(extraBufferCapacity = 2)
+    val playbackFailures: SharedFlow<KokoroPlaybackFailure> = _playbackFailures.asSharedFlow()
+
     private var speechRate = 1f
     private var isPaused = false
     private var currentSentenceIndex = 0
@@ -96,6 +106,7 @@ class KokoroOnnxTtsEngine @Inject constructor(
         val v = value.roundToInt().coerceIn(1, 4)
         if (v == ortIntraThreads) return
         ortIntraThreads = v
+        _diagnostics.value = diagnostics.value.copy(ortThreads = ortIntraThreads)
         synchronized(sessionLock) {
             if (ortSession != null) rebuildSession()
         }
@@ -103,11 +114,13 @@ class KokoroOnnxTtsEngine @Inject constructor(
 
     fun setSpeechRate(rate: Float) {
         speechRate = rate.coerceIn(0.5f, 2.0f)
+        _diagnostics.value = diagnostics.value.copy(speechRate = speechRate)
     }
 
     fun setVoice(voice: String) {
         if (voice.isBlank()) return
         voiceId = voice.trim()
+        _diagnostics.value = diagnostics.value.copy(voiceId = voiceId)
         val root = packRootDir ?: return
         val voicesDir = voicesDirForRoot(root)
         val voices = loadVoiceTensor(voicesDir, voiceId)
@@ -191,6 +204,7 @@ class KokoroOnnxTtsEngine @Inject constructor(
             cachedOnnxPath = onnxFile.absolutePath
             rebuildSession()
         }
+        resetDiagnosticsForPack(root)
         Timber.i(
             "Kokoro ONNX ready model=${onnxFile.name} voices=${voiceRows.size} rows vocab=${vocabCharToId.size}",
         )
@@ -205,6 +219,7 @@ class KokoroOnnxTtsEngine @Inject constructor(
         isPaused = false
         chapterFinishedCallback = onChapterFinished
         playbackSessionId++
+        resetDiagnosticsForSession(sentences.size)
         resumeInternal(this)
     }
 
@@ -233,29 +248,22 @@ class KokoroOnnxTtsEngine @Inject constructor(
                     sessionId == playbackSessionId
                 ) {
                     val s = sentences[currentSentenceIndex]
-                    _currentWordRange.value = IntRange(s.startOffset, s.endOffset)
-                    val phonemeLine = KokoroCmuG2p.englishTextToPhonemeLine(s.text, lexicon)
-                    if (phonemeLine == null) {
-                        Timber.w("Kokoro: skip sentence (non-English/Cyrillic or empty): ${s.text.take(80)}")
-                        if (!isPaused) currentSentenceIndex++
-                        continue
+                    val outcome = playSentenceWithRecovery(sentence = s, sessionId = sessionId)
+                    when (outcome.status) {
+                        ChunkPlayStatus.SUCCESS -> if (!isPaused) currentSentenceIndex++
+                        ChunkPlayStatus.INTERRUPTED -> return@launch
+                        ChunkPlayStatus.FAILED -> {
+                            val failure = outcome.failure ?: buildPlaybackFailure(
+                                message = "Kokoro не смог дочитать фрагмент",
+                                sentence = s,
+                            )
+                            recordChunkFailure(failure)
+                            _playbackFailures.tryEmit(failure)
+                            _isSpeaking.value = false
+                            _currentWordRange.value = failure.chunkRange
+                            return@launch
+                        }
                     }
-                    val innerIds = phonemeStringToIds(phonemeLine)
-                    if (innerIds.isEmpty()) {
-                        if (!isPaused) currentSentenceIndex++
-                        continue
-                    }
-                    if (innerIds.size > MAX_PHONEME_INNER) {
-                        Timber.w("Kokoro: phoneme chunk too long (${innerIds.size}), truncating")
-                    }
-                    val clippedInner = innerIds.take(MAX_PHONEME_INNER)
-                    val audio = generateAudio(clippedInner)
-                    if (audio != null && audio.size > 64 && isActive && !isPaused) {
-                        val wj = launch { trackWords(s, audio.size) }
-                        playAudio(audio)
-                        wj.cancel()
-                    }
-                    if (!isPaused) currentSentenceIndex++
                 }
                 if (currentSentenceIndex >= sentences.size && !isPaused && sessionId == playbackSessionId) {
                     _isSpeaking.value = false
@@ -323,6 +331,114 @@ class KokoroOnnxTtsEngine @Inject constructor(
         shutdownOnnxOnly()
     }
 
+    private enum class ChunkPlayStatus {
+        SUCCESS,
+        INTERRUPTED,
+        FAILED,
+    }
+
+    private data class ChunkPlayOutcome(
+        val status: ChunkPlayStatus,
+        val usedRecovery: Boolean = false,
+        val failure: KokoroPlaybackFailure? = null,
+    )
+
+    private data class TokenPreparationAttempt(
+        val innerTokenIds: List<Long>? = null,
+        val errorMessage: String? = null,
+    )
+
+    private data class GenerationAttempt(
+        val audio: FloatArray? = null,
+        val durationMs: Long = 0L,
+        val errorMessage: String? = null,
+    )
+
+    private suspend fun playSentenceWithRecovery(
+        sentence: SentenceInfo,
+        sessionId: Long,
+    ): ChunkPlayOutcome {
+        if (!canContinue(sessionId)) {
+            return ChunkPlayOutcome(status = ChunkPlayStatus.INTERRUPTED)
+        }
+        markChunkAttempt(sentence)
+        _currentWordRange.value = sentence.range()
+        val tokenAttempt = prepareInnerTokenIds(sentence)
+        if (tokenAttempt.innerTokenIds == null || tokenAttempt.innerTokenIds.isEmpty()) {
+            return handleKokoroFailureWithRecovery(
+                sentence = sentence,
+                sessionId = sessionId,
+                errorMessage = tokenAttempt.errorMessage ?: "Не удалось подготовить фонемы для Kokoro",
+            )
+        }
+        val generation = generateAudio(tokenAttempt.innerTokenIds)
+        if (generation.audio != null && generation.audio.size > 64) {
+            if (!canContinue(sessionId)) {
+                return ChunkPlayOutcome(status = ChunkPlayStatus.INTERRUPTED)
+            }
+            coroutineScope {
+                val wj = launch { trackWords(sentence, generation.audio.size) }
+                try {
+                    playAudio(generation.audio)
+                } finally {
+                    wj.cancel()
+                }
+            }
+            recordChunkSuccess(
+                usedRecovery = sentence.splitDepth > 0,
+                durationMs = generation.durationMs,
+            )
+            return ChunkPlayOutcome(
+                status = if (canContinue(sessionId)) ChunkPlayStatus.SUCCESS else ChunkPlayStatus.INTERRUPTED,
+                usedRecovery = sentence.splitDepth > 0,
+            )
+        }
+        return handleKokoroFailureWithRecovery(
+            sentence = sentence,
+            sessionId = sessionId,
+            errorMessage = generation.errorMessage ?: "Kokoro не вернул audio",
+        )
+    }
+
+    private suspend fun handleKokoroFailureWithRecovery(
+        sentence: SentenceInfo,
+        sessionId: Long,
+        errorMessage: String,
+    ): ChunkPlayOutcome {
+        val splits = splitSentenceForRecovery(sentence)
+        if (splits.size <= 1) {
+            return ChunkPlayOutcome(
+                status = ChunkPlayStatus.FAILED,
+                failure = buildPlaybackFailure(errorMessage, sentence),
+            )
+        }
+        val splitReason = splits.first().sourceTag.substringAfter("recovery:")
+        val recoveryNote = "Recovery split depth ${sentence.splitDepth + 1}: $splitReason"
+        _diagnostics.value = diagnostics.value.copy(lastRecoveryAction = recoveryNote)
+        Timber.w(
+            "Kokoro recovery split depth=%d reason=%s preview=%s",
+            sentence.splitDepth,
+            splitReason,
+            previewText(sentence.text),
+        )
+        for (split in splits) {
+            val childOutcome = playSentenceWithRecovery(sentence = split, sessionId = sessionId)
+            when (childOutcome.status) {
+                ChunkPlayStatus.SUCCESS -> Unit
+                ChunkPlayStatus.INTERRUPTED -> return childOutcome
+                ChunkPlayStatus.FAILED -> return ChunkPlayOutcome(
+                    status = ChunkPlayStatus.FAILED,
+                    usedRecovery = true,
+                    failure = childOutcome.failure ?: buildPlaybackFailure(
+                        "Не удалось озвучить дочерний фрагмент после recovery split",
+                        split,
+                    ),
+                )
+            }
+        }
+        return ChunkPlayOutcome(status = ChunkPlayStatus.SUCCESS, usedRecovery = true)
+    }
+
     private fun stopPlaybackJobsOnly() {
         playbackSessionId++
         playbackJob?.cancel()
@@ -335,6 +451,92 @@ class KokoroOnnxTtsEngine @Inject constructor(
         audioTrack = null
         _isSpeaking.value = false
         _currentWordRange.value = null
+    }
+
+    private fun canContinue(sessionId: Long): Boolean {
+        return !isPaused && sessionId == playbackSessionId && playbackJob?.isActive != false
+    }
+
+    private fun resetDiagnosticsForPack(root: File) {
+        _diagnostics.value = KokoroPlaybackDiagnostics(
+            packRoot = root.absolutePath,
+            voiceId = voiceId,
+            speechRate = speechRate,
+            ortThreads = ortIntraThreads,
+        )
+    }
+
+    private fun resetDiagnosticsForSession(totalChunks: Int) {
+        _diagnostics.value = diagnostics.value.copy(
+            packRoot = packRootDir?.absolutePath ?: diagnostics.value.packRoot,
+            voiceId = voiceId,
+            speechRate = speechRate,
+            ortThreads = ortIntraThreads,
+            totalChunks = totalChunks,
+            completedChunks = 0,
+            recoveredChunks = 0,
+            failedChunks = 0,
+            lastChunkPreview = null,
+            lastChunkRange = null,
+            lastChunkSplitDepth = 0,
+            lastChunkDurationMs = null,
+            lastRecoveryAction = null,
+            lastFailureMessage = null,
+            lastFailurePreview = null,
+            lastFailureRange = null,
+        )
+    }
+
+    private fun markChunkAttempt(sentence: SentenceInfo) {
+        _diagnostics.value = diagnostics.value.copy(
+            lastChunkPreview = previewText(sentence.text),
+            lastChunkRange = sentence.range(),
+            lastChunkSplitDepth = sentence.splitDepth,
+        )
+    }
+
+    private fun recordChunkSuccess(usedRecovery: Boolean, durationMs: Long) {
+        _diagnostics.value = diagnostics.value.copy(
+            completedChunks = (diagnostics.value.completedChunks + 1).coerceAtMost(diagnostics.value.totalChunks),
+            recoveredChunks = if (usedRecovery) diagnostics.value.recoveredChunks + 1 else diagnostics.value.recoveredChunks,
+            lastChunkDurationMs = durationMs,
+        )
+    }
+
+    private fun recordChunkFailure(failure: KokoroPlaybackFailure) {
+        _diagnostics.value = diagnostics.value.copy(
+            failedChunks = diagnostics.value.failedChunks + 1,
+            lastFailureMessage = failure.message,
+            lastFailurePreview = failure.chunkPreview,
+            lastFailureRange = failure.chunkRange,
+        )
+        Timber.e(
+            "Kokoro final failure: voice=%s pack=%s range=%s preview=%s message=%s",
+            failure.voiceId,
+            failure.packRoot,
+            failure.chunkRange,
+            failure.chunkPreview,
+            failure.message,
+        )
+    }
+
+    private fun buildPlaybackFailure(message: String, sentence: SentenceInfo): KokoroPlaybackFailure {
+        return KokoroPlaybackFailure(
+            message = message,
+            chunkPreview = previewText(sentence.text),
+            chunkRange = sentence.range(),
+            packRoot = packRootDir?.absolutePath ?: diagnostics.value.packRoot,
+            voiceId = voiceId,
+        )
+    }
+
+    private fun previewText(text: String): String {
+        val normalized = text.replace(Regex("""\s+"""), " ").trim()
+        return if (normalized.length <= CHUNK_PREVIEW_LIMIT) {
+            normalized
+        } else {
+            normalized.take(CHUNK_PREVIEW_LIMIT - 1) + "…"
+        }
     }
 
     private fun rebuildSession() {
@@ -350,6 +552,23 @@ class KokoroOnnxTtsEngine @Inject constructor(
             }
             env.createSession(path, opts)
         }
+    }
+
+    private fun prepareInnerTokenIds(sentence: SentenceInfo): TokenPreparationAttempt {
+        val phonemeLine = KokoroCmuG2p.englishTextToPhonemeLine(sentence.text, lexicon)
+        if (phonemeLine == null) {
+            return TokenPreparationAttempt(
+                errorMessage = "Текущий Kokoro phoneme pipeline не смог обработать этот фрагмент; для кириллицы нужен другой runtime/pack",
+            )
+        }
+        val innerIds = phonemeStringToIds(phonemeLine)
+        if (innerIds.isEmpty()) {
+            return TokenPreparationAttempt(errorMessage = "Kokoro не смог получить токены из phoneme line")
+        }
+        if (innerIds.size > MAX_PHONEME_INNER) {
+            Timber.w("Kokoro: phoneme chunk too long (${innerIds.size}), truncating")
+        }
+        return TokenPreparationAttempt(innerTokenIds = innerIds.take(MAX_PHONEME_INNER))
     }
 
     private fun phonemeStringToIds(phonemes: String): List<Long> {
@@ -369,8 +588,8 @@ class KokoroOnnxTtsEngine @Inject constructor(
         return out
     }
 
-    private fun generateAudio(innerTokenIds: List<Long>): FloatArray? {
-        if (innerTokenIds.isEmpty()) return null
+    private fun generateAudio(innerTokenIds: List<Long>): GenerationAttempt {
+        if (innerTokenIds.isEmpty()) return GenerationAttempt(errorMessage = "Пустой phoneme chunk")
         val seqLen = innerTokenIds.size + 2
         val padded = LongArray(seqLen)
         padded[0] = 0L
@@ -380,9 +599,11 @@ class KokoroOnnxTtsEngine @Inject constructor(
         padded[padded.lastIndex] = 0L
 
         val rowIdx = innerTokenIds.size.coerceIn(0, voiceRows.lastIndex.coerceAtLeast(0))
-        val style = voiceRows.getOrNull(rowIdx) ?: return null
+        val style = voiceRows.getOrNull(rowIdx)
+            ?: return GenerationAttempt(errorMessage = "Kokoro voice rows не инициализированы")
 
-        val session = ortSession ?: return null
+        val session = ortSession ?: return GenerationAttempt(errorMessage = "Kokoro runtime не инициализирован")
+        val startedAt = SystemClock.elapsedRealtime()
 
         return try {
             OnnxTensor.createTensor(env, arrayOf(padded)).use { idsTensor ->
@@ -391,14 +612,28 @@ class KokoroOnnxTtsEngine @Inject constructor(
                         val feeds = linkedMapOf<String, OnnxTensor>()
                         mapFeeds(session, feeds, idsTensor, styleTensor, spd)
                         session.run(feeds).use { result ->
-                            waveformToFloatArray(firstTensor(result))
+                            val audio = waveformToFloatArray(firstTensor(result))
+                            if (audio.isEmpty()) {
+                                GenerationAttempt(
+                                    durationMs = SystemClock.elapsedRealtime() - startedAt,
+                                    errorMessage = "Kokoro вернул пустой waveform",
+                                )
+                            } else {
+                                GenerationAttempt(
+                                    audio = audio,
+                                    durationMs = SystemClock.elapsedRealtime() - startedAt,
+                                )
+                            }
                         }
                     }
                 }
             }
         } catch (e: Exception) {
             Timber.e(e, "Kokoro ONNX run failed")
-            null
+            GenerationAttempt(
+                durationMs = SystemClock.elapsedRealtime() - startedAt,
+                errorMessage = e.message ?: "Kokoro ONNX run failed",
+            )
         }
     }
 
@@ -533,31 +768,157 @@ class KokoroOnnxTtsEngine @Inject constructor(
         pattern.findAll(text).forEach { m ->
             val end = m.range.last + 1
             val t = text.substring(last, end).trim()
-            if (t.isNotBlank()) result.add(SentenceInfo(t, last, end))
+            if (t.isNotBlank()) splitLargeChunk(t, last, end).forEach(result::add)
             last = end
         }
         if (last < text.length) {
             val t = text.substring(last).trim()
-            if (t.isNotBlank()) result.add(SentenceInfo(t, last, text.length))
+            if (t.isNotBlank()) splitLargeChunk(t, last, text.length).forEach(result::add)
         }
-        if (result.isEmpty() && text.isNotBlank()) result.add(SentenceInfo(text.trim(), 0, text.length))
-        return mergeNearbySentences(result)
+        if (result.isEmpty() && text.isNotBlank()) splitLargeChunk(text.trim(), 0, text.length).forEach(result::add)
+        return mergeNearbySentences(result, text)
     }
 
-    private fun mergeNearbySentences(sentences: List<SentenceInfo>): List<SentenceInfo> {
+    private fun splitLargeChunk(chunk: String, start: Int, end: Int): List<SentenceInfo> {
+        if (chunk.length <= 220) return listOf(SentenceInfo(chunk, start, end))
+        val out = mutableListOf<SentenceInfo>()
+        var cursor = 0
+        while (cursor < chunk.length) {
+            val rawEnd = (cursor + 200).coerceAtMost(chunk.length)
+            if (rawEnd >= chunk.length) {
+                val last = chunk.substring(cursor).trim()
+                if (last.isNotBlank()) out += SentenceInfo(last, start + cursor, end)
+                break
+            }
+            val region = chunk.substring(cursor, rawEnd)
+            val splitAt = maxOf(region.lastIndexOf(", "), region.lastIndexOf(" - "), region.lastIndexOf(' '))
+                .takeIf { it > 28 } ?: region.length
+            val pieceEnd = (cursor + splitAt).coerceAtMost(chunk.length)
+            val piece = chunk.substring(cursor, pieceEnd).trim()
+            if (piece.isNotBlank()) {
+                out += SentenceInfo(piece, start + cursor, start + pieceEnd)
+            }
+            cursor = pieceEnd.coerceAtLeast(cursor + 1)
+        }
+        return out
+    }
+
+    private fun splitSentenceForRecovery(sentence: SentenceInfo): List<SentenceInfo> {
+        if (sentence.splitDepth >= 2 || sentence.text.length < 32) return emptyList()
+        val strategies = listOf(
+            "\n\n" to "paragraph",
+            ". " to "sentence",
+            "; " to "semicolon",
+            ": " to "colon",
+            ", " to "comma",
+            " - " to "dash",
+        )
+        for ((separator, label) in strategies) {
+            val pieces = splitSentenceBySeparator(sentence, separator, label)
+            if (pieces.size > 1) return pieces
+        }
+        return splitSentenceByLength(sentence)
+    }
+
+    private fun splitSentenceBySeparator(
+        sentence: SentenceInfo,
+        separator: String,
+        label: String,
+    ): List<SentenceInfo> {
+        if (!sentence.text.contains(separator)) return emptyList()
+        val parts = mutableListOf<SentenceInfo>()
+        var searchStart = 0
+        val text = sentence.text
+        while (searchStart < text.length) {
+            val splitIndex = text.indexOf(separator, startIndex = searchStart)
+            val pieceEndExclusive = if (splitIndex >= 0) splitIndex + separator.length else text.length
+            val rawPiece = text.substring(searchStart, pieceEndExclusive)
+            val info = createSentenceInfo(
+                rawText = rawPiece,
+                startOffset = sentence.startOffset + searchStart,
+                splitDepth = sentence.splitDepth + 1,
+                sourceTag = "recovery:$label",
+            )
+            if (info != null) parts += info
+            if (splitIndex < 0) break
+            searchStart = pieceEndExclusive
+        }
+        return parts
+    }
+
+    private fun splitSentenceByLength(sentence: SentenceInfo): List<SentenceInfo> {
+        val text = sentence.text
+        if (text.length < 72) return emptyList()
+        val midpoint = text.length / 2
+        val searchWindow = 48
+        val from = (midpoint - searchWindow).coerceAtLeast(16)
+        val to = (midpoint + searchWindow).coerceAtMost(text.lastIndex)
+        var splitAt = -1
+        for (i in to downTo from) {
+            if (text[i].isWhitespace()) {
+                splitAt = i
+                break
+            }
+        }
+        if (splitAt <= 16 || splitAt >= text.lastIndex - 16) return emptyList()
+        val first = createSentenceInfo(
+            rawText = text.substring(0, splitAt),
+            startOffset = sentence.startOffset,
+            splitDepth = sentence.splitDepth + 1,
+            sourceTag = "recovery:length",
+        )
+        val second = createSentenceInfo(
+            rawText = text.substring(splitAt),
+            startOffset = sentence.startOffset + splitAt,
+            splitDepth = sentence.splitDepth + 1,
+            sourceTag = "recovery:length",
+        )
+        return listOfNotNull(first, second).takeIf { it.size > 1 }.orEmpty()
+    }
+
+    private fun createSentenceInfo(
+        rawText: String,
+        startOffset: Int,
+        splitDepth: Int,
+        sourceTag: String,
+    ): SentenceInfo? {
+        var trimStart = 0
+        var trimEnd = rawText.length
+        while (trimStart < trimEnd && rawText[trimStart].isWhitespace()) trimStart++
+        while (trimEnd > trimStart && rawText[trimEnd - 1].isWhitespace()) trimEnd--
+        if (trimStart >= trimEnd) return null
+        val trimmed = rawText.substring(trimStart, trimEnd)
+        return SentenceInfo(
+            text = trimmed,
+            startOffset = startOffset + trimStart,
+            endOffset = startOffset + trimEnd,
+            splitDepth = splitDepth,
+            sourceTag = sourceTag,
+        )
+    }
+
+    private fun mergeNearbySentences(sentences: List<SentenceInfo>, sourceText: String): List<SentenceInfo> {
         if (sentences.size <= 1) return sentences
         val merged = mutableListOf<SentenceInfo>()
         var current = sentences.first()
         for (i in 1 until sentences.size) {
             val next = sentences[i]
+            val gap = sourceText.substring(
+                current.endOffset.coerceAtLeast(0).coerceAtMost(sourceText.length),
+                next.startOffset.coerceAtLeast(0).coerceAtMost(sourceText.length),
+            )
+            val keepBoundary = gap.contains("\n\n")
             val shouldMerge = current.text.length < mergeShortThreshold &&
                 next.text.length < mergeShortThreshold &&
-                (current.text.length + next.text.length) < mergeTotalCap
+                (current.text.length + next.text.length) < mergeTotalCap &&
+                !keepBoundary
             current = if (shouldMerge) {
                 SentenceInfo(
                     text = "${current.text} ${next.text}".trim(),
                     startOffset = current.startOffset,
                     endOffset = next.endOffset,
+                    splitDepth = maxOf(current.splitDepth, next.splitDepth),
+                    sourceTag = "merged",
                 )
             } else {
                 merged.add(current)
@@ -568,13 +929,22 @@ class KokoroOnnxTtsEngine @Inject constructor(
         return merged
     }
 
-    data class SentenceInfo(val text: String, val startOffset: Int, val endOffset: Int)
+    data class SentenceInfo(
+        val text: String,
+        val startOffset: Int,
+        val endOffset: Int,
+        val splitDepth: Int = 0,
+        val sourceTag: String = "sentence",
+    ) {
+        fun range(): IntRange = IntRange(startOffset, endOffset)
+    }
 
     companion object {
         private val LocaleRoot = java.util.Locale.ROOT
         private const val VOICES_SUBDIR = "voices"
         private const val MAX_PHONEME_INNER = 508
         private const val STYLE_DIM = 256
+        private const val CHUNK_PREVIEW_LIMIT = 72
         /** Реальные style bins Kokoro на HF ~500 KiB; меньше — обычно Git LFS pointer. */
         private const val MIN_KOKORO_VOICE_FILE_BYTES = 8192L
 

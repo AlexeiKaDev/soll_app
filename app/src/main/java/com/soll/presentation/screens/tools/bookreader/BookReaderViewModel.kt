@@ -20,12 +20,14 @@ import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
 import com.soll.domain.tts.TtsServiceAction
 import com.soll.domain.tts.TtsState
+import com.soll.domain.tts.UtrobinPlaybackDiagnostics
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.catalog.DetectedTtsPack
 import com.soll.domain.tts.catalog.DownloadableTtsPack
 import com.soll.domain.tts.catalog.TtsPackEngineFamily
 import com.soll.domain.tts.catalog.TtsPackLibrary
+import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import com.soll.domain.tts.onnx.OnnxModelPackManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -82,6 +84,8 @@ data class BookReaderUiState(
     val selectedUtrobinPackId: String? = null,
     val piperDiagnostics: PiperPlaybackDiagnostics = PiperPlaybackDiagnostics(),
     val natashaDiagnostics: NatashaPlaybackDiagnostics = NatashaPlaybackDiagnostics(),
+    val utrobinDiagnostics: UtrobinPlaybackDiagnostics = UtrobinPlaybackDiagnostics(),
+    val onnxDiagnostics: KokoroPlaybackDiagnostics = KokoroPlaybackDiagnostics(),
 )
 
 sealed class BookReaderEvent {
@@ -202,6 +206,8 @@ class BookReaderViewModel @Inject constructor(
                 selectedUtrobinPackId = utrobinPackId,
                 piperDiagnostics = ttsManager.piperDiagnostics.value,
                 natashaDiagnostics = ttsManager.natashaDiagnostics.value,
+                utrobinDiagnostics = ttsManager.utrobinDiagnostics.value,
+                onnxDiagnostics = ttsManager.onnxDiagnostics.value,
             )
         }
     }
@@ -663,7 +669,7 @@ class BookReaderViewModel @Inject constructor(
                 onSuccess = { count ->
                     Timber.i("TTS pack import finished uri=%s imported=%d", treeUri, count)
                     settingsRepository.ttsModelRootUri = treeUri.toString()
-                    refreshOnnxPacks()
+                    refreshTtsPacks()
                     if (count > 0) {
                         _events.emit(BookReaderEvent.TtsPacksImported(count))
                     } else {
@@ -678,9 +684,7 @@ class BookReaderViewModel @Inject constructor(
         }
     }
 
-    fun importOnnxPacksFromUserFolder(treeUri: Uri) = importTtsPacksFromUserFolder(treeUri)
-
-    fun refreshOnnxPacks() {
+    fun refreshTtsPacks() {
         val detected = ttsPackLibrary.listDetectedPacks()
         val downloadable = ttsPackLibrary.listDownloadableRussianPacks()
         val piperPackId = resolveSavedPiperPackId(
@@ -702,7 +706,7 @@ class BookReaderViewModel @Inject constructor(
         ttsManager.setPackIdForEngine(TtsEngineType.NATASHA, natashaPackId)
         ttsManager.setPackIdForEngine(TtsEngineType.UTROBIN, utrobinPackId)
         Timber.d(
-            "refreshOnnxPacks detected=%d downloadable=%d selectedPiper=%s selectedNatasha=%s selectedUtrobin=%s savedRoot=%s",
+            "refreshTtsPacks detected=%d downloadable=%d selectedPiper=%s selectedNatasha=%s selectedUtrobin=%s savedRoot=%s",
             detected.size,
             downloadable.size,
             piperPackId,
@@ -756,7 +760,7 @@ class BookReaderViewModel @Inject constructor(
                 _uiState.value.selectedNatashaPackId -> settingsRepository.ttsNatashaPackId = null
                 _uiState.value.selectedUtrobinPackId -> settingsRepository.ttsUtrobinPackId = null
             }
-            refreshOnnxPacks()
+            refreshTtsPacks()
         } else {
             viewModelScope.launch {
                 _events.emit(BookReaderEvent.ShowError("Не удалось удалить pack: $packId"))
@@ -767,7 +771,7 @@ class BookReaderViewModel @Inject constructor(
     fun deleteSuggestedTtsPacks() {
         val deleted = ttsPackLibrary.deleteSuggestedPacks()
         if (deleted > 0) {
-            refreshOnnxPacks()
+            refreshTtsPacks()
         } else {
             viewModelScope.launch {
                 _events.emit(BookReaderEvent.ShowError("Нет удаляемых неподдерживаемых pack-ов"))
@@ -854,7 +858,7 @@ class BookReaderViewModel @Inject constructor(
                 }
                 if (state == null) {
                     lastPackDownloadErrorMessage = null
-                    refreshOnnxPacks()
+                    refreshTtsPacks()
                 } else if (state.isError && state.message != null && state.message != lastPackDownloadErrorMessage) {
                     lastPackDownloadErrorMessage = state.message
                     _events.emit(BookReaderEvent.ShowError(state.message))
@@ -872,6 +876,16 @@ class BookReaderViewModel @Inject constructor(
         viewModelScope.launch {
             ttsManager.natashaDiagnostics.collect { diagnostics ->
                 _uiState.update { it.copy(natashaDiagnostics = diagnostics) }
+            }
+        }
+        viewModelScope.launch {
+            ttsManager.utrobinDiagnostics.collect { diagnostics ->
+                _uiState.update { it.copy(utrobinDiagnostics = diagnostics) }
+            }
+        }
+        viewModelScope.launch {
+            ttsManager.onnxDiagnostics.collect { diagnostics ->
+                _uiState.update { it.copy(onnxDiagnostics = diagnostics) }
             }
         }
     }

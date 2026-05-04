@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,11 +33,13 @@ import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
+import com.soll.domain.tts.UtrobinPlaybackDiagnostics
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.catalog.DetectedTtsPack
 import com.soll.domain.tts.catalog.DownloadableTtsPack
 import com.soll.domain.tts.catalog.TtsPackStatus
+import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.flow.collectLatest
 import timber.log.Timber
@@ -77,7 +80,7 @@ fun BookReaderScreen(
                     Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
                 }
                 is BookReaderEvent.BookImported -> {
-                    Toast.makeText(context, "Imported: ${event.title}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Импортирована книга: ${event.title}", Toast.LENGTH_SHORT).show()
                 }
                 is BookReaderEvent.TtsPacksImported -> {
                     Toast.makeText(
@@ -122,6 +125,8 @@ fun BookReaderScreen(
             selectedUtrobinPackId = uiState.selectedUtrobinPackId,
             piperDiagnostics = uiState.piperDiagnostics,
             natashaDiagnostics = uiState.natashaDiagnostics,
+            utrobinDiagnostics = uiState.utrobinDiagnostics,
+            onnxDiagnostics = uiState.onnxDiagnostics,
             installedOnnxPacks = uiState.installedOnnxPacks,
             selectedOnnxPackKey = uiState.selectedOnnxPackKey,
             onBack = { viewModel.closeBook() },
@@ -137,8 +142,7 @@ fun BookReaderScreen(
             onEngineVoiceChange = { viewModel.setEngineVoice(it) },
             onEngineTunableChange = { key, value -> viewModel.applyEngineTunable(key, value) },
             onPerformanceProfileChange = { viewModel.setPerformanceProfile(it) },
-            onRefreshOnnxPacks = { viewModel.refreshOnnxPacks() },
-            onPickOnnxImportFolder = {
+            onPickTtsImportFolder = {
                 Timber.d("Launching TTS folder picker with initialUri=%s", lastTtsRootUri)
                 ttsModelsFolderLauncher.launch(lastTtsRootUri)
             },
@@ -174,15 +178,15 @@ private fun BookLibraryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Book Reader") },
+                title = { Text("Читалка") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
                     IconButton(onClick = onImportBook) {
-                        Icon(Icons.Default.Add, contentDescription = "Import book")
+                        Icon(Icons.Default.Add, contentDescription = "Импорт книги")
                     }
                 }
             )
@@ -213,13 +217,13 @@ private fun BookLibraryScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "No books yet",
+                        text = "Книг пока нет",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Import an EPUB file to start reading",
+                        text = "Импортируй EPUB-файл, чтобы начать чтение",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -227,7 +231,7 @@ private fun BookLibraryScreen(
                     Button(onClick = onImportBook) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import EPUB")
+                        Text("Импортировать EPUB")
                     }
                 }
             } else {
@@ -304,7 +308,7 @@ private fun BookListItem(
                     )
                 }
                 Text(
-                    text = "Chapter ${book.currentChapter + 1} / ${book.totalChapters}",
+                    text = "Глава ${book.currentChapter + 1} / ${book.totalChapters}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -326,7 +330,7 @@ private fun BookListItem(
             IconButton(onClick = { showDeleteDialog = true }) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
+                    contentDescription = "Удалить",
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -336,8 +340,8 @@ private fun BookListItem(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete book?") },
-            text = { Text("Are you sure you want to delete \"${book.title}\"?") },
+            title = { Text("Удалить книгу?") },
+            text = { Text("Точно удалить «${book.title}»?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -345,12 +349,12 @@ private fun BookListItem(
                         showDeleteDialog = false
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("Удалить", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text("Отмена")
                 }
             }
         )
@@ -390,6 +394,8 @@ private fun BookReadingScreen(
     selectedUtrobinPackId: String?,
     piperDiagnostics: PiperPlaybackDiagnostics,
     natashaDiagnostics: NatashaPlaybackDiagnostics,
+    utrobinDiagnostics: UtrobinPlaybackDiagnostics,
+    onnxDiagnostics: KokoroPlaybackDiagnostics,
     installedOnnxPacks: List<InstalledOnnxPack>,
     selectedOnnxPackKey: String?,
     onBack: () -> Unit,
@@ -405,8 +411,7 @@ private fun BookReadingScreen(
     onEngineVoiceChange: (String) -> Unit,
     onEngineTunableChange: (String, Float) -> Unit,
     onPerformanceProfileChange: (TtsBookPerformanceProfile) -> Unit,
-    onRefreshOnnxPacks: () -> Unit,
-    onPickOnnxImportFolder: () -> Unit,
+    onPickTtsImportFolder: () -> Unit,
     onSelectOnnxPack: (String, String) -> Unit,
     onDeleteTtsPack: (String) -> Unit,
     onDeleteSuggestedTtsPacks: () -> Unit,
@@ -471,15 +476,15 @@ private fun BookReadingScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
                     IconButton(onClick = { showChapterList = true }) {
-                        Icon(Icons.Default.List, contentDescription = "Chapters")
+                        Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "Главы")
                     }
                     IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, contentDescription = "Настройки")
                     }
                 }
             )
@@ -501,7 +506,7 @@ private fun BookReadingScreen(
                         onClick = onPreviousChapter,
                         enabled = currentChapterIndex > 0
                     ) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous chapter")
+                        Icon(Icons.Default.SkipPrevious, contentDescription = "Предыдущая глава")
                     }
 
                     FilledIconButton(
@@ -510,20 +515,20 @@ private fun BookReadingScreen(
                     ) {
                         Icon(
                             imageVector = if (isTtsPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isTtsPlaying) "Pause" else "Play",
+                            contentDescription = if (isTtsPlaying) "Пауза" else "Воспроизвести",
                             modifier = Modifier.size(32.dp)
                         )
                     }
 
                     IconButton(onClick = onStopTts) {
-                        Icon(Icons.Default.Stop, contentDescription = "Stop")
+                        Icon(Icons.Default.Stop, contentDescription = "Стоп")
                     }
 
                     IconButton(
                         onClick = onNextChapter,
                         enabled = currentChapterIndex < book.chapters.size - 1
                     ) {
-                        Icon(Icons.Default.SkipNext, contentDescription = "Next chapter")
+                        Icon(Icons.Default.SkipNext, contentDescription = "Следующая глава")
                     }
                 }
             }
@@ -576,7 +581,7 @@ private fun BookReadingScreen(
                 )
             } ?: run {
                 Text(
-                    text = "No content available",
+                    text = "Контент главы недоступен",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -588,7 +593,7 @@ private fun BookReadingScreen(
     if (showChapterList) {
         AlertDialog(
             onDismissRequest = { showChapterList = false },
-            title = { Text("Chapters") },
+            title = { Text("Главы") },
             text = {
                 LazyColumn {
                     items(book.chapters.size) { index ->
@@ -618,7 +623,7 @@ private fun BookReadingScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showChapterList = false }) {
-                    Text("Close")
+                    Text("Закрыть")
                 }
             }
         )
@@ -628,7 +633,7 @@ private fun BookReadingScreen(
     if (showSettings) {
         AlertDialog(
             onDismissRequest = { showSettings = false },
-            title = { Text("Reading Settings") },
+            title = { Text("Настройки чтения") },
             text = {
                 val removableSuggestedPacks = detectedTtsPacks.filter { it.suggestedDeletion && it.canDelete }
                 val piperPacks = detectedTtsPacks.filter { it.engineFamily.name == "PIPER" }
@@ -650,7 +655,7 @@ private fun BookReadingScreen(
                         subtitle = "Скорость, профиль нагрузки и поведение при переходе по главам.",
                     ) {
                         Text(
-                            text = "Speech Rate: ${String.format("%.1f", speechRate)}x",
+                            text = "Скорость речи: ${String.format("%.1f", speechRate)}x",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Slider(
@@ -697,7 +702,7 @@ private fun BookReadingScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "Auto-advance chapters",
+                                text = "Автопереход по главам",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Switch(
@@ -721,7 +726,7 @@ private fun BookReadingScreen(
                         subtitle = "Ручной импорт пользовательских pack-ов и управление локальной библиотекой.",
                     ) {
                         OutlinedButton(
-                            onClick = onPickOnnxImportFolder,
+                            onClick = onPickTtsImportFolder,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Icon(Icons.Filled.FolderOpen, contentDescription = null)
@@ -867,7 +872,7 @@ private fun BookReadingScreen(
                         subtitle = when (engineType) {
                             TtsEngineType.SILERO -> "Пакет = голос. Здесь выбирается конкретный установленный pack и видна диагностика чтения."
                             TtsEngineType.NATASHA -> "Первый следующий offline-движок после Piper. Добавлена диагностика и stop на реальном сбое вместо тихого skip."
-                            TtsEngineType.UTROBIN -> "Пока это ручной pack-движок. После Natasha сюда можно будет переносить ту же схему диагностики."
+                            TtsEngineType.UTROBIN -> "Русский ONNX/VITS со speaker 0/1. Добавлена диагностика и recovery split вместо молчаливого skip."
                             TtsEngineType.ONNX_EXTERNAL -> "Показываются только runnable пакеты. Неподдержанные runtime остаются в общей библиотеке выше."
                             TtsEngineType.SYSTEM -> "Выбор установленного системного TTS и его пользовательских параметров."
                         },
@@ -927,11 +932,13 @@ private fun BookReadingScreen(
                                         )
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                ReaderUtrobinDiagnosticsCard(utrobinDiagnostics = utrobinDiagnostics)
                             }
                             TtsEngineType.ONNX_EXTERNAL -> {
                                 if (installedOnnxPacks.isEmpty()) {
                                     Text(
-                                        text = "Runnable ONNX-паки не найдены. Неподдержанные runtime и нерусские паки смотри выше в общей библиотеке моделей.",
+                                        text = "Готовые к запуску ONNX-паки не найдены. Неподдержанные runtime и нерусские паки смотри выше в общей библиотеке моделей.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -957,6 +964,8 @@ private fun BookReadingScreen(
                                         }
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                ReaderOnnxDiagnosticsCard(onnxDiagnostics = onnxDiagnostics)
                             }
                             TtsEngineType.SYSTEM -> {
                                 if (availableEngines.isEmpty()) {
@@ -1057,7 +1066,7 @@ private fun BookReadingScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showSettings = false }) {
-                    Text("Done")
+                    Text("Готово")
                 }
             }
         )
@@ -1195,7 +1204,7 @@ private fun ReaderPackCard(
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = "Удалить pack",
+                        contentDescription = "Удалить пак",
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -1413,6 +1422,202 @@ private fun ReaderNatashaDiagnosticsCard(
                     )
                 }
                 natashaDiagnostics.lastFailureRange?.let { range ->
+                    Text(
+                        text = "Сбой в диапазоне: ${range.asDisplayRange()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderUtrobinDiagnosticsCard(
+    utrobinDiagnostics: UtrobinPlaybackDiagnostics,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Диагностика Utrobin",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Speaker: ${utrobinDiagnostics.speakerLabel ?: utrobinDiagnostics.speakerId}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Pack: ${utrobinDiagnostics.packId ?: "—"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Чанки: ${utrobinDiagnostics.completedChunks}/${utrobinDiagnostics.totalChunks} · recovery ${utrobinDiagnostics.recoveredChunks} · ошибки ${utrobinDiagnostics.failedChunks}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Rate ${String.format("%.1f", utrobinDiagnostics.speechRate)}x · threads ${utrobinDiagnostics.ortThreads}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            utrobinDiagnostics.lastChunkDurationMs?.let { durationMs ->
+                Text(
+                    text = "Последняя генерация: ${durationMs} ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            utrobinDiagnostics.lastRecoveryAction?.let { note ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            utrobinDiagnostics.lastChunkPreview?.let { preview ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последний chunk: $preview",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                utrobinDiagnostics.lastChunkRange?.let { range ->
+                    Text(
+                        text = "Диапазон: ${range.asDisplayRange()} · depth ${utrobinDiagnostics.lastChunkSplitDepth}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            utrobinDiagnostics.lastFailureMessage?.let { message ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последняя ошибка: $message",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                utrobinDiagnostics.lastFailurePreview?.let { preview ->
+                    Text(
+                        text = "Проблемный фрагмент: $preview",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                utrobinDiagnostics.lastFailureRange?.let { range ->
+                    Text(
+                        text = "Сбой в диапазоне: ${range.asDisplayRange()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderOnnxDiagnosticsCard(
+    onnxDiagnostics: KokoroPlaybackDiagnostics,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Диагностика ONNX / Kokoro",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Voice: ${onnxDiagnostics.voiceId ?: "—"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Pack: ${onnxDiagnostics.packRoot ?: "—"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Чанки: ${onnxDiagnostics.completedChunks}/${onnxDiagnostics.totalChunks} · recovery ${onnxDiagnostics.recoveredChunks} · ошибки ${onnxDiagnostics.failedChunks}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Rate ${String.format("%.1f", onnxDiagnostics.speechRate)}x · threads ${onnxDiagnostics.ortThreads}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            onnxDiagnostics.lastChunkDurationMs?.let { durationMs ->
+                Text(
+                    text = "Последняя генерация: ${durationMs} ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            onnxDiagnostics.lastRecoveryAction?.let { note ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            onnxDiagnostics.lastChunkPreview?.let { preview ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последний chunk: $preview",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                onnxDiagnostics.lastChunkRange?.let { range ->
+                    Text(
+                        text = "Диапазон: ${range.asDisplayRange()} · depth ${onnxDiagnostics.lastChunkSplitDepth}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            onnxDiagnostics.lastFailureMessage?.let { message ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последняя ошибка: $message",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                onnxDiagnostics.lastFailurePreview?.let { preview ->
+                    Text(
+                        text = "Проблемный фрагмент: $preview",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                onnxDiagnostics.lastFailureRange?.let { range ->
                     Text(
                         text = "Сбой в диапазоне: ${range.asDisplayRange()}",
                         style = MaterialTheme.typography.labelSmall,

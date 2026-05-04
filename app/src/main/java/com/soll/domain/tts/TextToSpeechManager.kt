@@ -4,6 +4,7 @@ import android.speech.tts.TextToSpeech
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
+import com.soll.domain.tts.UtrobinPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.book.PiperSherpaBookEngine
 import com.soll.domain.tts.book.SystemAndroidBookEngine
@@ -13,6 +14,7 @@ import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.book.NatashaVitsBookEngine
 import com.soll.domain.tts.book.OnnxExternalBookEngine
 import com.soll.domain.tts.book.UtrobinVitsBookEngine
+import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -94,6 +96,8 @@ class TextToSpeechManager @Inject constructor(
     val serviceActions: SharedFlow<TtsServiceAction> = _serviceActions.asSharedFlow()
     val piperDiagnostics: StateFlow<PiperPlaybackDiagnostics> = piperEngine.diagnostics
     val natashaDiagnostics: StateFlow<NatashaPlaybackDiagnostics> = natashaEngine.diagnostics
+    val utrobinDiagnostics: StateFlow<UtrobinPlaybackDiagnostics> = utrobinEngine.diagnostics
+    val onnxDiagnostics: StateFlow<KokoroPlaybackDiagnostics> = onnxExternalEngine.diagnostics
 
     private var currentText: String? = null
     private var isPaused = false
@@ -132,6 +136,27 @@ class TextToSpeechManager @Inject constructor(
             natashaEngine.playbackFailures.collect { failure ->
                 if (_engineType.value == TtsEngineType.NATASHA) {
                     _state.value = TtsState.Error(failure.toUserMessage())
+                }
+            }
+        }
+        scope.launch {
+            utrobinEngine.playbackFailures.collect { failure ->
+                if (_engineType.value == TtsEngineType.UTROBIN) {
+                    _state.value = TtsState.Error(failure.toUserMessage())
+                }
+            }
+        }
+        scope.launch {
+            onnxExternalEngine.runtimeFailures.collect { failure ->
+                if (_engineType.value == TtsEngineType.ONNX_EXTERNAL) {
+                    _state.value = TtsState.Error(failure.toUserMessage())
+                }
+            }
+        }
+        scope.launch {
+            onnxExternalEngine.errors.collect { message ->
+                if (_engineType.value == TtsEngineType.ONNX_EXTERNAL) {
+                    _state.value = TtsState.Error(message)
                 }
             }
         }

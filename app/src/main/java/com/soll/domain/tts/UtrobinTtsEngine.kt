@@ -8,6 +8,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.SystemClock
 import com.soll.domain.tts.book.TtsPrepareResult
 import com.soll.domain.tts.catalog.TtsPackLibrary
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -15,8 +16,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -55,6 +59,12 @@ class UtrobinTtsEngine @Inject constructor(
     private val _currentWordRange = MutableStateFlow<IntRange?>(null)
     val currentWordRange: StateFlow<IntRange?> = _currentWordRange.asStateFlow()
 
+    private val _diagnostics = MutableStateFlow(UtrobinPlaybackDiagnostics())
+    val diagnostics: StateFlow<UtrobinPlaybackDiagnostics> = _diagnostics.asStateFlow()
+
+    private val _playbackFailures = MutableSharedFlow<UtrobinPlaybackFailure>(extraBufferCapacity = 2)
+    val playbackFailures: SharedFlow<UtrobinPlaybackFailure> = _playbackFailures.asSharedFlow()
+
     private var isPaused = false
     private var currentSentenceIndex = 0
     private var sentences: List<SentenceInfo> = emptyList()
@@ -88,6 +98,7 @@ class UtrobinTtsEngine @Inject constructor(
     companion object {
         private const val MIN_MODEL_BYTES = 10_000_000L
         val SPEAKERS = listOf("Женский" to 0, "Мужской" to 1)
+        private const val CHUNK_PREVIEW_LIMIT = 72
 
         private val VOCAB_CHARS: Set<Char> = buildSet {
             add(' ')
@@ -103,7 +114,15 @@ class UtrobinTtsEngine @Inject constructor(
         }
     }
 
-    data class SentenceInfo(val text: String, val startOffset: Int, val endOffset: Int)
+    data class SentenceInfo(
+        val text: String,
+        val startOffset: Int,
+        val endOffset: Int,
+        val splitDepth: Int = 0,
+        val sourceTag: String = "sentence",
+    ) {
+        fun range(): IntRange = IntRange(startOffset, endOffset)
+    }
 
     fun isModelDownloaded(): Boolean {
         return packLibrary.findBestPack(TtsEngineType.UTROBIN)?.isRunnable == true
@@ -111,9 +130,16 @@ class UtrobinTtsEngine @Inject constructor(
 
     fun setSelectedPackId(packId: String?) {
         selectedPackId = packId
+        _diagnostics.value = diagnostics.value.copy(packId = packId)
     }
 
-    fun setSpeaker(id: Int) { speakerId = id }
+    fun setSpeaker(id: Int) {
+        speakerId = id
+        _diagnostics.value = diagnostics.value.copy(
+            speakerId = clampedSpeakerId(),
+            speakerLabel = SPEAKERS.firstOrNull { it.second == clampedSpeakerId() }?.first,
+        )
+    }
 
     fun getOrtIntraThreads(): Int = ortIntraThreads
 
@@ -121,6 +147,7 @@ class UtrobinTtsEngine @Inject constructor(
         val v = value.roundToInt().coerceIn(1, 4)
         if (v == ortIntraThreads && !sessionStale) return
         ortIntraThreads = v
+        _diagnostics.value = diagnostics.value.copy(ortThreads = ortIntraThreads)
         if (ortSession != null) sessionStale = true
     }
 
@@ -165,6 +192,7 @@ class UtrobinTtsEngine @Inject constructor(
             logSessionIoSummary()
             sampleRate = readSampleRateFromConfig(dir) ?: 16000
             maxSpeakerIndex = 1
+            resetDiagnosticsForPack(pack.packId)
             _isReady.value = true
             Timber.d("UtrobinTTS (HF ONNX Runtime) ready, sampleRate=$sampleRate, speakers=${maxSpeakerIndex + 1}")
             TtsPrepareResult(
@@ -219,7 +247,19 @@ class UtrobinTtsEngine @Inject constructor(
     }
 
     private fun normalizeForUtrobinTts(text: String): String {
-        val lower = text.lowercase(Locale("ru", "RU"))
+        val prepared = text
+            .replace('\u00A0', ' ')
+            .replace("…", "...")
+            .replace("“", "\"")
+            .replace("”", "\"")
+            .replace("„", "\"")
+            .replace("№", " номер ")
+            .replace(Regex("""\bи\s+т\.\s*д\.""", RegexOption.IGNORE_CASE), "и так далее")
+            .replace(Regex("""\bи\s+т\.\s*п\.""", RegexOption.IGNORE_CASE), "и тому подобное")
+            .replace(Regex("""\bт\.\s*д\.""", RegexOption.IGNORE_CASE), "так далее")
+            .replace(Regex("""\bт\.\s*п\.""", RegexOption.IGNORE_CASE), "тому подобное")
+            .replace(Regex("""\s*[—–]\s*"""), " - ")
+        val lower = prepared.lowercase(Locale("ru", "RU"))
         val sb = StringBuilder(lower.length)
         for (ch in lower) {
             when {
@@ -261,6 +301,7 @@ class UtrobinTtsEngine @Inject constructor(
         isPaused = false
         chapterFinishedCallback = onChapterFinished
         playbackSessionId++
+        resetDiagnosticsForSession(sentences.size)
         resume()
     }
 
@@ -276,14 +317,22 @@ class UtrobinTtsEngine @Inject constructor(
             try {
                 while (currentSentenceIndex < sentences.size && isActive && !isPaused && sessionId == playbackSessionId) {
                     val s = sentences[currentSentenceIndex]
-                    _currentWordRange.value = IntRange(s.startOffset, s.endOffset)
-                    val audio = generateAudio(s.text)
-                    if (audio != null && audio.size > 100 && isActive && !isPaused) {
-                        val wj = launch { trackWords(s, audio.size) }
-                        playAudio(audio)
-                        wj.cancel()
+                    val outcome = playSentenceWithRecovery(sentence = s, sessionId = sessionId)
+                    when (outcome.status) {
+                        ChunkPlayStatus.SUCCESS -> if (!isPaused) currentSentenceIndex++
+                        ChunkPlayStatus.INTERRUPTED -> return@launch
+                        ChunkPlayStatus.FAILED -> {
+                            val failure = outcome.failure ?: buildPlaybackFailure(
+                                message = "Utrobin не смог дочитать фрагмент",
+                                sentence = s,
+                            )
+                            recordChunkFailure(failure)
+                            _playbackFailures.tryEmit(failure)
+                            _isSpeaking.value = false
+                            _currentWordRange.value = failure.chunkRange
+                            return@launch
+                        }
                     }
-                    if (!isPaused) currentSentenceIndex++
                 }
                 if (currentSentenceIndex >= sentences.size && !isPaused && sessionId == playbackSessionId) {
                     _isSpeaking.value = false
@@ -300,30 +349,122 @@ class UtrobinTtsEngine @Inject constructor(
         }
     }
 
-    private fun generateAudio(text: String): FloatArray? {
-        if (text.isBlank()) return null
+    private enum class ChunkPlayStatus {
+        SUCCESS,
+        INTERRUPTED,
+        FAILED,
+    }
+
+    private data class ChunkPlayOutcome(
+        val status: ChunkPlayStatus,
+        val usedRecovery: Boolean = false,
+        val failure: UtrobinPlaybackFailure? = null,
+    )
+
+    private suspend fun playSentenceWithRecovery(
+        sentence: SentenceInfo,
+        sessionId: Long,
+    ): ChunkPlayOutcome {
+        if (!canContinue(sessionId)) {
+            return ChunkPlayOutcome(status = ChunkPlayStatus.INTERRUPTED)
+        }
+        markChunkAttempt(sentence)
+        _currentWordRange.value = sentence.range()
+        val attempt = generateAudio(sentence.text)
+        if (attempt.audio != null && attempt.audio.size > 100) {
+            if (!canContinue(sessionId)) {
+                return ChunkPlayOutcome(status = ChunkPlayStatus.INTERRUPTED)
+            }
+            coroutineScope {
+                val wj = launch { trackWords(sentence, attempt.audio.size) }
+                try {
+                    playAudio(attempt.audio)
+                } finally {
+                    wj.cancel()
+                }
+            }
+            recordChunkSuccess(
+                usedRecovery = sentence.splitDepth > 0,
+                durationMs = attempt.durationMs,
+            )
+            return ChunkPlayOutcome(
+                status = if (canContinue(sessionId)) ChunkPlayStatus.SUCCESS else ChunkPlayStatus.INTERRUPTED,
+                usedRecovery = sentence.splitDepth > 0,
+            )
+        }
+
+        val splits = splitSentenceForRecovery(sentence)
+        if (splits.size <= 1) {
+            return ChunkPlayOutcome(
+                status = ChunkPlayStatus.FAILED,
+                failure = buildPlaybackFailure(
+                    message = attempt.errorMessage ?: "Не удалось подобрать безопасное разбиение фрагмента",
+                    sentence = sentence,
+                ),
+            )
+        }
+
+        val splitReason = splits.first().sourceTag.substringAfter("recovery:")
+        val recoveryNote = "Recovery split depth ${sentence.splitDepth + 1}: $splitReason"
+        _diagnostics.value = diagnostics.value.copy(lastRecoveryAction = recoveryNote)
+        Timber.w(
+            "Utrobin recovery split depth=%d reason=%s preview=%s",
+            sentence.splitDepth,
+            splitReason,
+            previewText(sentence.text),
+        )
+
+        for (split in splits) {
+            val childOutcome = playSentenceWithRecovery(sentence = split, sessionId = sessionId)
+            when (childOutcome.status) {
+                ChunkPlayStatus.SUCCESS -> Unit
+                ChunkPlayStatus.INTERRUPTED -> return childOutcome
+                ChunkPlayStatus.FAILED -> return ChunkPlayOutcome(
+                    status = ChunkPlayStatus.FAILED,
+                    usedRecovery = true,
+                    failure = childOutcome.failure ?: buildPlaybackFailure(
+                        message = "Не удалось озвучить дочерний фрагмент после recovery split",
+                        sentence = split,
+                    ),
+                )
+            }
+        }
+        return ChunkPlayOutcome(status = ChunkPlayStatus.SUCCESS, usedRecovery = true)
+    }
+
+    private data class GenerationAttempt(
+        val audio: FloatArray? = null,
+        val durationMs: Long = 0L,
+        val errorMessage: String? = null,
+    )
+
+    private fun generateAudio(text: String): GenerationAttempt {
+        if (text.isBlank()) return GenerationAttempt(errorMessage = "Пустой chunk")
         val normalized = normalizeForUtrobinTts(text)
-        if (normalized.isBlank()) return null
+        if (normalized.isBlank()) return GenerationAttempt(errorMessage = "Пустой текст после normalize")
 
         val ids = UtrobinCharTokenizer.textToFlatIds(normalized, token2id)
         if (ids.isEmpty()) {
             Timber.w("Utrobin: empty token sequence")
-            return null
+            return GenerationAttempt(errorMessage = "Пустая последовательность токенов")
         }
         for (x in ids) {
             if (x < 0 || x > maxTokenId) {
                 Timber.e("Utrobin: token id out of range: $x (max $maxTokenId)")
-                return null
+                return GenerationAttempt(errorMessage = "Token id out of range: $x")
             }
         }
 
         val env = OrtEnvironment.getEnvironment()
         val seqLen = ids.size
         val sid = clampedSpeakerId().toLong()
+        val startedAt = SystemClock.elapsedRealtime()
 
         return synchronized(sessionLock) utrobinInfer@{
             ensureOrtSessionFresh()
-            val session = ortSession ?: return@utrobinInfer null
+            val session = ortSession ?: return@utrobinInfer GenerationAttempt(
+                errorMessage = "Utrobin runtime не инициализирован",
+            )
             try {
                 OnnxTensor.createTensor(env, arrayOf(ids)).use { inputIds ->
                     OnnxTensor.createTensor(env, Array(1) { LongArray(seqLen) { 1L } }).use { mask ->
@@ -334,17 +475,26 @@ class UtrobinTtsEngine @Inject constructor(
                                     Timber.e(
                                         "Utrobin: no tensor output (keys: ${result.joinToString { it.key }})",
                                     )
-                                    return@runOut null
+                                    return@runOut GenerationAttempt(errorMessage = "Модель не вернула waveform")
                                 }
                                 val raw = waveformToFloatArray(tensor)
-                                resampleForSpeechRate(raw)
+                                if (raw.isEmpty()) {
+                                    return@runOut GenerationAttempt(errorMessage = "Пустой waveform")
+                                }
+                                GenerationAttempt(
+                                    audio = resampleForSpeechRate(raw),
+                                    durationMs = SystemClock.elapsedRealtime() - startedAt,
+                                )
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "UtrobinTTS ONNX failed: ${text.take(40)}")
-                null
+                GenerationAttempt(
+                    durationMs = SystemClock.elapsedRealtime() - startedAt,
+                    errorMessage = e.message ?: "Utrobin ONNX failed",
+                )
             }
         }
     }
@@ -433,6 +583,95 @@ class UtrobinTtsEngine @Inject constructor(
                     floatArrayOf()
                 }
             }
+        }
+    }
+
+    private fun canContinue(sessionId: Long): Boolean {
+        return !isPaused && sessionId == playbackSessionId && playbackJob?.isActive != false
+    }
+
+    private fun resetDiagnosticsForPack(packId: String?) {
+        _diagnostics.value = UtrobinPlaybackDiagnostics(
+            packId = packId ?: selectedPackId,
+            speakerId = clampedSpeakerId(),
+            speakerLabel = SPEAKERS.firstOrNull { it.second == clampedSpeakerId() }?.first,
+            speechRate = speechRate,
+            ortThreads = ortIntraThreads,
+        )
+    }
+
+    private fun resetDiagnosticsForSession(totalChunks: Int) {
+        _diagnostics.value = diagnostics.value.copy(
+            packId = diagnostics.value.packId ?: selectedPackId,
+            speakerId = clampedSpeakerId(),
+            speakerLabel = SPEAKERS.firstOrNull { it.second == clampedSpeakerId() }?.first,
+            speechRate = speechRate,
+            ortThreads = ortIntraThreads,
+            totalChunks = totalChunks,
+            completedChunks = 0,
+            recoveredChunks = 0,
+            failedChunks = 0,
+            lastChunkPreview = null,
+            lastChunkRange = null,
+            lastChunkSplitDepth = 0,
+            lastChunkDurationMs = null,
+            lastRecoveryAction = null,
+            lastFailureMessage = null,
+            lastFailurePreview = null,
+            lastFailureRange = null,
+        )
+    }
+
+    private fun markChunkAttempt(sentence: SentenceInfo) {
+        _diagnostics.value = diagnostics.value.copy(
+            lastChunkPreview = previewText(sentence.text),
+            lastChunkRange = sentence.range(),
+            lastChunkSplitDepth = sentence.splitDepth,
+        )
+    }
+
+    private fun recordChunkSuccess(usedRecovery: Boolean, durationMs: Long) {
+        _diagnostics.value = diagnostics.value.copy(
+            completedChunks = (diagnostics.value.completedChunks + 1).coerceAtMost(diagnostics.value.totalChunks),
+            recoveredChunks = if (usedRecovery) diagnostics.value.recoveredChunks + 1 else diagnostics.value.recoveredChunks,
+            lastChunkDurationMs = durationMs,
+        )
+    }
+
+    private fun recordChunkFailure(failure: UtrobinPlaybackFailure) {
+        _diagnostics.value = diagnostics.value.copy(
+            failedChunks = diagnostics.value.failedChunks + 1,
+            lastFailureMessage = failure.message,
+            lastFailurePreview = failure.chunkPreview,
+            lastFailureRange = failure.chunkRange,
+        )
+        Timber.e(
+            "Utrobin final failure: speaker=%s pack=%s range=%s preview=%s message=%s",
+            failure.speakerLabel ?: failure.speakerId,
+            failure.packId,
+            failure.chunkRange,
+            failure.chunkPreview,
+            failure.message,
+        )
+    }
+
+    private fun buildPlaybackFailure(message: String, sentence: SentenceInfo): UtrobinPlaybackFailure {
+        return UtrobinPlaybackFailure(
+            message = message,
+            chunkPreview = previewText(sentence.text),
+            chunkRange = sentence.range(),
+            packId = diagnostics.value.packId,
+            speakerId = clampedSpeakerId(),
+            speakerLabel = SPEAKERS.firstOrNull { it.second == clampedSpeakerId() }?.first,
+        )
+    }
+
+    private fun previewText(text: String): String {
+        val normalized = text.replace(Regex("""\s+"""), " ").trim()
+        return if (normalized.length <= CHUNK_PREVIEW_LIMIT) {
+            normalized
+        } else {
+            normalized.take(CHUNK_PREVIEW_LIMIT - 1) + "…"
         }
     }
 
@@ -534,6 +773,7 @@ class UtrobinTtsEngine @Inject constructor(
 
     fun setSpeechRate(rate: Float) {
         speechRate = rate.coerceIn(0.5f, 2.0f)
+        _diagnostics.value = diagnostics.value.copy(speechRate = speechRate)
     }
 
     fun shutdown() {
@@ -559,18 +799,136 @@ class UtrobinTtsEngine @Inject constructor(
         pattern.findAll(text).forEach { m ->
             val end = m.range.last + 1
             val t = text.substring(last, end).trim()
-            if (t.isNotBlank()) result.add(SentenceInfo(t, last, end))
+            if (t.isNotBlank()) splitLargeChunk(t, last, end).forEach(result::add)
             last = end
         }
         if (last < text.length) {
             val t = text.substring(last).trim()
-            if (t.isNotBlank()) result.add(SentenceInfo(t, last, text.length))
+            if (t.isNotBlank()) splitLargeChunk(t, last, text.length).forEach(result::add)
         }
-        if (result.isEmpty() && text.isNotBlank()) result.add(SentenceInfo(text.trim(), 0, text.length))
-        return mergeNearbySentences(result)
+        if (result.isEmpty() && text.isNotBlank()) splitLargeChunk(text.trim(), 0, text.length).forEach(result::add)
+        return mergeNearbySentences(result, text)
     }
 
-    private fun mergeNearbySentences(sentences: List<SentenceInfo>): List<SentenceInfo> {
+    private fun splitLargeChunk(chunk: String, start: Int, end: Int): List<SentenceInfo> {
+        if (chunk.length <= 220) return listOf(SentenceInfo(chunk, start, end))
+        val out = mutableListOf<SentenceInfo>()
+        var cursor = 0
+        while (cursor < chunk.length) {
+            val rawEnd = (cursor + 200).coerceAtMost(chunk.length)
+            if (rawEnd >= chunk.length) {
+                val last = chunk.substring(cursor).trim()
+                if (last.isNotBlank()) out += SentenceInfo(last, start + cursor, end)
+                break
+            }
+            val region = chunk.substring(cursor, rawEnd)
+            val splitAt = maxOf(region.lastIndexOf(", "), region.lastIndexOf(" - "), region.lastIndexOf(' '))
+                .takeIf { it > 28 } ?: region.length
+            val pieceEnd = (cursor + splitAt).coerceAtMost(chunk.length)
+            val piece = chunk.substring(cursor, pieceEnd).trim()
+            if (piece.isNotBlank()) {
+                out += SentenceInfo(piece, start + cursor, start + pieceEnd)
+            }
+            cursor = pieceEnd.coerceAtLeast(cursor + 1)
+        }
+        return out
+    }
+
+    private fun splitSentenceForRecovery(sentence: SentenceInfo): List<SentenceInfo> {
+        if (sentence.splitDepth >= 2 || sentence.text.length < 32) return emptyList()
+        val strategies = listOf(
+            "\n\n" to "paragraph",
+            ". " to "sentence",
+            "; " to "semicolon",
+            ": " to "colon",
+            ", " to "comma",
+            " - " to "dash",
+        )
+        for ((separator, label) in strategies) {
+            val pieces = splitSentenceBySeparator(sentence, separator, label)
+            if (pieces.size > 1) return pieces
+        }
+        return splitSentenceByLength(sentence)
+    }
+
+    private fun splitSentenceBySeparator(
+        sentence: SentenceInfo,
+        separator: String,
+        label: String,
+    ): List<SentenceInfo> {
+        if (!sentence.text.contains(separator)) return emptyList()
+        val parts = mutableListOf<SentenceInfo>()
+        var searchStart = 0
+        val text = sentence.text
+        while (searchStart < text.length) {
+            val splitIndex = text.indexOf(separator, startIndex = searchStart)
+            val pieceEndExclusive = if (splitIndex >= 0) splitIndex + separator.length else text.length
+            val rawPiece = text.substring(searchStart, pieceEndExclusive)
+            val info = createSentenceInfo(
+                rawText = rawPiece,
+                startOffset = sentence.startOffset + searchStart,
+                splitDepth = sentence.splitDepth + 1,
+                sourceTag = "recovery:$label",
+            )
+            if (info != null) parts += info
+            if (splitIndex < 0) break
+            searchStart = pieceEndExclusive
+        }
+        return parts
+    }
+
+    private fun splitSentenceByLength(sentence: SentenceInfo): List<SentenceInfo> {
+        val text = sentence.text
+        if (text.length < 72) return emptyList()
+        val midpoint = text.length / 2
+        val searchWindow = 48
+        val from = (midpoint - searchWindow).coerceAtLeast(16)
+        val to = (midpoint + searchWindow).coerceAtMost(text.lastIndex)
+        var splitAt = -1
+        for (i in to downTo from) {
+            if (text[i].isWhitespace()) {
+                splitAt = i
+                break
+            }
+        }
+        if (splitAt <= 16 || splitAt >= text.lastIndex - 16) return emptyList()
+        val first = createSentenceInfo(
+            rawText = text.substring(0, splitAt),
+            startOffset = sentence.startOffset,
+            splitDepth = sentence.splitDepth + 1,
+            sourceTag = "recovery:length",
+        )
+        val second = createSentenceInfo(
+            rawText = text.substring(splitAt),
+            startOffset = sentence.startOffset + splitAt,
+            splitDepth = sentence.splitDepth + 1,
+            sourceTag = "recovery:length",
+        )
+        return listOfNotNull(first, second).takeIf { it.size > 1 }.orEmpty()
+    }
+
+    private fun createSentenceInfo(
+        rawText: String,
+        startOffset: Int,
+        splitDepth: Int,
+        sourceTag: String,
+    ): SentenceInfo? {
+        var trimStart = 0
+        var trimEnd = rawText.length
+        while (trimStart < trimEnd && rawText[trimStart].isWhitespace()) trimStart++
+        while (trimEnd > trimStart && rawText[trimEnd - 1].isWhitespace()) trimEnd--
+        if (trimStart >= trimEnd) return null
+        val trimmed = rawText.substring(trimStart, trimEnd)
+        return SentenceInfo(
+            text = trimmed,
+            startOffset = startOffset + trimStart,
+            endOffset = startOffset + trimEnd,
+            splitDepth = splitDepth,
+            sourceTag = sourceTag,
+        )
+    }
+
+    private fun mergeNearbySentences(sentences: List<SentenceInfo>, sourceText: String): List<SentenceInfo> {
         if (sentences.size <= 1) return sentences
         val merged = mutableListOf<SentenceInfo>()
         var current = sentences.first()
@@ -578,13 +936,21 @@ class UtrobinTtsEngine @Inject constructor(
         val maxTotal = mergeTotalCap
         for (i in 1 until sentences.size) {
             val next = sentences[i]
+            val gap = sourceText.substring(
+                current.endOffset.coerceAtLeast(0).coerceAtMost(sourceText.length),
+                next.startOffset.coerceAtLeast(0).coerceAtMost(sourceText.length),
+            )
+            val keepBoundary = gap.contains("\n\n")
             val shouldMerge = current.text.length < maxShort && next.text.length < maxShort &&
-                (current.text.length + next.text.length) < maxTotal
+                (current.text.length + next.text.length) < maxTotal &&
+                !keepBoundary
             current = if (shouldMerge) {
                 SentenceInfo(
                     text = "${current.text} ${next.text}".trim(),
                     startOffset = current.startOffset,
                     endOffset = next.endOffset,
+                    splitDepth = maxOf(current.splitDepth, next.splitDepth),
+                    sourceTag = "merged",
                 )
             } else {
                 merged.add(current)

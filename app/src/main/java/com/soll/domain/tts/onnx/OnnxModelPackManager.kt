@@ -35,6 +35,8 @@ class OnnxModelPackManager @Inject constructor(
         packLibrary.listDetectedPacks()
             .asSequence()
             .filter { it.engineFamily == TtsPackEngineFamily.ONNX_EXTERNAL }
+            .filter { it.status == TtsPackStatus.READY }
+            .filter { it.isRussianCapable }
             .mapNotNull(::toInstalledOnnxPack)
             .sortedWith(compareBy({ it.modelId }, { it.precision }))
             .toList()

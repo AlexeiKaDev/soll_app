@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.soll.data.local.entity.BookEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
@@ -120,6 +121,7 @@ fun BookReaderScreen(
             selectedNatashaPackId = uiState.selectedNatashaPackId,
             selectedUtrobinPackId = uiState.selectedUtrobinPackId,
             piperDiagnostics = uiState.piperDiagnostics,
+            natashaDiagnostics = uiState.natashaDiagnostics,
             installedOnnxPacks = uiState.installedOnnxPacks,
             selectedOnnxPackKey = uiState.selectedOnnxPackKey,
             onBack = { viewModel.closeBook() },
@@ -387,6 +389,7 @@ private fun BookReadingScreen(
     selectedNatashaPackId: String?,
     selectedUtrobinPackId: String?,
     piperDiagnostics: PiperPlaybackDiagnostics,
+    natashaDiagnostics: NatashaPlaybackDiagnostics,
     installedOnnxPacks: List<InstalledOnnxPack>,
     selectedOnnxPackKey: String?,
     onBack: () -> Unit,
@@ -627,722 +630,429 @@ private fun BookReadingScreen(
             onDismissRequest = { showSettings = false },
             title = { Text("Reading Settings") },
             text = {
+                val removableSuggestedPacks = detectedTtsPacks.filter { it.suggestedDeletion && it.canDelete }
+                val piperPacks = detectedTtsPacks.filter { it.engineFamily.name == "PIPER" }
+                val natashaPacks = detectedTtsPacks.filter { it.engineFamily.name == "NATASHA" }
+                val utrobinPacks = detectedTtsPacks.filter { it.engineFamily.name == "UTROBIN" }
+                val selectedVoiceId = when (engineType) {
+                    TtsEngineType.SILERO -> sileroVoiceId
+                    TtsEngineType.UTROBIN -> utrobinVoiceId
+                    TtsEngineType.NATASHA -> ""
+                    TtsEngineType.ONNX_EXTERNAL -> ""
+                    TtsEngineType.SYSTEM -> ""
+                }
                 Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    // Speech rate
-                    Text(
-                        text = "Speech Rate: ${String.format("%.1f", speechRate)}x",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Slider(
-                        value = speechRate,
-                        onValueChange = onSpeechRateChange,
-                        valueRange = 0.5f..2.0f,
-                        steps = 5
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Профиль нагрузки (S200 и др.)",
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Text(
-                        text = "Батарея: меньше потоков и крупнее фразы. Качество: больше CPU, мельче чанки.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ReaderSettingsSection(
+                        title = "Воспроизведение",
+                        subtitle = "Скорость, профиль нагрузки и поведение при переходе по главам.",
                     ) {
-                        FilterChip(
-                            selected = performanceProfile == TtsBookPerformanceProfile.BATTERY,
-                            onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.BATTERY) },
-                            label = { Text("Батарея") },
+                        Text(
+                            text = "Speech Rate: ${String.format("%.1f", speechRate)}x",
+                            style = MaterialTheme.typography.bodyMedium,
                         )
-                        FilterChip(
-                            selected = performanceProfile == TtsBookPerformanceProfile.BALANCED,
-                            onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.BALANCED) },
-                            label = { Text("Баланс") },
+                        Slider(
+                            value = speechRate,
+                            onValueChange = onSpeechRateChange,
+                            valueRange = 0.5f..2.0f,
+                            steps = 5,
                         )
-                        FilterChip(
-                            selected = performanceProfile == TtsBookPerformanceProfile.QUALITY,
-                            onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.QUALITY) },
-                            label = { Text("Качество") },
-                        )
-                    }
-
-                    if (engineTunables.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Параметры движка",
-                            style = MaterialTheme.typography.titleSmall,
+                            text = "Профиль нагрузки",
+                            style = MaterialTheme.typography.labelLarge,
                         )
-                        engineTunables.forEach { tunable ->
-                            when (tunable) {
-                                is TtsEngineTunable.Slider -> {
-                                    val sliderValue = when (tunable.key) {
-                                        "pitch" -> systemPitch
-                                        "ort_intra_threads" -> utrobinOrtThreads.toFloat()
-                                        "natasha_ort_intra_threads" -> natashaOrtThreads.toFloat()
-                                        "sherpa_num_threads" -> sherpaThreads.toFloat()
-                                        else -> tunable.defaultValue
-                                    }.coerceIn(tunable.range.start, tunable.range.endInclusive)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    val valueLabel = when (tunable.key) {
-                                        "ort_intra_threads",
-                                        "natasha_ort_intra_threads",
-                                        "sherpa_num_threads",
-                                        -> sliderValue.toInt().toString()
-                                        else -> String.format("%.2f", sliderValue)
-                                    }
-                                    Text(
-                                        text = "${tunable.label}: $valueLabel",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    val stepsCount = tunable.materialSliderSteps
-                                        ?: (((tunable.range.endInclusive - tunable.range.start) * 20f).toInt() - 1)
-                                            .coerceAtLeast(0)
-                                    Slider(
-                                        value = sliderValue,
-                                        onValueChange = { onEngineTunableChange(tunable.key, it) },
-                                        valueRange = tunable.range,
-                                        steps = stepsCount,
-                                    )
-                                }
-                            }
+                        Text(
+                            text = "Батарея: меньше потоков и крупнее фразы. Качество: больше CPU и безопаснее чанки.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilterChip(
+                                selected = performanceProfile == TtsBookPerformanceProfile.BATTERY,
+                                onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.BATTERY) },
+                                label = { Text("Батарея") },
+                            )
+                            FilterChip(
+                                selected = performanceProfile == TtsBookPerformanceProfile.BALANCED,
+                                onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.BALANCED) },
+                                label = { Text("Баланс") },
+                            )
+                            FilterChip(
+                                selected = performanceProfile == TtsBookPerformanceProfile.QUALITY,
+                                onClick = { onPerformanceProfileChange(TtsBookPerformanceProfile.QUALITY) },
+                                label = { Text("Качество") },
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Auto-advance chapters",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Switch(
+                                checked = autoAdvanceEnabled,
+                                onCheckedChange = onAutoAdvanceChange,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = onResetProgress,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.Restore, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Сбросить прогресс книги")
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Auto-advance toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Auto-advance chapters",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Switch(
-                            checked = autoAdvanceEnabled,
-                            onCheckedChange = onAutoAdvanceChange
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = onResetProgress,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Restore, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Сбросить прогресс книги")
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        text = "Локальные модели и голоса",
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ReaderSettingsSection(
+                        title = "Модели и голоса",
+                        subtitle = "Ручной импорт пользовательских pack-ов и управление локальной библиотекой.",
                     ) {
                         OutlinedButton(
                             onClick = onPickOnnxImportFolder,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Icon(Icons.Filled.FolderOpen, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Папка tts", style = MaterialTheme.typography.labelLarge)
-                        }
-                        OutlinedButton(
-                            onClick = onRefreshOnnxPacks,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Обновить", style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Выбери корневую папку tts. Приложение импортирует локальные паки во внутреннее хранилище и покажет, что реально runnable на Android.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    lastTtsModelRootUri?.let { savedRoot ->
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Последняя папка tts: $savedRoot",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    val removableSuggestedPacks = detectedTtsPacks.filter { it.suggestedDeletion && it.canDelete }
-                    if (removableSuggestedPacks.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = onDeleteSuggestedTtsPacks,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Удалить всё на удаление (${removableSuggestedPacks.size})")
+                            Text("Импорт из папки tts")
                         }
-                    }
-                    if (downloadableTtsPacks.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        downloadableTtsPacks.forEach { pack ->
-                            OutlinedButton(
-                                onClick = { onDownloadTtsPack(pack.id) },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Скачать ${pack.displayName}")
-                            }
-                            Text(
-                                text = pack.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    if (packDownloadLabel != null || packDownloadProgress != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = packDownloadLabel ?: "Загрузка модели",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        if (packDownloadProgress != null) {
-                            LinearProgressIndicator(
-                                progress = { packDownloadProgress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp)
-                            )
-                        }
-                    }
-                    if (detectedTtsPacks.isEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Паки пока не найдены.",
+                            text = "Кнопка нужна для ручного импорта `Utrobin`, `ONNX External` и любых пользовательских pack-ов. Отдельный ручной refresh больше не нужен: список обновляется автоматически после импорта, загрузки и удаления.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    } else {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        detectedTtsPacks.forEach { pack ->
-                            val statusColor = when (pack.status) {
-                                TtsPackStatus.READY -> MaterialTheme.colorScheme.primary
-                                TtsPackStatus.READY_NON_RUSSIAN -> MaterialTheme.colorScheme.tertiary
-                                else -> MaterialTheme.colorScheme.error
-                            }
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.Top,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = when (pack.status) {
-                                            TtsPackStatus.READY -> Icons.Default.CheckCircle
-                                            TtsPackStatus.READY_NON_RUSSIAN -> Icons.Default.Info
-                                            else -> Icons.Default.Warning
-                                        },
-                                        contentDescription = null,
-                                        tint = statusColor,
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = pack.displayName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                        Text(
-                                            text = "${pack.engineFamily.name} · ${pack.status.name}" +
-                                                if (pack.suggestedDeletion) " · на удаление" else "",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = statusColor,
-                                        )
-                                        pack.voiceSummary()?.let { summary ->
-                                            Text(
-                                                text = summary,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        pack.reason?.let { reason ->
-                                            Text(
-                                                text = reason,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        Text(
-                                            text = pack.rootDir,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    if (pack.canDelete) {
-                                        IconButton(onClick = { onDeleteTtsPack(pack.packId) }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Удалить pack",
-                                                tint = MaterialTheme.colorScheme.error,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Engine type selector
-                    Text(
-                        text = "TTS Engine",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Silero/Piper first — baseline: скорость и расход батареи
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.SILERO) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.SILERO,
-                            onClick = { onEngineTypeChange(TtsEngineType.SILERO) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("Piper / Sherpa (оффлайн) — базовый режим", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Низкая нагрузка, стабильно; нужен локальный Piper pack с ONNX-голосом, tokens.txt и espeak-ng-data. Если pack-а нет, скачай Piper Irina ниже.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (engineType == TtsEngineType.SILERO) {
-                        val piperPacks = detectedTtsPacks.filter { it.engineFamily.name == "PIPER" }
-                        if (piperPacks.isEmpty()) {
-                            Text(
-                                text = "Локальные Piper pack-и не найдены.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else {
-                            piperPacks.forEach { pack ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onSelectEnginePack(pack.packId) }
-                                        .padding(vertical = 2.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = pack.packId == selectedPiperPackId,
-                                        onClick = { onSelectEnginePack(pack.packId) },
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Column {
-                                        Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
-                                        pack.voiceSummary()?.let {
-                                            Text(it, style = MaterialTheme.typography.labelSmall)
-                                        }
-                                        Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
-                                        pack.reason?.let {
-                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            ),
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "Диагностика Piper",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Голос: ${piperDiagnostics.voiceLabel ?: "—"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    text = "Pack: ${piperDiagnostics.packId ?: "—"}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = "Чанки: ${piperDiagnostics.completedChunks}/${piperDiagnostics.totalChunks} · recovery ${piperDiagnostics.recoveredChunks} · ошибки ${piperDiagnostics.failedChunks}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Text(
-                                    text = "Rate ${String.format("%.1f", piperDiagnostics.speechRate)}x · threads ${piperDiagnostics.sherpaThreads}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                piperDiagnostics.lastRecoveryAction?.let { note ->
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = note,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.tertiary,
-                                    )
-                                }
-                                piperDiagnostics.lastChunkPreview?.let { preview ->
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "Последний chunk: $preview",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 3,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    piperDiagnostics.lastChunkRange?.let { range ->
-                                        Text(
-                                            text = "Диапазон: ${range.asDisplayRange()} · depth ${piperDiagnostics.lastChunkSplitDepth}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                                piperDiagnostics.lastFailureMessage?.let { message ->
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "Последняя ошибка: $message",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error,
-                                        maxLines = 4,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    piperDiagnostics.lastFailurePreview?.let { preview ->
-                                        Text(
-                                            text = "Проблемный фрагмент: $preview",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 4,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    piperDiagnostics.lastFailureRange?.let { range ->
-                                        Text(
-                                            text = "Сбой в диапазоне: ${range.asDisplayRange()}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.NATASHA) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.NATASHA,
-                            onClick = { onEngineTypeChange(TtsEngineType.NATASHA) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("Natasha VITS2 (оффлайн)", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Лучшая русская интонация среди оффлайн вариантов; выше CPU и расход батареи, модель берётся из локальной папки tts.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (engineType == TtsEngineType.NATASHA) {
-                        val natashaPacks = detectedTtsPacks.filter { it.engineFamily.name == "NATASHA" }
-                        if (natashaPacks.isEmpty()) {
-                            Text(
-                                text = "Локальные Natasha pack-и не найдены.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else {
-                            natashaPacks.forEach { pack ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onSelectEnginePack(pack.packId) }
-                                        .padding(vertical = 2.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = pack.packId == selectedNatashaPackId,
-                                        onClick = { onSelectEnginePack(pack.packId) },
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Column {
-                                        Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
-                                        Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
-                                        pack.reason?.let {
-                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.UTROBIN) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.UTROBIN,
-                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("Utrobin VITS (оффлайн)", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Русский ONNX/VITS из локального pack-а; средняя нагрузка, качество зависит от токенизации и чанков.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (engineType == TtsEngineType.UTROBIN) {
-                        val utrobinPacks = detectedTtsPacks.filter { it.engineFamily.name == "UTROBIN" }
-                        if (utrobinPacks.isEmpty()) {
-                            Text(
-                                text = "Локальные Utrobin pack-и не найдены.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else {
-                            utrobinPacks.forEach { pack ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onSelectEnginePack(pack.packId) }
-                                        .padding(vertical = 2.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = pack.packId == selectedUtrobinPackId,
-                                        onClick = { onSelectEnginePack(pack.packId) },
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Column {
-                                        Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
-                                        Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
-                                        pack.reason?.let {
-                                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.ONNX_EXTERNAL) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.ONNX_EXTERNAL,
-                            onClick = { onEngineTypeChange(TtsEngineType.ONNX_EXTERNAL) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("ONNX External (RU модели)", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Пакеты моделей ставятся отдельно (вне APK), выбор по quality/size.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    if (engineType == TtsEngineType.ONNX_EXTERNAL) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        if (installedOnnxPacks.isEmpty()) {
+                        lastTtsModelRootUri?.let { savedRoot ->
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Runnable ONNX-паки не найдены. Неподдержанные runtime и нерусские паки смотри выше в общем списке моделей.",
+                                text = "Последняя папка tts: $savedRoot",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (removableSuggestedPacks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = onDeleteSuggestedTtsPacks,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Удалить всё на удаление (${removableSuggestedPacks.size})")
+                            }
+                        }
+                        if (downloadableTtsPacks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Быстрая загрузка русских pack-ов",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            downloadableTtsPacks.forEach { pack ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = { onDownloadTtsPack(pack.id) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Скачать ${pack.displayName}")
+                                }
+                                Text(
+                                    text = pack.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        if (packDownloadLabel != null || packDownloadProgress != null || sileroDownloadProgress != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = packDownloadLabel ?: "Загрузка модели",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            (packDownloadProgress ?: sileroDownloadProgress)?.let { progress ->
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        if (detectedTtsPacks.isEmpty()) {
+                            Text(
+                                text = "Паки пока не найдены.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
-                            installedOnnxPacks.forEach { pack ->
-                                val key = "${pack.modelId}|${pack.precision}"
+                            Text(
+                                text = "Установленные pack-и",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            detectedTtsPacks.forEach { pack ->
+                                ReaderPackCard(
+                                    pack = pack,
+                                    onDelete = if (pack.canDelete) {
+                                        { onDeleteTtsPack(pack.packId) }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    ReaderSettingsSection(
+                        title = "Движок чтения",
+                        subtitle = "Выбор активного runtime. Детальные настройки показываются только для выбранного движка.",
+                    ) {
+                        ReaderEngineOption(
+                            selected = engineType == TtsEngineType.SILERO,
+                            title = "Piper / Sherpa (оффлайн) — базовый режим",
+                            description = "Низкая нагрузка, стабильно; нужен локальный Piper pack с ONNX-голосом, tokens.txt и espeak-ng-data.",
+                            onClick = { onEngineTypeChange(TtsEngineType.SILERO) },
+                        )
+                        ReaderEngineOption(
+                            selected = engineType == TtsEngineType.NATASHA,
+                            title = "Natasha VITS2 (оффлайн)",
+                            description = "Лучшая русская интонация среди оффлайн вариантов; выше CPU и расход батареи.",
+                            onClick = { onEngineTypeChange(TtsEngineType.NATASHA) },
+                        )
+                        ReaderEngineOption(
+                            selected = engineType == TtsEngineType.UTROBIN,
+                            title = "Utrobin VITS (оффлайн)",
+                            description = "Русский ONNX/VITS из локального pack-а; средняя нагрузка, качество зависит от токенизации и чанков.",
+                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) },
+                        )
+                        ReaderEngineOption(
+                            selected = engineType == TtsEngineType.ONNX_EXTERNAL,
+                            title = "ONNX External (RU модели)",
+                            description = "Пакеты моделей ставятся отдельно, выбор по quality/size.",
+                            onClick = { onEngineTypeChange(TtsEngineType.ONNX_EXTERNAL) },
+                        )
+                        ReaderEngineOption(
+                            selected = engineType == TtsEngineType.SYSTEM,
+                            title = "System TTS",
+                            description = "Google TTS или другой установленный движок Android.",
+                            onClick = { onEngineTypeChange(TtsEngineType.SYSTEM) },
+                        )
+                    }
+
+                    ReaderSettingsSection(
+                        title = when (engineType) {
+                            TtsEngineType.SILERO -> "Текущий движок: Piper"
+                            TtsEngineType.NATASHA -> "Текущий движок: Natasha"
+                            TtsEngineType.UTROBIN -> "Текущий движок: Utrobin"
+                            TtsEngineType.ONNX_EXTERNAL -> "Текущий движок: ONNX External"
+                            TtsEngineType.SYSTEM -> "Текущий движок: System TTS"
+                        },
+                        subtitle = when (engineType) {
+                            TtsEngineType.SILERO -> "Пакет = голос. Здесь выбирается конкретный установленный pack и видна диагностика чтения."
+                            TtsEngineType.NATASHA -> "Первый следующий offline-движок после Piper. Добавлена диагностика и stop на реальном сбое вместо тихого skip."
+                            TtsEngineType.UTROBIN -> "Пока это ручной pack-движок. После Natasha сюда можно будет переносить ту же схему диагностики."
+                            TtsEngineType.ONNX_EXTERNAL -> "Показываются только runnable пакеты. Неподдержанные runtime остаются в общей библиотеке выше."
+                            TtsEngineType.SYSTEM -> "Выбор установленного системного TTS и его пользовательских параметров."
+                        },
+                    ) {
+                        when (engineType) {
+                            TtsEngineType.SILERO -> {
+                                if (piperPacks.isEmpty()) {
+                                    Text(
+                                        text = "Локальные Piper pack-и не найдены.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    piperPacks.forEach { pack ->
+                                        ReaderPackSelectorRow(
+                                            pack = pack,
+                                            selected = pack.packId == selectedPiperPackId,
+                                            onClick = { onSelectEnginePack(pack.packId) },
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                ReaderPiperDiagnosticsCard(piperDiagnostics = piperDiagnostics)
+                            }
+                            TtsEngineType.NATASHA -> {
+                                if (natashaPacks.isEmpty()) {
+                                    Text(
+                                        text = "Локальные Natasha pack-и не найдены.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    natashaPacks.forEach { pack ->
+                                        ReaderPackSelectorRow(
+                                            pack = pack,
+                                            selected = pack.packId == selectedNatashaPackId,
+                                            onClick = { onSelectEnginePack(pack.packId) },
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                ReaderNatashaDiagnosticsCard(natashaDiagnostics = natashaDiagnostics)
+                            }
+                            TtsEngineType.UTROBIN -> {
+                                if (utrobinPacks.isEmpty()) {
+                                    Text(
+                                        text = "Локальные Utrobin pack-и не найдены.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    utrobinPacks.forEach { pack ->
+                                        ReaderPackSelectorRow(
+                                            pack = pack,
+                                            selected = pack.packId == selectedUtrobinPackId,
+                                            onClick = { onSelectEnginePack(pack.packId) },
+                                        )
+                                    }
+                                }
+                            }
+                            TtsEngineType.ONNX_EXTERNAL -> {
+                                if (installedOnnxPacks.isEmpty()) {
+                                    Text(
+                                        text = "Runnable ONNX-паки не найдены. Неподдержанные runtime и нерусские паки смотри выше в общей библиотеке моделей.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    installedOnnxPacks.forEach { pack ->
+                                        val key = "${pack.modelId}|${pack.precision}"
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { onSelectOnnxPack(pack.modelId, pack.precision) }
+                                                .padding(vertical = 2.dp, horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            RadioButton(
+                                                selected = key == selectedOnnxPackKey,
+                                                onClick = { onSelectOnnxPack(pack.modelId, pack.precision) },
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Column {
+                                                Text("${pack.modelId} (${pack.precision})", style = MaterialTheme.typography.bodySmall)
+                                                Text("~${pack.estimatedSizeMb} MB", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            TtsEngineType.SYSTEM -> {
+                                if (availableEngines.isEmpty()) {
+                                    Text(
+                                        text = "Системные движки не найдены.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    availableEngines.forEach { (label, packageName) ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { onEngineSelect(packageName) }
+                                                .padding(vertical = 2.dp, horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            RadioButton(
+                                                selected = packageName == selectedEngine,
+                                                onClick = { onEngineSelect(packageName) },
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(label, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (ttsVoiceOptions.isNotEmpty() && engineType != TtsEngineType.SILERO) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Голос",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            ttsVoiceOptions.forEach { voice ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onSelectOnnxPack(pack.modelId, pack.precision) }
+                                        .clickable { onEngineVoiceChange(voice.id) }
                                         .padding(vertical = 2.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     RadioButton(
-                                        selected = key == selectedOnnxPackKey,
-                                        onClick = { onSelectOnnxPack(pack.modelId, pack.precision) }
+                                        selected = voice.id == selectedVoiceId,
+                                        onClick = { onEngineVoiceChange(voice.id) },
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Column {
-                                        Text("${pack.modelId} (${pack.precision})", style = MaterialTheme.typography.bodySmall)
-                                        Text("~${pack.estimatedSizeMb} MB", style = MaterialTheme.typography.labelSmall)
+                                    Text(voice.label, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+
+                        if (engineTunables.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Параметры движка",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            engineTunables.forEach { tunable ->
+                                when (tunable) {
+                                    is TtsEngineTunable.Slider -> {
+                                        val sliderValue = when (tunable.key) {
+                                            "pitch" -> systemPitch
+                                            "ort_intra_threads" -> utrobinOrtThreads.toFloat()
+                                            "natasha_ort_intra_threads" -> natashaOrtThreads.toFloat()
+                                            "sherpa_num_threads" -> sherpaThreads.toFloat()
+                                            else -> tunable.defaultValue
+                                        }.coerceIn(tunable.range.start, tunable.range.endInclusive)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        val valueLabel = when (tunable.key) {
+                                            "ort_intra_threads",
+                                            "natasha_ort_intra_threads",
+                                            "sherpa_num_threads",
+                                            -> sliderValue.toInt().toString()
+                                            else -> String.format("%.2f", sliderValue)
+                                        }
+                                        Text(
+                                            text = "${tunable.label}: $valueLabel",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        val stepsCount = tunable.materialSliderSteps
+                                            ?: (((tunable.range.endInclusive - tunable.range.start) * 20f).toInt() - 1)
+                                                .coerceAtLeast(0)
+                                        Slider(
+                                            value = sliderValue,
+                                            onValueChange = { onEngineTunableChange(tunable.key, it) },
+                                            valueRange = tunable.range,
+                                            steps = stepsCount,
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-
-                    // Download progress
-                    if (sileroDownloadProgress != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Загрузка модели: ${(sileroDownloadProgress * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        LinearProgressIndicator(
-                            progress = { sileroDownloadProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                        )
-                    }
-
-                    val selectedVoiceId = when (engineType) {
-                        TtsEngineType.SILERO -> sileroVoiceId
-                        TtsEngineType.UTROBIN -> utrobinVoiceId
-                        TtsEngineType.NATASHA -> ""
-                        TtsEngineType.ONNX_EXTERNAL -> ""
-                        TtsEngineType.SYSTEM -> ""
-                    }
-                    if (ttsVoiceOptions.isNotEmpty() && engineType != TtsEngineType.SILERO) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Голос",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        ttsVoiceOptions.forEach { voice ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onEngineVoiceChange(voice.id) }
-                                    .padding(vertical = 2.dp, horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = voice.id == selectedVoiceId,
-                                    onClick = { onEngineVoiceChange(voice.id) },
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(voice.label, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // System TTS option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEngineTypeChange(TtsEngineType.SYSTEM) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = engineType == TtsEngineType.SYSTEM,
-                            onClick = { onEngineTypeChange(TtsEngineType.SYSTEM) }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text("System TTS", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Google TTS или другой установленный",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // System engine selector (shown when System is selected)
-                    if (engineType == TtsEngineType.SYSTEM && availableEngines.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "System Engine",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        availableEngines.forEach { (label, packageName) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onEngineSelect(packageName) }
-                                    .padding(vertical = 2.dp, horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = packageName == selectedEngine,
-                                    onClick = { onEngineSelect(packageName) }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(label, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-
                 }
             },
             confirmButton = {
@@ -1351,6 +1061,366 @@ private fun BookReadingScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ReaderSettingsSection(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            subtitle?.let {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ReaderEngineOption(
+    selected: Boolean,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderPackCard(
+    pack: DetectedTtsPack,
+    onDelete: (() -> Unit)?,
+) {
+    val statusColor = when (pack.status) {
+        TtsPackStatus.READY -> MaterialTheme.colorScheme.primary
+        TtsPackStatus.READY_NON_RUSSIAN -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.error
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = when (pack.status) {
+                    TtsPackStatus.READY -> Icons.Default.CheckCircle
+                    TtsPackStatus.READY_NON_RUSSIAN -> Icons.Default.Info
+                    else -> Icons.Default.Warning
+                },
+                contentDescription = null,
+                tint = statusColor,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = pack.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = "${pack.engineFamily.name} · ${pack.status.name}" +
+                        if (pack.suggestedDeletion) " · на удаление" else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = statusColor,
+                )
+                pack.voiceSummary()?.let { summary ->
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                pack.reason?.let { reason ->
+                    Text(
+                        text = reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = pack.rootDir,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Удалить pack",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderPackSelectorRow(
+    pack: DetectedTtsPack,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick,
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Column {
+            Text(pack.displayName, style = MaterialTheme.typography.bodySmall)
+            pack.voiceSummary()?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall)
+            }
+            Text(pack.rootDir, style = MaterialTheme.typography.labelSmall)
+            pack.reason?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderPiperDiagnosticsCard(
+    piperDiagnostics: PiperPlaybackDiagnostics,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Диагностика Piper",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Голос: ${piperDiagnostics.voiceLabel ?: "—"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Pack: ${piperDiagnostics.packId ?: "—"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Чанки: ${piperDiagnostics.completedChunks}/${piperDiagnostics.totalChunks} · recovery ${piperDiagnostics.recoveredChunks} · ошибки ${piperDiagnostics.failedChunks}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Rate ${String.format("%.1f", piperDiagnostics.speechRate)}x · threads ${piperDiagnostics.sherpaThreads}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            piperDiagnostics.lastRecoveryAction?.let { note ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            piperDiagnostics.lastChunkPreview?.let { preview ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последний chunk: $preview",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                piperDiagnostics.lastChunkRange?.let { range ->
+                    Text(
+                        text = "Диапазон: ${range.asDisplayRange()} · depth ${piperDiagnostics.lastChunkSplitDepth}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            piperDiagnostics.lastFailureMessage?.let { message ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последняя ошибка: $message",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                piperDiagnostics.lastFailurePreview?.let { preview ->
+                    Text(
+                        text = "Проблемный фрагмент: $preview",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                piperDiagnostics.lastFailureRange?.let { range ->
+                    Text(
+                        text = "Сбой в диапазоне: ${range.asDisplayRange()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderNatashaDiagnosticsCard(
+    natashaDiagnostics: NatashaPlaybackDiagnostics,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Диагностика Natasha",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Tokenizer: ${natashaDiagnostics.tokenizerLabel ?: "—"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Pack: ${natashaDiagnostics.packId ?: "—"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Чанки: ${natashaDiagnostics.completedChunks}/${natashaDiagnostics.totalChunks} · recovery ${natashaDiagnostics.recoveredChunks} · ошибки ${natashaDiagnostics.failedChunks}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Rate ${String.format("%.1f", natashaDiagnostics.speechRate)}x · threads ${natashaDiagnostics.ortThreads}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            natashaDiagnostics.lastChunkDurationMs?.let { durationMs ->
+                Text(
+                    text = "Последняя генерация: ${durationMs} ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            natashaDiagnostics.lastRecoveryAction?.let { note ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            natashaDiagnostics.lastChunkPreview?.let { preview ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последний chunk: $preview",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                natashaDiagnostics.lastChunkRange?.let { range ->
+                    Text(
+                        text = "Диапазон: ${range.asDisplayRange()} · depth ${natashaDiagnostics.lastChunkSplitDepth}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            natashaDiagnostics.lastFailureMessage?.let { message ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последняя ошибка: $message",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                natashaDiagnostics.lastFailurePreview?.let { preview ->
+                    Text(
+                        text = "Проблемный фрагмент: $preview",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                natashaDiagnostics.lastFailureRange?.let { range ->
+                    Text(
+                        text = "Сбой в диапазоне: ${range.asDisplayRange()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 

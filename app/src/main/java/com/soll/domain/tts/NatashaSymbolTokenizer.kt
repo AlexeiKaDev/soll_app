@@ -66,7 +66,19 @@ object NatashaSymbolTokenizer {
 
     /** Subset of upstream [normalize_russian]: lowercase + whitespace cleanup + latin→cyrillic. */
     fun normalizeLight(text: String): String {
-        val lower = text
+        val prepared = text
+            .replace('\u00A0', ' ')
+            .replace("…", "...")
+            .replace("“", "«")
+            .replace("”", "»")
+            .replace("„", "«")
+            .replace("№", " номер ")
+            .replace(Regex("""\bи\s+т\.\s*д\.""", RegexOption.IGNORE_CASE), "и так далее")
+            .replace(Regex("""\bи\s+т\.\s*п\.""", RegexOption.IGNORE_CASE), "и тому подобное")
+            .replace(Regex("""\bт\.\s*д\.""", RegexOption.IGNORE_CASE), "так далее")
+            .replace(Regex("""\bт\.\s*п\.""", RegexOption.IGNORE_CASE), "тому подобное")
+            .replace(Regex("""\s*[—–]\s*"""), " — ")
+        val lower = prepared
             .replace("\r", " ")
             .replace("\n", " ")
             .replace('\t', ' ')

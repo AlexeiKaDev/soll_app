@@ -2,6 +2,7 @@ package com.soll.domain.tts
 
 import android.speech.tts.TextToSpeech
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.book.PiperSherpaBookEngine
@@ -92,6 +93,7 @@ class TextToSpeechManager @Inject constructor(
     private val _serviceActions = MutableSharedFlow<TtsServiceAction>(extraBufferCapacity = 5)
     val serviceActions: SharedFlow<TtsServiceAction> = _serviceActions.asSharedFlow()
     val piperDiagnostics: StateFlow<PiperPlaybackDiagnostics> = piperEngine.diagnostics
+    val natashaDiagnostics: StateFlow<NatashaPlaybackDiagnostics> = natashaEngine.diagnostics
 
     private var currentText: String? = null
     private var isPaused = false
@@ -122,6 +124,13 @@ class TextToSpeechManager @Inject constructor(
         scope.launch {
             piperEngine.playbackFailures.collect { failure ->
                 if (_engineType.value == TtsEngineType.SILERO) {
+                    _state.value = TtsState.Error(failure.toUserMessage())
+                }
+            }
+        }
+        scope.launch {
+            natashaEngine.playbackFailures.collect { failure ->
+                if (_engineType.value == TtsEngineType.NATASHA) {
                     _state.value = TtsState.Error(failure.toUserMessage())
                 }
             }

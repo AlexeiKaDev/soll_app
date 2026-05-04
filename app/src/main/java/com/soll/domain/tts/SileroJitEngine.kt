@@ -105,9 +105,17 @@ class SileroJitEngine @Inject constructor(
         val splitDepth: Int = 0,
         val sourceTag: String = "sentence",
         val mergedCount: Int = 1,
+        val pauseAfterMs: Long = 120L,
     ) {
         fun range(): IntRange = IntRange(startOffset, (endOffset - 1).coerceAtLeast(startOffset))
     }
+
+    private data class PiperVoiceTuning(
+        val mergeShortCap: Int,
+        val mergeTotalCap: Int,
+        val sentencePauseMs: Long,
+        val paragraphPauseMs: Long,
+    )
 
     private enum class ChunkPlayStatus {
         SUCCESS,
@@ -362,6 +370,7 @@ class SileroJitEngine @Inject constructor(
                 }
             }
             return if (fullyPlayed) {
+                applyChunkPause(chunk, sessionId)
                 ChunkPlayOutcome(ChunkPlayStatus.SUCCESS)
             } else {
                 ChunkPlayOutcome(ChunkPlayStatus.INTERRUPTED)
@@ -441,7 +450,8 @@ class SileroJitEngine @Inject constructor(
         val startedAt = SystemClock.elapsedRealtime()
         return try {
             val speed = speechRate.coerceIn(0.5f, 2.0f)
-            val audio = engine.generate(text = chunk.text, sid = 0, speed = speed).samples
+            val synthesisText = prepareTextForPiper(chunk.text)
+            val audio = engine.generate(text = synthesisText, sid = 0, speed = speed).samples
             val durationMs = SystemClock.elapsedRealtime() - startedAt
             if (audio.isEmpty()) {
                 Timber.w(
@@ -457,12 +467,12 @@ class SileroJitEngine @Inject constructor(
                     "Piper chunk ok: idx=%d depth=%d chars=%d samples=%d genMs=%d merged=%d source=%s preview=%s",
                     chunkIndex,
                     chunk.splitDepth,
-                    chunk.text.length,
+                    synthesisText.length,
                     audio.size,
                     durationMs,
                     chunk.mergedCount,
                     chunk.sourceTag,
-                    previewText(chunk.text),
+                    previewText(synthesisText),
                 )
                 GenerationAttempt(audio = audio, durationMs = durationMs)
             }
@@ -687,6 +697,10 @@ class SileroJitEngine @Inject constructor(
                 fullText = fullText,
                 rawStart = paragraphStart + localStart,
                 rawEndExclusive = paragraphStart + localEnd,
+                pauseAfterMs = pauseForChunk(
+                    rawText = fullText.substring(paragraphStart + localStart, paragraphStart + localEnd),
+                    isParagraphEnd = false,
+                ),
             )?.let(chunks::add)
             localStart = localEnd
         }
@@ -695,6 +709,10 @@ class SileroJitEngine @Inject constructor(
                 fullText = fullText,
                 rawStart = paragraphStart + localStart,
                 rawEndExclusive = paragraphEndExclusive,
+                pauseAfterMs = pauseForChunk(
+                    rawText = fullText.substring(paragraphStart + localStart, paragraphEndExclusive),
+                    isParagraphEnd = true,
+                ),
             )?.let(chunks::add)
         }
         return chunks
@@ -704,8 +722,9 @@ class SileroJitEngine @Inject constructor(
         if (sentences.size <= 1) return sentences
         val merged = mutableListOf<SentenceInfo>()
         var current = sentences.first()
-        val maxShort = mergeShortThreshold.coerceAtMost(PIPER_MAX_MERGE_SHORT)
-        val maxTotal = mergeTotalCap.coerceAtMost(PIPER_MAX_MERGE_TOTAL)
+        val tuning = currentVoiceTuning()
+        val maxShort = mergeShortThreshold.coerceAtMost(tuning.mergeShortCap.coerceAtMost(PIPER_MAX_MERGE_SHORT))
+        val maxTotal = mergeTotalCap.coerceAtMost(tuning.mergeTotalCap.coerceAtMost(PIPER_MAX_MERGE_TOTAL))
         for (i in 1 until sentences.size) {
             val next = sentences[i]
             val shouldMerge = current.text.length < maxShort &&
@@ -722,6 +741,7 @@ class SileroJitEngine @Inject constructor(
                     splitDepth = maxOf(current.splitDepth, next.splitDepth),
                     sourceTag = "merged",
                     mergedCount = current.mergedCount + next.mergedCount,
+                    pauseAfterMs = next.pauseAfterMs,
                 )
             } else {
                 merged += current
@@ -784,6 +804,7 @@ class SileroJitEngine @Inject constructor(
         splitDepth: Int = 0,
         sourceTag: String = "sentence",
         mergedCount: Int = 1,
+        pauseAfterMs: Long? = null,
     ): SentenceInfo? {
         if (rawStart >= rawEndExclusive) return null
         return buildChunkFromRawText(
@@ -792,6 +813,7 @@ class SileroJitEngine @Inject constructor(
             splitDepth = splitDepth,
             sourceTag = sourceTag,
             mergedCount = mergedCount,
+            pauseAfterMs = pauseAfterMs,
         )
     }
 
@@ -801,6 +823,7 @@ class SileroJitEngine @Inject constructor(
         splitDepth: Int = 0,
         sourceTag: String = "sentence",
         mergedCount: Int = 1,
+        pauseAfterMs: Long? = null,
     ): SentenceInfo? {
         var start = 0
         var end = rawText.length
@@ -816,6 +839,7 @@ class SileroJitEngine @Inject constructor(
             splitDepth = splitDepth,
             sourceTag = sourceTag,
             mergedCount = mergedCount,
+            pauseAfterMs = pauseAfterMs ?: pauseForChunk(trimmed, isParagraphEnd = false),
         )
     }
 
@@ -892,5 +916,75 @@ class SileroJitEngine @Inject constructor(
         } else {
             normalized.take(CHUNK_PREVIEW_LIMIT - 1) + "…"
         }
+    }
+
+    private fun prepareTextForPiper(text: String): String {
+        return text
+            .replace('\u00A0', ' ')
+            .replace("…", "...")
+            .replace("“", "\"")
+            .replace("”", "\"")
+            .replace("«", "\"")
+            .replace("»", "\"")
+            .replace(Regex("""\bи\s+т\.\s*д\.""", RegexOption.IGNORE_CASE), "и так далее")
+            .replace(Regex("""\bи\s+т\.\s*п\.""", RegexOption.IGNORE_CASE), "и тому подобное")
+            .replace(Regex("""\bт\.\s*д\.""", RegexOption.IGNORE_CASE), "так далее")
+            .replace(Regex("""\bт\.\s*п\.""", RegexOption.IGNORE_CASE), "тому подобное")
+            .replace("№", "номер ")
+            .replace(Regex("""\s*[—–]\s*"""), " — ")
+            .replace(Regex("""[ \t]+"""), " ")
+            .trim()
+    }
+
+    private fun currentVoiceTuning(): PiperVoiceTuning {
+        return when (diagnostics.value.voiceId?.lowercase()) {
+            "irina" -> PiperVoiceTuning(
+                mergeShortCap = 165,
+                mergeTotalCap = 250,
+                sentencePauseMs = 125L,
+                paragraphPauseMs = 240L,
+            )
+            "denis" -> PiperVoiceTuning(
+                mergeShortCap = 150,
+                mergeTotalCap = 235,
+                sentencePauseMs = 110L,
+                paragraphPauseMs = 220L,
+            )
+            "dmitri" -> PiperVoiceTuning(
+                mergeShortCap = 155,
+                mergeTotalCap = 245,
+                sentencePauseMs = 115L,
+                paragraphPauseMs = 225L,
+            )
+            "ruslan" -> PiperVoiceTuning(
+                mergeShortCap = 175,
+                mergeTotalCap = 275,
+                sentencePauseMs = 105L,
+                paragraphPauseMs = 205L,
+            )
+            else -> PiperVoiceTuning(
+                mergeShortCap = 170,
+                mergeTotalCap = 260,
+                sentencePauseMs = 115L,
+                paragraphPauseMs = 220L,
+            )
+        }
+    }
+
+    private fun pauseForChunk(rawText: String, isParagraphEnd: Boolean): Long {
+        val tuning = currentVoiceTuning()
+        if (isParagraphEnd) return tuning.paragraphPauseMs
+        val trimmed = rawText.trimEnd()
+        return when {
+            trimmed.endsWith("?") || trimmed.endsWith("!") -> tuning.sentencePauseMs + 25L
+            trimmed.endsWith(":") || trimmed.endsWith(";") -> tuning.sentencePauseMs + 10L
+            else -> tuning.sentencePauseMs
+        }
+    }
+
+    private fun applyChunkPause(chunk: SentenceInfo, sessionId: Long) {
+        val pauseMs = chunk.pauseAfterMs.coerceAtLeast(0L)
+        if (pauseMs <= 0L || !canContinue(sessionId)) return
+        Thread.sleep(pauseMs)
     }
 }

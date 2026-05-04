@@ -1,8 +1,12 @@
 package com.soll.domain.tts.book
 
 import com.soll.domain.tts.NatashaTtsEngine
+import com.soll.domain.tts.NatashaPlaybackDiagnostics
+import com.soll.domain.tts.NatashaPlaybackFailure
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,6 +22,8 @@ class NatashaVitsBookEngine @Inject constructor(
     override val isSpeaking = impl.isSpeaking
     override val downloadProgress = impl.downloadProgress
     override val currentWordRange = impl.currentWordRange
+    val diagnostics: StateFlow<NatashaPlaybackDiagnostics> = impl.diagnostics
+    val playbackFailures: SharedFlow<NatashaPlaybackFailure> = impl.playbackFailures
 
     override fun voiceOptions(): List<TtsVoiceOption> = emptyList()
 

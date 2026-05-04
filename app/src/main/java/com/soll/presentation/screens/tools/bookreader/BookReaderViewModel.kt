@@ -13,6 +13,7 @@ import com.soll.data.repository.SettingsRepository
 import com.soll.data.service.TtsService
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.TextToSpeechManager
 import com.soll.domain.tts.TtsBookPerformanceProfile
@@ -80,6 +81,7 @@ data class BookReaderUiState(
     val selectedNatashaPackId: String? = null,
     val selectedUtrobinPackId: String? = null,
     val piperDiagnostics: PiperPlaybackDiagnostics = PiperPlaybackDiagnostics(),
+    val natashaDiagnostics: NatashaPlaybackDiagnostics = NatashaPlaybackDiagnostics(),
 )
 
 sealed class BookReaderEvent {
@@ -104,6 +106,7 @@ class BookReaderViewModel @Inject constructor(
     private val _events = MutableSharedFlow<BookReaderEvent>()
     val events: SharedFlow<BookReaderEvent> = _events.asSharedFlow()
     private var lastPackDownloadErrorMessage: String? = null
+    private var lastTtsErrorMessage: String? = null
 
     init {
         loadBooks()
@@ -113,6 +116,7 @@ class BookReaderViewModel @Inject constructor(
         observeChapterFinished()
         observeServiceActions()
         observePackDownloads()
+        observeEngineDiagnostics()
     }
 
     private fun loadBooks() {
@@ -197,6 +201,7 @@ class BookReaderViewModel @Inject constructor(
                 selectedNatashaPackId = natashaPackId,
                 selectedUtrobinPackId = utrobinPackId,
                 piperDiagnostics = ttsManager.piperDiagnostics.value,
+                natashaDiagnostics = ttsManager.natashaDiagnostics.value,
             )
         }
     }
@@ -304,7 +309,12 @@ class BookReaderViewModel @Inject constructor(
                     )
                 }
                 if (state is TtsState.Error) {
-                    _events.emit(BookReaderEvent.ShowError(state.message))
+                    if (state.message != lastTtsErrorMessage) {
+                        lastTtsErrorMessage = state.message
+                        _events.emit(BookReaderEvent.ShowError(state.message))
+                    }
+                } else {
+                    lastTtsErrorMessage = null
                 }
             }
         }
@@ -795,11 +805,6 @@ class BookReaderViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch {
-            ttsManager.piperDiagnostics.collect { diagnostics ->
-                _uiState.update { it.copy(piperDiagnostics = diagnostics) }
-            }
-        }
     }
 
     fun selectEnginePack(packId: String) {
@@ -854,6 +859,19 @@ class BookReaderViewModel @Inject constructor(
                     lastPackDownloadErrorMessage = state.message
                     _events.emit(BookReaderEvent.ShowError(state.message))
                 }
+            }
+        }
+    }
+
+    private fun observeEngineDiagnostics() {
+        viewModelScope.launch {
+            ttsManager.piperDiagnostics.collect { diagnostics ->
+                _uiState.update { it.copy(piperDiagnostics = diagnostics) }
+            }
+        }
+        viewModelScope.launch {
+            ttsManager.natashaDiagnostics.collect { diagnostics ->
+                _uiState.update { it.copy(natashaDiagnostics = diagnostics) }
             }
         }
     }

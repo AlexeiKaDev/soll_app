@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.ChevronRight
@@ -26,9 +27,16 @@ data class Tool(
 @Composable
 fun ToolsScreen(
     onNavigateToBookReader: () -> Unit,
-    onNavigateToBreathing: () -> Unit
+    onNavigateToBreathing: () -> Unit,
+    onNavigateToCourseCoach: () -> Unit,
 ) {
     val tools = listOf(
+        Tool(
+            id = "course_coach",
+            name = "Course Coach",
+            description = "Ежедневная программа упражнений, напоминания и прогресс курса",
+            icon = Icons.Default.AutoAwesome
+        ),
         Tool(
             id = "book_reader",
             name = "Book Reader",
@@ -62,6 +70,7 @@ fun ToolsScreen(
                     tool = tool,
                     onClick = {
                         when (tool.id) {
+                            "course_coach" -> onNavigateToCourseCoach()
                             "book_reader" -> onNavigateToBookReader()
                             "guided_breathing" -> onNavigateToBreathing()
                         }

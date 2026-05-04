@@ -26,6 +26,7 @@ import com.soll.presentation.screens.settings.SettingsScreen
 import com.soll.presentation.screens.tools.ToolsScreen
 import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
+import com.soll.presentation.screens.tools.coursecoach.CourseCoachScreen
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     data object Home : Screen("home", "Home", Icons.Default.Home)
@@ -38,6 +39,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 object Routes {
     const val BOOK_READER = "book_reader"
     const val BREATHING = "guided_breathing"
+    const val COURSE_COACH = "course_coach"
 }
 
 @Composable
@@ -93,6 +95,9 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             }
             composable(Screen.Tools.route) {
                 ToolsScreen(
+                    onNavigateToCourseCoach = {
+                        navController.navigate(Routes.COURSE_COACH)
+                    },
                     onNavigateToBookReader = {
                         navController.navigate(Routes.BOOK_READER)
                     },
@@ -114,6 +119,11 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             }
             composable(Routes.BREATHING) {
                 BreathingScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.COURSE_COACH) {
+                CourseCoachScreen(
                     onBack = { navController.popBackStack() }
                 )
             }

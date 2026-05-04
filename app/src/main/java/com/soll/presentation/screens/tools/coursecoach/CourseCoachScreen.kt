@@ -34,8 +34,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -85,6 +85,10 @@ private enum class CourseCoachTab(val title: String) {
     STATS("Статистика"),
     LIBRARY("Библиотека"),
 }
+
+private val CourseCoachCardShape = RoundedCornerShape(24.dp)
+private val CourseCoachHeroShape = RoundedCornerShape(30.dp)
+private val CourseCoachPillShape = RoundedCornerShape(999.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,7 +150,7 @@ fun CourseCoachScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(uiState.course?.title ?: "Course Coach") },
+                title = { Text(uiState.course?.title ?: "Курс") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -154,7 +158,7 @@ fun CourseCoachScreen(
                 },
                 actions = {
                     IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }) {
-                        Icon(Icons.Default.UploadFile, contentDescription = "Импортировать package")
+                        Icon(Icons.Default.UploadFile, contentDescription = "Импортировать пакет курса")
                     }
                 }
             )
@@ -232,8 +236,8 @@ private fun EmptyCourseState(
         contentAlignment = Alignment.Center,
     ) {
         Card(
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF6F1D8)),
+            shape = CourseCoachCardShape,
+            colors = accentCardColors(),
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -251,7 +255,7 @@ private fun EmptyCourseState(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Установи встроенный seed-пакет или импортируй утверждённый course-package-v1 JSON.",
+                    text = "Установи встроенный seed-пакет или импортируй утверждённый JSON-пакет курса.",
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -266,7 +270,7 @@ private fun EmptyCourseState(
                 OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.UploadFile, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Импортировать package")
+                    Text("Импортировать пакет")
                 }
             }
         }
@@ -299,19 +303,19 @@ private fun TodayTab(
                     modifier = Modifier.weight(1f),
                     label = "Сделано",
                     value = "${uiState.stats.completedDays}/${uiState.course!!.totalDays}",
-                    tint = Color(0xFF2FA74E),
+                    tint = MaterialTheme.colorScheme.primary,
                 )
                 MetricPill(
                     modifier = Modifier.weight(1f),
-                    label = "Streak",
+                    label = "Серия",
                     value = uiState.stats.currentStreak.toString(),
-                    tint = Color(0xFFF08C00),
+                    tint = MaterialTheme.colorScheme.tertiary,
                 )
                 MetricPill(
                     modifier = Modifier.weight(1f),
                     label = "Рейт",
                     value = "${uiState.stats.completionRatePercent}%",
-                    tint = Color(0xFF0C7C59),
+                    tint = MaterialTheme.colorScheme.secondary,
                 )
             }
         }
@@ -376,7 +380,7 @@ private fun PlanTab(
     ) {
         items(days, key = { it.dayIndex }) { day ->
             Card(
-                shape = RoundedCornerShape(24.dp),
+                shape = CourseCoachCardShape,
                 colors = CardDefaults.cardColors(containerColor = statusContainerColor(day.status)),
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
@@ -402,8 +406,8 @@ private fun PlanTab(
                     LinearProgressIndicator(
                         progress = { day.completionFraction },
                         modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFF2FA74E),
-                        trackColor = Color.White.copy(alpha = 0.55f),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     day.morning?.let { session ->
@@ -441,14 +445,14 @@ private fun StatsTab(stats: CourseCoachStatsUi) {
                     title = "Сессии",
                     value = "${stats.completedSessions}/${stats.totalRequiredSessions}",
                     subtitle = "обязательных блоков",
-                    tint = Color(0xFF2FA74E),
+                    tint = MaterialTheme.colorScheme.primary,
                 )
                 MetricCard(
                     modifier = Modifier.weight(1f),
                     title = "Время",
                     value = "${stats.totalMinutes}",
                     subtitle = "минут практики",
-                    tint = Color(0xFF0C7C59),
+                    tint = MaterialTheme.colorScheme.secondary,
                 )
             }
         }
@@ -456,22 +460,22 @@ private fun StatsTab(stats: CourseCoachStatsUi) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MetricCard(
                     modifier = Modifier.weight(1f),
-                    title = "Streak",
+                    title = "Серия",
                     value = stats.currentStreak.toString(),
                     subtitle = "дней подряд",
-                    tint = Color(0xFFF08C00),
+                    tint = MaterialTheme.colorScheme.tertiary,
                 )
                 MetricCard(
                     modifier = Modifier.weight(1f),
                     title = "Пропуски",
                     value = stats.skippedDays.toString(),
                     subtitle = "отмеченных дней",
-                    tint = Color(0xFF9E4F00),
+                    tint = MaterialTheme.colorScheme.error,
                 )
             }
         }
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Последние 7 дней",
@@ -484,7 +488,7 @@ private fun StatsTab(stats: CourseCoachStatsUi) {
             }
         }
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "История",
@@ -500,7 +504,7 @@ private fun StatsTab(stats: CourseCoachStatsUi) {
                         )
                     } else {
                         stats.history.forEachIndexed { index, row ->
-                            if (index > 0) Divider(modifier = Modifier.padding(vertical = 8.dp))
+                            if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -516,7 +520,7 @@ private fun StatsTab(stats: CourseCoachStatsUi) {
                                 Text(
                                     row.durationLabel,
                                     style = MaterialTheme.typography.titleSmall,
-                                    color = Color(0xFF0C7C59),
+                                    color = MaterialTheme.colorScheme.secondary,
                                 )
                             }
                         }
@@ -543,7 +547,7 @@ private fun LibraryTab(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Управление курсом",
@@ -558,8 +562,8 @@ private fun LibraryTab(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     DetailLine("Версия", uiState.course.version)
-                    DetailLine("Review", uiState.course.reviewStatus)
-                    DetailLine("Качество", uiState.course.contentQuality ?: "n/a")
+                    DetailLine("Статус", uiState.course.reviewStatus)
+                    DetailLine("Качество", uiState.course.contentQuality ?: "нет")
                     DetailLine("Источник", uiState.course.sourceFolder)
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -571,7 +575,7 @@ private fun LibraryTab(
                         OutlinedButton(onClick = onReinstallSeed, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Default.Refresh, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Seed заново")
+                            Text("Переустановить seed")
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -584,7 +588,7 @@ private fun LibraryTab(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Напоминания",
@@ -594,7 +598,7 @@ private fun LibraryTab(
                     Spacer(modifier = Modifier.height(10.dp))
                     uiState.reminders.forEachIndexed { index, reminder ->
                         if (index > 0) {
-                            Divider(modifier = Modifier.padding(vertical = 12.dp))
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                         }
                         ReminderRow(
                             reminder = reminder,
@@ -607,7 +611,7 @@ private fun LibraryTab(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Модули курса",
@@ -616,7 +620,7 @@ private fun LibraryTab(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     uiState.modules.forEachIndexed { index, module ->
-                        if (index > 0) Divider(modifier = Modifier.padding(vertical = 10.dp))
+                        if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
                         Column {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -625,8 +629,8 @@ private fun LibraryTab(
                                 Text(module.title, style = MaterialTheme.typography.titleMedium)
                                 StatusPill(
                                     text = "${module.lessonCount} уроков",
-                                    container = Color(0xFFE3F4EA),
-                                    content = Color(0xFF0C7C59),
+                                    container = MaterialTheme.colorScheme.secondaryContainer,
+                                    content = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
@@ -641,7 +645,7 @@ private fun LibraryTab(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Бонусные материалы",
@@ -657,7 +661,7 @@ private fun LibraryTab(
                         )
                     } else {
                         uiState.bonusLessons.forEachIndexed { index, lesson ->
-                            if (index > 0) Divider(modifier = Modifier.padding(vertical = 10.dp))
+                            if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
                             BonusLessonRow(
                                 lesson = lesson,
                                 onOpen = { onOpenBonus(lesson.lessonKey) },
@@ -668,7 +672,7 @@ private fun LibraryTab(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(28.dp)) {
+            Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = "Установленные пакеты",
@@ -677,7 +681,7 @@ private fun LibraryTab(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     uiState.installedCourses.forEachIndexed { index, course ->
-                        if (index > 0) Divider(modifier = Modifier.padding(vertical = 10.dp))
+                        if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -692,9 +696,9 @@ private fun LibraryTab(
                             }
                             if (course.isActive) {
                                 StatusPill(
-                                    text = "active",
-                                    container = Color(0xFFEAF7E8),
-                                    content = Color(0xFF2F6B1F),
+                                    text = "активен",
+                                    container = MaterialTheme.colorScheme.primaryContainer,
+                                    content = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             }
                         }
@@ -711,8 +715,12 @@ private fun HeroCard(
     day: CourseCoachDayUi?,
     stats: CourseCoachStatsUi,
 ) {
+    val heroOrbPrimary = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.10f)
+    val heroOrbSecondary = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+    val heroPillContainer = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+
     Card(
-        shape = RoundedCornerShape(34.dp),
+        shape = CourseCoachHeroShape,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
     ) {
         Box(
@@ -720,7 +728,10 @@ private fun HeroCard(
                 .fillMaxWidth()
                 .background(
                     brush = Brush.linearGradient(
-                        colors = listOf(Color(0xFFF7D96B), Color(0xFFBDE773))
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.tertiaryContainer,
+                        )
                     )
                 )
                 .padding(20.dp)
@@ -731,12 +742,12 @@ private fun HeroCard(
                     .padding(8.dp)
             ) {
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.20f),
+                    color = heroOrbPrimary,
                     radius = size.minDimension * 0.18f,
                     center = Offset(size.width * 0.88f, size.height * 0.18f),
                 )
                 drawCircle(
-                    color = Color(0xFFFFF5CE).copy(alpha = 0.65f),
+                    color = heroOrbSecondary,
                     radius = size.minDimension * 0.24f,
                     center = Offset(size.width * 0.12f, size.height * 0.86f),
                 )
@@ -748,19 +759,19 @@ private fun HeroCard(
                         text = day?.title ?: "Курс готов",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF163300),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = day?.theme ?: course.title,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color(0xFF254C12),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     StatusPill(
                         text = if (day == null) "Все дни закрыты" else "Пройдено ${stats.completedDays} из ${course.totalDays}",
-                        container = Color.White.copy(alpha = 0.72f),
-                        content = Color(0xFF184600),
+                        container = heroPillContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -775,7 +786,7 @@ private fun HeroCard(
 
 @Composable
 private fun DaySummaryCard(day: CourseCoachDayUi) {
-    Card(shape = RoundedCornerShape(28.dp)) {
+    Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -801,8 +812,8 @@ private fun DaySummaryCard(day: CourseCoachDayUi) {
             LinearProgressIndicator(
                 progress = { day.completionFraction },
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF2FA74E),
-                trackColor = Color(0xFFDDE6D8),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceTint.copy(alpha = 0.18f),
             )
         }
     }
@@ -823,8 +834,8 @@ private fun SessionCard(
     }
 
     Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBF1)),
+        shape = CourseCoachCardShape,
+        colors = warmCardColors(),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -834,16 +845,24 @@ private fun SessionCard(
                 Icon(
                     if (session.completed) Icons.Default.CheckCircle else Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = if (session.completed) Color(0xFF2FA74E) else Color(0xFFF08C00),
+                    tint = when {
+                        session.completed -> MaterialTheme.colorScheme.primary
+                        session.skipped -> MaterialTheme.colorScheme.outline
+                        else -> MaterialTheme.colorScheme.tertiary
+                    },
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(heading, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.weight(1f))
-                if (session.completed) {
+                if (session.completed || session.skipped) {
                     StatusPill(
-                        text = "done",
-                        container = Color(0xFFE7F7EA),
-                        content = Color(0xFF166534),
+                        text = if (session.completed) "готово" else "пропущено",
+                        container = badgeContainerColor(
+                            if (session.completed) CourseCoachDayStatus.COMPLETED else CourseCoachDayStatus.SKIPPED,
+                        ),
+                        content = badgeContentColor(
+                            if (session.completed) CourseCoachDayStatus.COMPLETED else CourseCoachDayStatus.SKIPPED,
+                        ),
                     )
                 }
             }
@@ -859,14 +878,14 @@ private fun SessionCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill(
                     text = "${session.exercises.size} упражн.",
-                    container = Color(0xFFF4E7C8),
-                    content = Color(0xFF7A4E00),
+                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                    content = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
                 session.estimatedMinutes?.let {
                     StatusPill(
                         text = "$it мин",
-                        container = Color(0xFFE3F4EA),
-                        content = Color(0xFF0C7C59),
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
             }
@@ -890,8 +909,8 @@ private fun SessionCard(
 @Composable
 private fun DiaryCard(prompt: CourseCoachDiaryUi) {
     Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF2F7FF)),
+        shape = CourseCoachCardShape,
+        colors = coolCardColors(),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(prompt.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
@@ -928,7 +947,7 @@ private fun ReminderRow(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFFF08C00))
+            Icon(Icons.Default.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -1041,7 +1060,10 @@ private fun WeekBars(items: List<CourseCoachWeekBarUi>) {
                         .height((32 + (128f * item.minutes / maxMinutes)).dp)
                         .background(
                             brush = Brush.verticalGradient(
-                                colors = listOf(Color(0xFF9CE863), Color(0xFF2FA74E))
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
+                                    MaterialTheme.colorScheme.primary,
+                                )
                             ),
                             shape = RoundedCornerShape(18.dp),
                         )
@@ -1078,12 +1100,10 @@ private fun FriendlyCoachMascot(
         label = "blink",
     )
 
-    val bodyColor = when (mood) {
-        CourseCoachDayStatus.COMPLETED -> Color(0xFF58CC52)
-        CourseCoachDayStatus.IN_PROGRESS -> Color(0xFFF0B429)
-        CourseCoachDayStatus.SKIPPED -> Color(0xFFA58F61)
-        CourseCoachDayStatus.PENDING -> Color(0xFF7ED957)
-    }
+    val bodyColor = mascotBodyColor(mood)
+    val faceColor = MaterialTheme.colorScheme.onPrimaryContainer
+    val shadowColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.10f)
+    val highlightColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -1093,7 +1113,7 @@ private fun FriendlyCoachMascot(
         val earRadius = w * 0.11f
 
         drawCircle(
-            color = Color.Black.copy(alpha = 0.12f),
+            color = shadowColor,
             radius = w * 0.22f,
             center = Offset(w * 0.5f, h * 0.92f),
         )
@@ -1106,7 +1126,7 @@ private fun FriendlyCoachMascot(
             cornerRadius = CornerRadius(w * 0.24f, w * 0.24f),
         )
         drawRoundRect(
-            color = Color.White.copy(alpha = 0.18f),
+            color = highlightColor,
             topLeft = Offset(w * 0.26f, bodyTop + h * 0.09f),
             size = Size(w * 0.18f, h * 0.24f),
             cornerRadius = CornerRadius(w * 0.12f, w * 0.12f),
@@ -1115,13 +1135,13 @@ private fun FriendlyCoachMascot(
         val eyeWidth = w * 0.08f
         val eyeHeight = h * 0.08f * blink.value
         drawRoundRect(
-            color = Color(0xFF173600),
+            color = faceColor,
             topLeft = Offset(w * 0.34f, bodyTop + h * 0.22f),
             size = Size(eyeWidth, eyeHeight),
             cornerRadius = CornerRadius(eyeWidth, eyeWidth),
         )
         drawRoundRect(
-            color = Color(0xFF173600),
+            color = faceColor,
             topLeft = Offset(w * 0.58f, bodyTop + h * 0.22f),
             size = Size(eyeWidth, eyeHeight),
             cornerRadius = CornerRadius(eyeWidth, eyeWidth),
@@ -1138,7 +1158,7 @@ private fun FriendlyCoachMascot(
         }
         drawPath(
             path = mouthPath,
-            color = Color(0xFF173600),
+            color = faceColor,
             style = Stroke(width = w * 0.035f, cap = StrokeCap.Round),
         )
     }
@@ -1198,8 +1218,8 @@ private fun CourseSessionDialog(
                         .padding(16.dp),
                 ) {
                     Card(
-                        shape = RoundedCornerShape(30.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F1C9)),
+                        shape = CourseCoachHeroShape,
+                        colors = accentCardColors(),
                     ) {
                         Row(
                             modifier = Modifier
@@ -1211,27 +1231,27 @@ private fun CourseSessionDialog(
                                 Text(
                                     text = if (session.sessionType == "morning") "Утренний проход" else if (session.sessionType == "evening") "Вечерний проход" else "Бонусный проход",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = Color(0xFF7A4E00),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = session.summary,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    color = Color(0xFF5D4B00),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     session.estimatedMinutes?.let {
                                         StatusPill(
                                             text = "$it мин",
-                                            container = Color.White.copy(alpha = 0.72f),
-                                            content = Color(0xFF5D4B00),
+                                            container = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                            content = MaterialTheme.colorScheme.onPrimaryContainer,
                                         )
                                     }
                                     StatusPill(
                                         text = "${session.exercises.size} шагов",
-                                        container = Color.White.copy(alpha = 0.72f),
-                                        content = Color(0xFF5D4B00),
+                                        container = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                        content = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
                                 }
                             }
@@ -1264,9 +1284,13 @@ private fun SessionExerciseCard(
     onToggle: () -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(26.dp),
+        shape = CourseCoachCardShape,
         colors = CardDefaults.cardColors(
-            containerColor = if (exercise.completed) Color(0xFFE9F7EA) else Color(0xFFFFFBF2),
+            containerColor = if (exercise.completed) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            },
         ),
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -1276,8 +1300,12 @@ private fun SessionExerciseCard(
             ) {
                 StatusPill(
                     text = "${index + 1}",
-                    container = if (exercise.completed) Color(0xFF2FA74E) else Color(0xFFF0B429),
-                    content = Color.White,
+                    container = if (exercise.completed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                    content = if (exercise.completed) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onTertiary
+                    },
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
@@ -1286,7 +1314,7 @@ private fun SessionExerciseCard(
                     modifier = Modifier.weight(1f),
                 )
                 if (exercise.completed) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2FA74E))
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
@@ -1300,22 +1328,22 @@ private fun SessionExerciseCard(
                 exercise.durationSec?.let {
                     StatusPill(
                         text = "${it / 60} мин",
-                        container = Color(0xFFEAF1FF),
-                        content = Color(0xFF2855A3),
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
                 exercise.repetitions?.let {
                     StatusPill(
                         text = "$it повторов",
-                        container = Color(0xFFF4E7C8),
-                        content = Color(0xFF7A4E00),
+                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
                     )
                 }
                 exercise.restSec?.let {
                     StatusPill(
                         text = "пауза $it c",
-                        container = Color(0xFFE3F4EA),
-                        content = Color(0xFF0C7C59),
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
             }
@@ -1343,10 +1371,10 @@ private fun SessionExerciseCard(
 @Composable
 private fun StatusBadge(status: CourseCoachDayStatus) {
     when (status) {
-        CourseCoachDayStatus.COMPLETED -> StatusPill("done", Color(0xFFE7F7EA), Color(0xFF166534))
-        CourseCoachDayStatus.IN_PROGRESS -> StatusPill("in progress", Color(0xFFFFF2CF), Color(0xFF9A6700))
-        CourseCoachDayStatus.PENDING -> StatusPill("next", Color(0xFFE9F0FF), Color(0xFF2855A3))
-        CourseCoachDayStatus.SKIPPED -> StatusPill("skipped", Color(0xFFF1E5D8), Color(0xFF8A5C2E))
+        CourseCoachDayStatus.COMPLETED -> StatusPill("готово", badgeContainerColor(status), badgeContentColor(status))
+        CourseCoachDayStatus.IN_PROGRESS -> StatusPill("в процессе", badgeContainerColor(status), badgeContentColor(status))
+        CourseCoachDayStatus.PENDING -> StatusPill("дальше", badgeContainerColor(status), badgeContentColor(status))
+        CourseCoachDayStatus.SKIPPED -> StatusPill("пропущено", badgeContainerColor(status), badgeContentColor(status))
     }
 }
 
@@ -1357,7 +1385,7 @@ private fun StatusPill(
     content: Color,
 ) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = CourseCoachPillShape,
         color = container,
     ) {
         Text(
@@ -1378,7 +1406,7 @@ private fun MetricPill(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
+        shape = CourseCoachCardShape,
         colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.12f)),
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -1399,7 +1427,7 @@ private fun MetricCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(28.dp),
+        shape = CourseCoachCardShape,
         colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.10f)),
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -1416,14 +1444,14 @@ private fun MetricCard(
 private fun TimeChip(label: String, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(999.dp),
-        color = Color(0xFFF4F0E1),
+        shape = CourseCoachPillShape,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
     ) {
         Text(
             text = label,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelMedium,
-            color = Color(0xFF7A4E00),
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
 }
@@ -1451,7 +1479,7 @@ private fun InfoCard(
     title: String,
     body: String,
 ) {
-    Card(shape = RoundedCornerShape(28.dp)) {
+    Card(shape = CourseCoachCardShape, colors = sectionCardColors()) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.height(8.dp))
@@ -1460,9 +1488,50 @@ private fun InfoCard(
     }
 }
 
+@Composable
+private fun sectionCardColors() =
+    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
+
+@Composable
+private fun warmCardColors() =
+    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f))
+
+@Composable
+private fun coolCardColors() =
+    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.28f))
+
+@Composable
+private fun accentCardColors() =
+    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f))
+
+@Composable
+private fun badgeContainerColor(status: CourseCoachDayStatus): Color = when (status) {
+    CourseCoachDayStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer
+    CourseCoachDayStatus.IN_PROGRESS -> MaterialTheme.colorScheme.tertiaryContainer
+    CourseCoachDayStatus.PENDING -> MaterialTheme.colorScheme.surfaceVariant
+    CourseCoachDayStatus.SKIPPED -> MaterialTheme.colorScheme.secondaryContainer
+}
+
+@Composable
+private fun badgeContentColor(status: CourseCoachDayStatus): Color = when (status) {
+    CourseCoachDayStatus.COMPLETED -> MaterialTheme.colorScheme.onPrimaryContainer
+    CourseCoachDayStatus.IN_PROGRESS -> MaterialTheme.colorScheme.onTertiaryContainer
+    CourseCoachDayStatus.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
+    CourseCoachDayStatus.SKIPPED -> MaterialTheme.colorScheme.onSecondaryContainer
+}
+
+@Composable
 private fun statusContainerColor(status: CourseCoachDayStatus): Color = when (status) {
-    CourseCoachDayStatus.COMPLETED -> Color(0xFFEAF7E8)
-    CourseCoachDayStatus.IN_PROGRESS -> Color(0xFFFFF4D7)
-    CourseCoachDayStatus.PENDING -> Color(0xFFF4F7FB)
-    CourseCoachDayStatus.SKIPPED -> Color(0xFFF3EAE0)
+    CourseCoachDayStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
+    CourseCoachDayStatus.IN_PROGRESS -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.32f)
+    CourseCoachDayStatus.PENDING -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f)
+    CourseCoachDayStatus.SKIPPED -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.32f)
+}
+
+@Composable
+private fun mascotBodyColor(status: CourseCoachDayStatus): Color = when (status) {
+    CourseCoachDayStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+    CourseCoachDayStatus.IN_PROGRESS -> MaterialTheme.colorScheme.tertiary
+    CourseCoachDayStatus.PENDING -> MaterialTheme.colorScheme.secondary
+    CourseCoachDayStatus.SKIPPED -> MaterialTheme.colorScheme.outline
 }

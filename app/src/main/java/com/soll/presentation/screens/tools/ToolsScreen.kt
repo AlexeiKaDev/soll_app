@@ -33,19 +33,19 @@ fun ToolsScreen(
     val tools = listOf(
         Tool(
             id = "course_coach",
-            name = "Course Coach",
-            description = "Ежедневная программа упражнений, напоминания и прогресс курса",
+            name = "Курс",
+            description = "Ежедневная программа, напоминания и прогресс по курсу",
             icon = Icons.Default.AutoAwesome
         ),
         Tool(
             id = "book_reader",
-            name = "Book Reader",
-            description = "Read EPUB books with text and audio (TTS)",
+            name = "Чтение книг",
+            description = "Чтение EPUB и озвучивание текста через TTS",
             icon = Icons.Default.Book
         ),
         Tool(
             id = "guided_breathing",
-            name = "Guided Breathing",
+            name = "Дыхание",
             description = "3 раунда дыхания: дыхание, задержка, восстановление",
             icon = Icons.Default.Air
         )
@@ -54,7 +54,7 @@ fun ToolsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tools") }
+                title = { Text("Инструменты") }
             )
         }
     ) { padding ->
@@ -89,7 +89,11 @@ private fun ToolItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = onClick),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+        ),
     ) {
         Row(
             modifier = Modifier

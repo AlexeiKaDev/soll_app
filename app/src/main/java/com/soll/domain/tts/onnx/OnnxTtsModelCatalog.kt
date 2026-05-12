@@ -27,7 +27,7 @@ data class OnnxTtsModel(
  */
 object OnnxTtsModelCatalog {
     /** Есть готовый исполнитель в приложении (ONNX External). */
-    fun hasAndroidOnnxRuntime(id: String): Boolean = id == "kokoro_82m"
+    fun hasAndroidOnnxRuntime(id: String): Boolean = id == "kokoro_82m" || id == "chatterbox_multilingual"
 
     val models: List<OnnxTtsModel> = listOf(
         OnnxTtsModel(

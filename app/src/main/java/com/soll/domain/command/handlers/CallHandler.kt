@@ -16,18 +16,18 @@ class CallHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "call"
-    override val description = "Make a call: /call <phone_number>"
+    override val description = "Позвонить: /call <номер>"
 
     override suspend fun execute(message: Message, args: String?) {
         if (args.isNullOrBlank()) {
-            reply(message, "Usage: /call <phone_number>\n\nExample: /call +1234567890")
+            reply(message, "Использование: /call <номер>\n\nПример: /call +1234567890")
             return
         }
 
         val phoneNumber = args.trim()
 
         if (!isValidPhoneNumber(phoneNumber)) {
-            reply(message, "❌ Invalid phone number format: $phoneNumber")
+            reply(message, "❌ Неверный формат номера: $phoneNumber")
             return
         }
 
@@ -39,7 +39,7 @@ class CallHandler(
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(callIntent)
-                reply(message, "📞 Calling $phoneNumber...")
+                reply(message, "📞 Звоню на $phoneNumber...")
             } else {
                 // Open dialer
                 val dialIntent = Intent(Intent.ACTION_DIAL).apply {
@@ -47,10 +47,10 @@ class CallHandler(
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(dialIntent)
-                reply(message, "📱 Opening dialer for $phoneNumber\n\n<i>CALL_PHONE permission not granted, opened dialer instead.</i>")
+                reply(message, "📱 Открываю набор номера для $phoneNumber\n\n<i>Нет разрешения CALL_PHONE, поэтому открыт экран звонка.</i>")
             }
         } catch (e: Exception) {
-            reply(message, "❌ Error initiating call: ${e.message}")
+            reply(message, "❌ Не удалось начать звонок: ${e.message}")
         }
     }
 

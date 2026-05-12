@@ -1,5 +1,6 @@
 package com.soll.domain.tts
 
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -9,6 +10,13 @@ import java.io.File
 internal object UtrobinCharTokenizer {
 
     fun loadTokenMap(tokensFile: File): Map<Char, Int> {
+        return when (tokensFile.extension.lowercase()) {
+            "json" -> loadJsonTokenMap(tokensFile)
+            else -> loadTextTokenMap(tokensFile)
+        }
+    }
+
+    private fun loadTextTokenMap(tokensFile: File): Map<Char, Int> {
         val map = LinkedHashMap<Char, Int>()
         tokensFile.readLines().forEach { lineRaw ->
             val line = lineRaw.trimEnd('\r').trim()
@@ -24,6 +32,34 @@ internal object UtrobinCharTokenizer {
                 if (sym.length != 1) return@forEach
                 map[sym[0]] = id
             }
+        }
+        if (' ' !in map) {
+            map['_']?.let { blankLike -> map[' '] = blankLike }
+        }
+        return map
+    }
+
+    private fun loadJsonTokenMap(file: File): Map<Char, Int> {
+        val text = file.readText(Charsets.UTF_8)
+        val root = JSONObject(text)
+        val vocab = root.optJSONObject("model")?.optJSONObject("vocab") ?: root
+        val map = LinkedHashMap<Char, Int>()
+        val keys = vocab.keys()
+        while (keys.hasNext()) {
+            val token = keys.next()
+            val id = vocab.optInt(token, Int.MIN_VALUE)
+            if (id == Int.MIN_VALUE) continue
+            when (token) {
+                "<pad>", "<PAD>", "<s>", "</s>", "<unk>", "<BLNK>", "<BOS>", "<EOS>" -> Unit
+                " " -> map[' '] = id
+                "▁" -> map.putIfAbsent(' ', id)
+                else -> if (token.length == 1) {
+                    map[token[0]] = id
+                }
+            }
+        }
+        if (' ' !in map) {
+            map['_']?.let { blankLike -> map[' '] = blankLike }
         }
         return map
     }

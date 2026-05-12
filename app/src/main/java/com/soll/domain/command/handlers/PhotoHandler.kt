@@ -32,26 +32,26 @@ class PhotoHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "photo"
-    override val description = "Take photo: /photo [front|back]"
+    override val description = "Сделать фото: /photo [передняя|задняя]"
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "Camera permission not granted. Please grant camera permission in app settings.")
+            reply(message, "Нет разрешения на камеру. Выдайте разрешение камеры в настройках приложения.")
             return
         }
 
-        val useFrontCamera = args?.trim()?.lowercase() == "front"
+        val useFrontCamera = args?.trim()?.lowercase() in setOf("front", "передняя", "фронтальная", "selfie")
         val cameraId = getCameraId(useFrontCamera)
 
         if (cameraId == null) {
-            reply(message, "❌ ${if (useFrontCamera) "Front" else "Back"} camera not found.")
+            reply(message, "❌ ${if (useFrontCamera) "Фронтальная" else "Основная"} камера не найдена.")
             return
         }
 
-        reply(message, "📷 Taking photo with ${if (useFrontCamera) "front" else "back"} camera...")
+        reply(message, "📷 Делаю фото через ${if (useFrontCamera) "фронтальную" else "основную"} камеру...")
 
         try {
             val photoFile = takePhoto(cameraId)
@@ -61,18 +61,18 @@ class PhotoHandler(
                 telegramRepository.sendPhoto(
                     chatId = message.chat.id,
                     file = photoFile,
-                    caption = "Photo taken at ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())}"
+                    caption = "Фото сделано ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())}"
                 )
 
                 // Clean up temp file
                 photoFile.delete()
             } else {
-                reply(message, "❌ Failed to capture photo.")
+                reply(message, "❌ Не удалось сделать фото.")
             }
 
         } catch (e: Exception) {
             Timber.e(e, "Error taking photo")
-            reply(message, "❌ Error taking photo: ${e.message}")
+            reply(message, "❌ Ошибка при съемке фото: ${e.message}")
         }
     }
 
@@ -104,12 +104,12 @@ class PhotoHandler(
         try {
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                ?: throw IllegalStateException("Cannot get stream configuration map")
+                ?: throw IllegalStateException("Не удалось получить конфигурацию камеры")
 
             // Get largest available size
             val sizes = map.getOutputSizes(ImageFormat.JPEG)
             val size = sizes.maxByOrNull { it.width * it.height }
-                ?: throw IllegalStateException("No output sizes available")
+                ?: throw IllegalStateException("Нет доступных размеров изображения")
 
             val imageReader = ImageReader.newInstance(
                 size.width,
@@ -151,12 +151,12 @@ class PhotoHandler(
 
                 override fun onDisconnected(camera: CameraDevice) {
                     camera.close()
-                    continuation.resumeWithException(IllegalStateException("Camera disconnected"))
+                    continuation.resumeWithException(IllegalStateException("Камера отключена"))
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
                     camera.close()
-                    continuation.resumeWithException(IllegalStateException("Camera error: $error"))
+                    continuation.resumeWithException(IllegalStateException("Ошибка камеры: $error"))
                 }
             }, handler)
         }
@@ -177,7 +177,7 @@ class PhotoHandler(
                     }
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
-                        continuation.resumeWithException(IllegalStateException("Failed to configure capture session"))
+                        continuation.resumeWithException(IllegalStateException("Не удалось настроить сессию камеры"))
                     }
                 },
                 handler

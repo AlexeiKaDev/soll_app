@@ -24,10 +24,9 @@ class BreathingAudioFeedback @Inject constructor(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun toneGenerator(): ToneGenerator {
-        if (tone == null) {
-            tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-        }
-        return tone!!
+        tone?.let { return it }
+        return ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            .also { tone = it }
     }
 
     fun release() {
@@ -81,12 +80,7 @@ class BreathingAudioFeedback @Inject constructor(
 
     private fun vibrate(ms: Long) {
         val v = vibrator() ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            @Suppress("DEPRECATION")
-            v.vibrate(ms)
-        }
+        v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
     private fun vibrator(): Vibrator? {

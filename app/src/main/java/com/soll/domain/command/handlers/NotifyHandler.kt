@@ -1,63 +1,52 @@
 package com.soll.domain.command.handlers
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import com.soll.R
+import com.soll.data.notification.SollNotificationChannels
 import com.soll.data.api.model.Message
 import com.soll.data.repository.TelegramRepository
 import com.soll.domain.command.CommandHandler
+import com.soll.domain.notification.SollNotificationCenter
+import com.soll.domain.notification.SollNotificationChannel
+import com.soll.domain.notification.SollNotificationPriority
+import com.soll.domain.notification.SollNotificationRequest
+import org.json.JSONObject
 
 class NotifyHandler(
     context: Context,
-    telegramRepository: TelegramRepository
+    telegramRepository: TelegramRepository,
+    private val notificationCenter: SollNotificationCenter,
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "notify"
-    override val description = "Show notification on device"
-
-    companion object {
-        private const val CHANNEL_ID = "soll_notifications"
-        private const val NOTIFICATION_ID = 2001
-    }
+    override val description = "Показать локальное уведомление на устройстве"
 
     override suspend fun execute(message: Message, args: String?) {
         if (args.isNullOrBlank()) {
-            reply(message, "Usage: /notify [text]\n\nExample: /notify Hello from Telegram!")
+            reply(message, "Использование: /notify [текст]\n\nПример: /notify Проверить музыку")
             return
         }
 
-        showNotification(args)
-        reply(message, "✅ Notification shown on device")
-    }
-
-    private fun showNotification(text: String) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        // Create notification channel for Android 8+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Soll Notifications",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications from Telegram bot"
-                enableVibration(true)
-            }
-            notificationManager.createNotificationChannel(channel)
+        val notification = notificationCenter.post(
+            SollNotificationRequest(
+                channel = SollNotificationChannel.ALERTS,
+                type = "telegram_notify",
+                source = "telegram",
+                title = "Soll",
+                message = args.trim(),
+                payloadJson = JSONObject()
+                    .put("chat_id", message.chat.id)
+                    .put("message_id", message.messageId)
+                    .put("username", message.from?.username)
+                    .toString(),
+                priority = SollNotificationPriority.HIGH,
+                systemNotificationId = SollNotificationChannels.TELEGRAM_COMMAND_NOTIFICATION_ID,
+            )
+        )
+        val systemResult = if (notification.shownAt != null) {
+            "Системное уведомление показано."
+        } else {
+            "Сохранено в центре уведомлений, но системные уведомления не разрешены."
         }
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Soll")
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        reply(message, "Уведомление создано. $systemResult")
     }
 }

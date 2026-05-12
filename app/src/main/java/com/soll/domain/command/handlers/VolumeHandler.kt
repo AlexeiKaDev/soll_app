@@ -12,7 +12,7 @@ class VolumeHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "volume"
-    override val description = "Set or get media volume"
+    override val description = "Показать или изменить громкость медиа"
 
     override suspend fun execute(message: Message, args: String?) {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -23,14 +23,14 @@ class VolumeHandler(
         if (args.isNullOrBlank()) {
             // Show current volume
             val text = """
-                |<b>Volume Status</b>
+                |<b>Громкость</b>
                 |
-                |Media: $currentPercent%
-                |Ring: ${getVolumePercent(audioManager, AudioManager.STREAM_RING)}%
-                |Notification: ${getVolumePercent(audioManager, AudioManager.STREAM_NOTIFICATION)}%
-                |Alarm: ${getVolumePercent(audioManager, AudioManager.STREAM_ALARM)}%
+                |Медиа: $currentPercent%
+                |Звонок: ${getVolumePercent(audioManager, AudioManager.STREAM_RING)}%
+                |Уведомления: ${getVolumePercent(audioManager, AudioManager.STREAM_NOTIFICATION)}%
+                |Будильник: ${getVolumePercent(audioManager, AudioManager.STREAM_ALARM)}%
                 |
-                |Usage: /volume [0-100]
+                |Использование: /volume [0-100]
             """.trimMargin()
             reply(message, text)
             return
@@ -38,14 +38,14 @@ class VolumeHandler(
 
         val targetPercent = args.toIntOrNull()
         if (targetPercent == null || targetPercent !in 0..100) {
-            reply(message, "❌ Invalid volume. Use: /volume [0-100]")
+            reply(message, "❌ Неверная громкость. Используйте: /volume [0-100]")
             return
         }
 
         val targetVolume = (targetPercent * maxVolume / 100)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
 
-        reply(message, "✅ Media volume set to $targetPercent%")
+        reply(message, "✅ Громкость медиа установлена: $targetPercent%")
     }
 
     private fun getVolumePercent(audioManager: AudioManager, stream: Int): Int {

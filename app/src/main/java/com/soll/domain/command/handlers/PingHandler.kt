@@ -11,10 +11,10 @@ class PingHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "ping"
-    override val description = "Check if bot is alive"
+    override val description = "Проверить, что бот отвечает"
 
     override suspend fun execute(message: Message, args: String?) {
         val responseTime = System.currentTimeMillis() - (message.date * 1000)
-        reply(message, "Pong! Response time: ${responseTime}ms")
+        reply(message, "Бот на связи. Время ответа: ${responseTime} мс.")
     }
 }

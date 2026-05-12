@@ -2,6 +2,7 @@ package com.soll.domain.tts.book
 
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackFailure
+import com.soll.domain.tts.PiperProsodyPreset
 import com.soll.domain.tts.SileroJitEngine
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
@@ -37,6 +38,10 @@ class PiperSherpaBookEngine @Inject constructor(
     override suspend fun resume() = impl.resume()
     override fun stop() = impl.stop()
     override fun setSpeechRate(rate: Float) = impl.setSpeechRate(rate)
+
+    fun applyProsodyPreset(preset: PiperProsodyPreset) = impl.applyProsodyPreset(preset)
+
+    fun prosodyPreset(): PiperProsodyPreset = impl.getProsodyPreset()
 
     override fun setVoiceId(voiceId: String) = impl.setVoice(voiceId)
     override fun setPackId(packId: String?) = impl.setSelectedPackId(packId)

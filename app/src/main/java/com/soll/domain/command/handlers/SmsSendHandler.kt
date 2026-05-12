@@ -15,22 +15,22 @@ class SmsSendHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "sms_send"
-    override val description = "Send SMS: /sms_send <number> <message>"
+    override val description = "Отправить SMS: /sms_send <номер> <текст>"
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "SMS permission not granted. Please grant SEND_SMS permission in app settings.")
+            reply(message, "Нет разрешения на отправку SMS. Выдайте SEND_SMS в настройках приложения.")
             return
         }
 
         if (args.isNullOrBlank()) {
-            reply(message, "Usage: /sms_send <phone_number> <message>\n\nExample: /sms_send +1234567890 Hello!")
+            reply(message, "Использование: /sms_send <номер> <текст>\n\nПример: /sms_send +1234567890 Привет")
             return
         }
 
         val parts = args.trim().split(" ", limit = 2)
         if (parts.size < 2) {
-            reply(message, "Usage: /sms_send <phone_number> <message>\n\nPlease provide both phone number and message.")
+            reply(message, "Использование: /sms_send <номер> <текст>\n\nНужны и номер, и текст сообщения.")
             return
         }
 
@@ -38,20 +38,20 @@ class SmsSendHandler(
         val smsText = parts[1]
 
         if (!isValidPhoneNumber(phoneNumber)) {
-            reply(message, "Invalid phone number format: $phoneNumber")
+            reply(message, "Неверный формат номера: $phoneNumber")
             return
         }
 
         if (smsText.isBlank()) {
-            reply(message, "Message cannot be empty.")
+            reply(message, "Текст SMS не может быть пустым.")
             return
         }
 
         try {
             sendSms(phoneNumber, smsText)
-            reply(message, "✅ SMS sent successfully!\n\n<b>To:</b> $phoneNumber\n<b>Message:</b> ${escapeHtml(smsText)}")
+            reply(message, "✅ SMS отправлено.\n\n<b>Кому:</b> $phoneNumber\n<b>Текст:</b> ${escapeHtml(smsText)}")
         } catch (e: Exception) {
-            reply(message, "❌ Failed to send SMS: ${e.message}")
+            reply(message, "❌ Не удалось отправить SMS: ${e.message}")
         }
     }
 
@@ -70,7 +70,7 @@ class SmsSendHandler(
 
     private fun sendSms(phoneNumber: String, message: String) {
         val smsManager = context.getSystemService(SmsManager::class.java)
-            ?: throw IllegalStateException("SmsManager not available")
+            ?: throw IllegalStateException("SmsManager недоступен")
 
         // Split message if it's too long
         if (message.length > 160) {

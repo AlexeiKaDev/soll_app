@@ -21,14 +21,14 @@ class AlarmHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "alarm"
-    override val description = "Play loud alarm sound to find device"
+    override val description = "Включить громкий сигнал для поиска устройства"
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     override suspend fun execute(message: Message, args: String?) {
         val durationSeconds = (args?.toIntOrNull() ?: 10).coerceIn(1, 30)
 
-        reply(message, "🔊 Playing alarm for $durationSeconds seconds...")
+        reply(message, "🔊 Включаю сигнал на $durationSeconds сек.")
 
         var mediaPlayer: MediaPlayer? = null
         var originalVolume: Int = 0
@@ -60,16 +60,16 @@ class AlarmHandler(
             }
 
             // Also vibrate
-            startVibration(durationSeconds * 1000L)
+            startVibration()
 
             // Wait for duration
             delay(durationSeconds * 1000L)
 
-            reply(message, "🔕 Alarm stopped.")
+            reply(message, "🔕 Сигнал остановлен.")
 
         } catch (e: Exception) {
             Timber.e(e, "Error playing alarm")
-            reply(message, "❌ Error playing alarm: ${e.message}")
+            reply(message, "❌ Ошибка сигнала: ${e.message}")
         } finally {
             // Stop and release
             mediaPlayer?.let {
@@ -92,7 +92,7 @@ class AlarmHandler(
     }
 
     @Suppress("DEPRECATION")
-    private fun startVibration(durationMs: Long) {
+    private fun startVibration() {
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -102,14 +102,8 @@ class AlarmHandler(
             }
 
             if (vibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    // Vibrate pattern: vibrate 500ms, pause 200ms, repeat
-                    val pattern = longArrayOf(0, 500, 200, 500, 200)
-                    vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
-                } else {
-                    val pattern = longArrayOf(0, 500, 200, 500, 200)
-                    vibrator.vibrate(pattern, 0)
-                }
+                val pattern = longArrayOf(0, 500, 200, 500, 200)
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0))
             }
         } catch (e: Exception) {
             Timber.e(e, "Error starting vibration")

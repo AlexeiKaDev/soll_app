@@ -1,6 +1,7 @@
 package com.soll.domain.command.handlers
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
@@ -22,19 +23,23 @@ class RecordHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "record"
-    override val description = "Record audio: /record [seconds] (default 10, max 60)"
+    override val description = "Записать аудио: /record [секунды] (по умолчанию 10, максимум 60)"
 
     private val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "Microphone permission not granted. Please grant RECORD_AUDIO permission in app settings.")
+            reply(message, "Нет разрешения на микрофон. Выдайте RECORD_AUDIO в настройках приложения.")
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            reply(message, "Запись голосовых сообщений требует Android 10 или новее.")
             return
         }
 
         val durationSeconds = (args?.toIntOrNull() ?: 10).coerceIn(1, 60)
 
-        reply(message, "🎙 Recording audio for $durationSeconds seconds...")
+        reply(message, "🎙 Записываю аудио: $durationSeconds сек.")
 
         try {
             val audioFile = recordAudio(durationSeconds)
@@ -43,19 +48,19 @@ class RecordHandler(
                 telegramRepository.sendVoice(
                     chatId = message.chat.id,
                     file = audioFile,
-                    caption = "Audio recording (${durationSeconds}s)",
+                    caption = "Аудиозапись (${durationSeconds} сек.)",
                     duration = durationSeconds
                 )
 
                 // Clean up
                 audioFile.delete()
             } else {
-                reply(message, "❌ Failed to record audio.")
+                reply(message, "❌ Не удалось записать аудио.")
             }
 
         } catch (e: Exception) {
             Timber.e(e, "Error recording audio")
-            reply(message, "❌ Error recording: ${e.message}")
+            reply(message, "❌ Ошибка записи: ${e.message}")
         }
     }
 
@@ -66,6 +71,7 @@ class RecordHandler(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    @SuppressLint("InlinedApi")
     private suspend fun recordAudio(durationSeconds: Int): File? {
         val outputFile = File(
             context.cacheDir,

@@ -1,18 +1,31 @@
 # Gradle / Android
 .gradle/
+.gradle-home/
+.gradle-user/
 build/
 **/build/
 local.properties
+
+# Local Android tool state
+.android/
+.android-user/
+
+# Agent / local automation state
+.codex/
 
 # IDE
 .idea/
 *.iml
 
-# Android artifacts
+# Build artifacts
 *.apk
 *.aab
 
-# ML / model artifacts (keep out of git)
+# Python tooling
+__pycache__/
+*.pyc
+
+# ML / model artifacts
 *.onnx
 *.onnx_data
 *.pt
@@ -23,29 +36,9 @@ utrobin_onnx/
 models/
 checkpoints/
 external_models/
-# Gradle / Android build artifacts
-.gradle/
-build/
-**/build/
-local.properties
+tmp_sherpa_aar/
+tmp_vits_model.cc
+tmp_*.cc
 
-# IDE artifacts
-.idea/
-*.iml
-
-# APK / bundles
-*.apk
-*.aab
-
-# Native/model artifacts (keep out of git)
-*.onnx
-*.onnx_data
-*.pt
-*.pth
-*.bin
-*.jar
-
-# Local model folders
-utrobin_onnx/
-models/
-checkpoints/
+# Personal media and voice samples
+/voice/

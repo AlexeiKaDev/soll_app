@@ -1,15 +1,16 @@
 package com.soll
 
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Context
-import android.os.Build
+import com.soll.data.notification.SollNotificationChannels
+import com.soll.data.repository.GadgetServerSyncScheduler
+import com.soll.data.repository.SettingsRepository
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 import timber.log.Timber
 
 @HiltAndroidApp
 class SollApplication : Application() {
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate() {
         super.onCreate()
@@ -19,55 +20,21 @@ class SollApplication : Application() {
             Timber.plant(Timber.DebugTree())
         }
 
-        // Create notification channel for Foreground Service
-        createNotificationChannel()
+        SollNotificationChannels.ensureAll(this)
+        GadgetServerSyncScheduler.schedule(this, settingsRepository)
 
         Timber.d("SollApplication initialized")
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            val botChannel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = getString(R.string.notification_channel_description)
-                setShowBadge(false)
-            }
-            notificationManager.createNotificationChannel(botChannel)
-
-            val ttsChannel = NotificationChannel(
-                TTS_NOTIFICATION_CHANNEL_ID,
-                "Book Reader TTS",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Text-to-speech playback controls"
-                setShowBadge(false)
-            }
-            notificationManager.createNotificationChannel(ttsChannel)
-
-            val courseReminderChannel = NotificationChannel(
-                COURSE_REMINDER_CHANNEL_ID,
-                "Course reminders",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "Daily morning and evening exercise reminders"
-                setShowBadge(true)
-            }
-            notificationManager.createNotificationChannel(courseReminderChannel)
-
-            Timber.d("Notification channels created")
-        }
-    }
-
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "soll_bot_service"
-        const val NOTIFICATION_ID = 1001
+        const val NOTIFICATION_ID = SollNotificationChannels.BOT_SERVICE_NOTIFICATION_ID
         const val TTS_NOTIFICATION_CHANNEL_ID = "soll_tts_service"
-        const val TTS_NOTIFICATION_ID = 1002
-        const val COURSE_REMINDER_CHANNEL_ID = "soll_course_reminders"
+        const val TTS_NOTIFICATION_ID = SollNotificationChannels.TTS_NOTIFICATION_ID
+        const val MUSIC_NOTIFICATION_CHANNEL_ID = "soll_music_playback"
+        const val MUSIC_NOTIFICATION_ID = SollNotificationChannels.MUSIC_NOTIFICATION_ID
+        const val EVENTS_NOTIFICATION_CHANNEL_ID = "soll_events"
+        const val ALERTS_NOTIFICATION_CHANNEL_ID = "soll_alerts"
+        const val TOOL_JOBS_NOTIFICATION_CHANNEL_ID = "soll_tool_jobs"
     }
 }

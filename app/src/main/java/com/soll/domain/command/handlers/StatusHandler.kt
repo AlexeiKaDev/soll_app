@@ -21,7 +21,7 @@ class StatusHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "status"
-    override val description = "Get device status (battery, memory, network)"
+    override val description = "Показать статус устройства: батарея, память, сеть"
 
     override suspend fun execute(message: Message, args: String?) {
         val batteryInfo = getBatteryInfo()
@@ -31,21 +31,21 @@ class StatusHandler(
         val botInfo = getBotInfo()
 
         val text = """
-            |<b>Device Status</b>
+            |<b>Статус устройства</b>
             |
-            |<b>Battery:</b>
+            |<b>Батарея:</b>
             |$batteryInfo
             |
-            |<b>Memory:</b>
+            |<b>Память:</b>
             |$memoryInfo
             |
-            |<b>Network:</b>
+            |<b>Сеть:</b>
             |$networkInfo
             |
-            |<b>Uptime:</b>
+            |<b>Время работы:</b>
             |$uptimeInfo
             |
-            |<b>Bot Service:</b>
+            |<b>Сервис бота:</b>
             |$botInfo
         """.trimMargin()
 
@@ -68,19 +68,19 @@ class StatusHandler(
 
         val plugged = batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
         val chargingSource = when (plugged) {
-            BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+            BatteryManager.BATTERY_PLUGGED_AC -> "сеть"
             BatteryManager.BATTERY_PLUGGED_USB -> "USB"
-            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
-            else -> "Battery"
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "беспроводная зарядка"
+            else -> "батарея"
         }
 
         val temperature = batteryStatus?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
             ?.div(10.0) ?: 0.0
 
         return buildString {
-            append("Level: $percentage%")
-            if (isCharging) append(" (Charging via $chargingSource)")
-            append("\nTemperature: ${temperature}°C")
+            append("Уровень: $percentage%")
+            if (isCharging) append(" (заряжается: $chargingSource)")
+            append("\nТемпература: ${temperature}°C")
         }
     }
 
@@ -96,10 +96,10 @@ class StatusHandler(
         val usedPercent = (usedMB * 100.0 / totalMB)
 
         return buildString {
-            append("Total: ${df.format(totalMB / 1024.0)} GB\n")
-            append("Used: ${df.format(usedMB / 1024.0)} GB (${df.format(usedPercent)}%)\n")
-            append("Available: ${df.format(availMB / 1024.0)} GB")
-            if (memoryInfo.lowMemory) append("\n⚠️ Low memory!")
+            append("Всего: ${df.format(totalMB / 1024.0)} GB\n")
+            append("Занято: ${df.format(usedMB / 1024.0)} GB (${df.format(usedPercent)}%)\n")
+            append("Доступно: ${df.format(availMB / 1024.0)} GB")
+            if (memoryInfo.lowMemory) append("\n⚠️ Мало памяти")
         }
     }
 
@@ -110,15 +110,15 @@ class StatusHandler(
 
         return if (capabilities != null) {
             val type = when {
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile Data"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "мобильная сеть"
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
-                else -> "Unknown"
+                else -> "неизвестно"
             }
             val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            "Type: $type\nInternet: ${if (hasInternet) "Available" else "Not Available"}"
+            "Тип: $type\nИнтернет: ${if (hasInternet) "доступен" else "недоступен"}"
         } else {
-            "No network connection"
+            "Нет подключения к сети"
         }
     }
 
@@ -127,7 +127,7 @@ class StatusHandler(
         val hours = uptimeMs / (1000 * 60 * 60)
         val minutes = (uptimeMs / (1000 * 60)) % 60
 
-        return "Device: ${hours}h ${minutes}m"
+        return "Устройство: ${hours} ч ${minutes} мин"
     }
 
     private fun getBotInfo(): String {
@@ -139,9 +139,9 @@ class StatusHandler(
             val uptimeMs = System.currentTimeMillis() - startTime
             val hours = uptimeMs / (1000 * 60 * 60)
             val minutes = (uptimeMs / (1000 * 60)) % 60
-            "Status: Running\nUptime: ${hours}h ${minutes}m\nMessages: $messagesProcessed"
+            "Статус: запущен\nВремя работы: ${hours} ч ${minutes} мин\nСообщений: $messagesProcessed"
         } else {
-            "Status: Stopped"
+            "Статус: остановлен"
         }
     }
 }

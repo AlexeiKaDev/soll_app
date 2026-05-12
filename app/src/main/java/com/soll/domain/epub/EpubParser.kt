@@ -3,6 +3,7 @@ package com.soll.domain.epub
 import android.content.Context
 import android.net.Uri
 import org.jsoup.Jsoup
+import org.jsoup.nodes.TextNode
 import timber.log.Timber
 import java.io.BufferedReader
 import java.io.InputStream
@@ -82,7 +83,7 @@ class EpubParser(private val context: Context) {
         // Parse content.opf for metadata and spine
         val opfContent = entries[opfPath]?.decodeToString() ?: return null
         val metadata = parseOpfMetadata(opfContent)
-        val spineItems = parseOpfSpine(opfContent, basePath)
+        val spineItems = parseOpfSpine(opfContent)
 
         // Parse chapters
         val chapters = mutableListOf<EpubChapter>()
@@ -94,7 +95,7 @@ class EpubParser(private val context: Context) {
             if (htmlContent != null) {
                 val plainText = extractTextFromHtml(htmlContent)
                 if (plainText.isNotBlank()) {
-                    val chapterTitle = extractChapterTitle(htmlContent) ?: "Chapter ${index + 1}"
+                    val chapterTitle = extractChapterTitle(htmlContent) ?: "Глава ${index + 1}"
                     chapters.add(
                         EpubChapter(
                             index = index,
@@ -110,7 +111,7 @@ class EpubParser(private val context: Context) {
         val coverData = findCoverImage(entries, opfContent, basePath)
 
         return EpubBook(
-            title = metadata["title"] ?: "Unknown Title",
+            title = metadata["title"] ?: "Без названия",
             author = metadata["creator"] ?: metadata["author"],
             chapters = chapters,
             coverData = coverData
@@ -140,7 +141,7 @@ class EpubParser(private val context: Context) {
         return metadata
     }
 
-    private fun parseOpfSpine(opfContent: String, basePath: String): List<String> {
+    private fun parseOpfSpine(opfContent: String): List<String> {
         val doc = Jsoup.parse(opfContent)
         val manifest = mutableMapOf<String, String>()
 
@@ -165,14 +166,7 @@ class EpubParser(private val context: Context) {
         return spineItems
     }
 
-    private fun extractTextFromHtml(html: String): String {
-        val doc = Jsoup.parse(html)
-        // Remove scripts and styles
-        doc.select("script, style").remove()
-        // Get text with paragraph breaks
-        val body = doc.body()
-        return body?.text() ?: ""
-    }
+    private fun extractTextFromHtml(html: String): String = extractReadableTextFromHtml(html)
 
     private fun extractChapterTitle(html: String): String? {
         val doc = Jsoup.parse(html)
@@ -212,4 +206,29 @@ class EpubParser(private val context: Context) {
 
         return null
     }
+}
+
+internal fun extractReadableTextFromHtml(html: String): String {
+    val doc = Jsoup.parse(html)
+    doc.select("script, style").remove()
+    val body = doc.body() ?: return ""
+
+    body.select("br").forEach { element ->
+        element.after(TextNode("\n"))
+    }
+    body.select(
+        "address, article, aside, blockquote, dd, div, dl, dt, figcaption, figure, footer, " +
+            "h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, tr, ul",
+    ).forEach { element ->
+        element.before(TextNode("\n\n"))
+        element.after(TextNode("\n\n"))
+    }
+
+    return body.wholeText()
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .replace(Regex("[\\t\\x0B\\f ]+"), " ")
+        .replace(Regex(" *\\n *"), "\n")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
 }

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Soll" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <!-- До отрисовки Compose — тот же оттенок, что md_theme_light_background, без серой полосы -->
-        <item name="android:navigationBarColor">#FFFAFDFC</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+    <style name="Theme.Soll" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF121212</item>
+        <item name="android:statusBarColor">#FF121212</item>
+        <!-- До отрисовки Compose — тот же оттенок, что md_theme_dark_background, без серой полосы -->
+        <item name="android:navigationBarColor">#FF121212</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

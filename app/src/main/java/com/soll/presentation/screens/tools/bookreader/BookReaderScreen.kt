@@ -1,6 +1,11 @@
 package com.soll.presentation.screens.tools.bookreader
 
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,29 +26,56 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.soll.data.local.entity.BookEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
 import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
+import com.soll.domain.tts.PiperProsodyPreset
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.TtsEngineType
+import com.soll.domain.tts.TtsState
 import com.soll.domain.tts.UtrobinPlaybackDiagnostics
 import com.soll.domain.tts.book.TtsEngineTunable
 import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.catalog.DetectedTtsPack
 import com.soll.domain.tts.catalog.DownloadableTtsPack
+import com.soll.domain.tts.catalog.TtsPackEngineFamily
+import com.soll.domain.tts.catalog.TtsImportBrowserState
 import com.soll.domain.tts.catalog.TtsPackStatus
+import com.soll.domain.tts.catalog.TtsTreeAccessState
+import com.soll.domain.tts.chatterbox.ChatterboxPlaybackDiagnostics
 import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
-import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.flow.collectLatest
 import timber.log.Timber
+import java.util.Locale
+
+private val TTS_MODEL_FILE_MIME_TYPES = arrayOf(
+    "application/octet-stream",
+    "application/json",
+    "text/plain",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "*/*",
+)
+
+private fun buildTtsModelFilePickerIntent(): Intent =
+    Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "*/*"
+        putExtra(Intent.EXTRA_MIME_TYPES, TTS_MODEL_FILE_MIME_TYPES)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,13 +85,6 @@ fun BookReaderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val lastTtsRootUri = remember(uiState.lastTtsModelRootUri) {
-        uiState.lastTtsModelRootUri?.let { raw ->
-            runCatching { Uri.parse(raw) }
-                .onFailure { Timber.w(it, "Failed to parse saved TTS root uri=%s", raw) }
-                .getOrNull()
-        }
-    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -66,12 +92,23 @@ fun BookReaderScreen(
         uri?.let { viewModel.importBook(it) }
     }
 
-    val ttsModelsFolderLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        Timber.d("OpenDocumentTree result for TTS root: %s", uri)
-        uri?.let { viewModel.importTtsPacksFromUserFolder(it) }
+    val ttsPackFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                viewModel.importTtsFromPickedDocument(uri)
+            }
+        }
     }
+
+    val manageAllFilesAccessLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        viewModel.refreshStorageAccessState()
+        viewModel.refreshTtsImportBrowser()
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
@@ -97,12 +134,27 @@ fun BookReaderScreen(
         }
     }
 
-    if (uiState.currentBook != null) {
+    DisposableEffect(lifecycleOwner, uiState.currentBookEntity?.id) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                viewModel.persistCurrentProgress()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.persistCurrentProgress()
+        }
+    }
+
+    val currentBook = uiState.currentBook
+    if (currentBook != null) {
         BookReadingScreen(
-            book = uiState.currentBook!!,
+            book = currentBook,
             currentChapter = uiState.currentChapter,
             currentChapterIndex = uiState.currentChapterIndex,
             isTtsPlaying = uiState.isTtsPlaying,
+            ttsState = uiState.ttsState,
             speechRate = uiState.speechRate,
             autoAdvanceEnabled = uiState.autoAdvanceEnabled,
             highlightRange = uiState.highlightRange,
@@ -110,12 +162,13 @@ fun BookReaderScreen(
             selectedEngine = uiState.selectedEngine,
             engineType = uiState.engineType,
             ttsVoiceOptions = uiState.ttsVoiceOptions,
-            sileroVoiceId = uiState.sileroVoiceId,
-            utrobinVoiceId = uiState.utrobinVoiceId,
             utrobinOrtThreads = uiState.utrobinOrtThreads,
             natashaOrtThreads = uiState.natashaOrtThreads,
+            chatterboxOrtThreads = uiState.chatterboxOrtThreads,
+            chatterboxExaggeration = uiState.chatterboxExaggeration,
             sherpaThreads = uiState.sherpaThreads,
             performanceProfile = uiState.performanceProfile,
+            piperProsodyPreset = uiState.piperProsodyPreset,
             systemPitch = uiState.systemPitch,
             engineTunables = uiState.engineTunables,
             sileroDownloadProgress = uiState.sileroDownloadProgress,
@@ -123,16 +176,13 @@ fun BookReaderScreen(
             downloadableTtsPacks = uiState.downloadableTtsPacks,
             packDownloadProgress = uiState.packDownloadProgress,
             packDownloadLabel = uiState.packDownloadLabel,
-            lastTtsModelRootUri = uiState.lastTtsModelRootUri,
+            lastTtsImportSummary = uiState.lastTtsImportSummary,
+            ttsImportBrowser = uiState.ttsImportBrowser,
+            isTtsImporting = uiState.isTtsImporting,
+            hasDirectFilesystemTtsAccess = uiState.hasDirectFilesystemTtsAccess,
+            commonFilesystemTtsRoots = uiState.commonFilesystemTtsRoots,
             selectedPiperPackId = uiState.selectedPiperPackId,
-            selectedNatashaPackId = uiState.selectedNatashaPackId,
-            selectedUtrobinPackId = uiState.selectedUtrobinPackId,
             piperDiagnostics = uiState.piperDiagnostics,
-            natashaDiagnostics = uiState.natashaDiagnostics,
-            utrobinDiagnostics = uiState.utrobinDiagnostics,
-            onnxDiagnostics = uiState.onnxDiagnostics,
-            installedOnnxPacks = uiState.installedOnnxPacks,
-            selectedOnnxPackKey = uiState.selectedOnnxPackKey,
             onBack = { viewModel.closeBook() },
             onChapterSelect = { viewModel.goToChapter(it) },
             onPreviousChapter = { viewModel.previousChapter() },
@@ -146,11 +196,21 @@ fun BookReaderScreen(
             onEngineVoiceChange = { viewModel.setEngineVoice(it) },
             onEngineTunableChange = { key, value -> viewModel.applyEngineTunable(key, value) },
             onPerformanceProfileChange = { viewModel.setPerformanceProfile(it) },
-            onPickTtsImportFolder = {
-                Timber.d("Launching TTS folder picker with initialUri=%s", lastTtsRootUri)
-                ttsModelsFolderLauncher.launch(lastTtsRootUri)
+            onPiperProsodyPresetChange = { viewModel.setPiperProsodyPreset(it) },
+            onOpenTtsImportBrowser = { viewModel.openTtsImportBrowser() },
+            onPickTtsModelFile = {
+                Timber.d("Launching TTS model file picker")
+                ttsPackFileLauncher.launch(buildTtsModelFilePickerIntent())
             },
-            onSelectOnnxPack = { modelId, precision -> viewModel.selectOnnxPack(modelId, precision) },
+            onGrantAllFilesAccess = {
+                manageAllFilesAccessLauncher.launch(buildManageAllFilesAccessIntent(context.packageName))
+            },
+            onImportFromCommonFilesystemRoots = { viewModel.importTtsFromCommonFilesystemRoots() },
+            onTtsBrowserEnter = { uri, label -> viewModel.enterTtsImportDirectory(uri, label) },
+            onTtsBrowserUp = { viewModel.leaveTtsImportDirectory() },
+            onTtsBrowserRefresh = { viewModel.refreshTtsImportBrowser() },
+            onImportTtsCandidate = { viewModel.importTtsCandidatesFromBrowser(setOf(it)) },
+            onImportAllVisibleTtsCandidates = { viewModel.importAllVisibleTtsCandidates() },
             onDeleteTtsPack = { viewModel.deleteTtsPack(it) },
             onDeleteSuggestedTtsPacks = { viewModel.deleteSuggestedTtsPacks() },
             onDownloadTtsPack = { viewModel.downloadTtsPack(it) },
@@ -363,15 +423,270 @@ private fun BookListItem(
             }
         )
     }
+
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtsImportBrowserDialog(
+    browser: TtsImportBrowserState,
+    isImporting: Boolean,
+    hasDirectFilesystemTtsAccess: Boolean,
+    commonFilesystemTtsRoots: List<String>,
+    onDismiss: () -> Unit,
+    onPickModelFile: () -> Unit,
+    onGrantAllFilesAccess: () -> Unit,
+    onImportFromCommonFilesystemRoots: () -> Unit,
+    onNavigateUp: () -> Unit,
+    onRefresh: () -> Unit,
+    onImportAll: () -> Unit,
+    onEnterDirectory: (String, String) -> Unit,
+    onImportCandidate: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Импорт TTS") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = if (browser.rootLabel != null) {
+                        "Сохранённое дерево: ${browser.rootLabel}"
+                    } else {
+                        "Основной путь: автоимпорт из памяти устройства"
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                browser.currentLabel?.let { current ->
+                    Text(
+                        text = "Текущая папка: $current",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                browser.message?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isImporting) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = if (hasDirectFilesystemTtsAccess) onImportFromCommonFilesystemRoots else onGrantAllFilesAccess,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isImporting,
+                    ) {
+                        Icon(
+                            if (hasDirectFilesystemTtsAccess) Icons.Default.Storage else Icons.Default.LockOpen,
+                            contentDescription = null,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (hasDirectFilesystemTtsAccess) "Автоимпорт" else "Доступ")
+                    }
+                    OutlinedButton(
+                        onClick = onPickModelFile,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isImporting,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Файл модели")
+                    }
+                }
+                if (browser.rootUri != null || browser.currentUri != null) {
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isImporting,
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Обновить просмотр сохранённого дерева")
+                    }
+                }
+                if (hasDirectFilesystemTtsAccess) {
+                    if (commonFilesystemTtsRoots.isNotEmpty()) {
+                        Text(
+                            text = "Найдены возможные пути: ${commonFilesystemTtsRoots.joinToString()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            text = "Стандартные пути `tts`, `Download/tts`, `Documents/tts` и одноимённые папки в общей памяти будут найдены автоматически.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "На этой прошивке выбор папки может быть сломан. После выдачи доступа приложение само найдёт папку `tts`, а запасной путь позволяет выбрать любой файл внутри нужной модели.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (browser.canGoUp) {
+                    OutlinedButton(
+                        onClick = onNavigateUp,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Вверх")
+                    }
+                }
+
+                when (browser.accessState) {
+                    TtsTreeAccessState.UNSET,
+                    TtsTreeAccessState.NO_PERMISSION,
+                    TtsTreeAccessState.INVALID_ROOT,
+                    TtsTreeAccessState.PICKER_CANCELLED,
+                    -> {
+                        Text(
+                            text = "Сначала попробуй автоимпорт. Если он не сработал, выбери любой файл внутри нужного пакета: model.onnx, tokenizer.json, manifest или голосовой WAV.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    TtsTreeAccessState.READY -> {
+                        val folderEntries = browser.entries.filter { it.isDirectory }
+                        if (folderEntries.isNotEmpty()) {
+                            Text(
+                                text = "Папки",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            folderEntries.forEach { entry ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onEnterDirectory(entry.uri, entry.name) },
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        Icon(Icons.Default.Folder, contentDescription = null)
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(entry.name, style = MaterialTheme.typography.bodyMedium)
+                                            entry.subtitle?.let {
+                                                Text(
+                                                    text = it,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                        Icon(Icons.Default.ChevronRight, contentDescription = null)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (browser.candidates.isNotEmpty()) {
+                            Text(
+                                text = "Найденные пакеты",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            OutlinedButton(
+                                onClick = onImportAll,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isImporting,
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Импортировать всё найденное")
+                            }
+                            browser.candidates.forEach { candidate ->
+                                val statusColor = when (candidate.status) {
+                                    TtsPackStatus.READY -> MaterialTheme.colorScheme.primary
+                                    TtsPackStatus.READY_NON_RUSSIAN -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.error
+                                }
+                                Card(modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(candidate.displayName, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            text = buildString {
+                                                append(candidate.engineFamily.label())
+                                                candidate.runtimeFamily?.let {
+                                                    append(" · ")
+                                                    append(it)
+                                                }
+                                                append(" · ")
+                                                append(candidate.status.label())
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = statusColor,
+                                        )
+                                        candidate.voiceSummary?.let {
+                                            Text(
+                                                text = it,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        candidate.reason?.let {
+                                            Text(
+                                                text = it,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        OutlinedButton(
+                                            onClick = { onImportCandidate(candidate.sourceUri) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            enabled = !isImporting,
+                                        ) {
+                                            Icon(Icons.Default.Download, contentDescription = null)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Импортировать этот пакет")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть")
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun BookReadingScreen(
     book: EpubBook,
     currentChapter: EpubChapter?,
     currentChapterIndex: Int,
     isTtsPlaying: Boolean,
+    ttsState: TtsState,
     speechRate: Float,
     autoAdvanceEnabled: Boolean,
     highlightRange: IntRange?,
@@ -379,12 +694,13 @@ private fun BookReadingScreen(
     selectedEngine: String?,
     engineType: TtsEngineType,
     ttsVoiceOptions: List<TtsVoiceOption>,
-    sileroVoiceId: String,
-    utrobinVoiceId: String,
     utrobinOrtThreads: Int,
     natashaOrtThreads: Int,
+    chatterboxOrtThreads: Int,
+    chatterboxExaggeration: Float,
     sherpaThreads: Int,
     performanceProfile: TtsBookPerformanceProfile,
+    piperProsodyPreset: PiperProsodyPreset,
     systemPitch: Float,
     engineTunables: List<TtsEngineTunable>,
     sileroDownloadProgress: Float?,
@@ -392,16 +708,13 @@ private fun BookReadingScreen(
     downloadableTtsPacks: List<DownloadableTtsPack>,
     packDownloadProgress: Float?,
     packDownloadLabel: String?,
-    lastTtsModelRootUri: String?,
+    lastTtsImportSummary: String?,
+    ttsImportBrowser: TtsImportBrowserState,
+    isTtsImporting: Boolean,
+    hasDirectFilesystemTtsAccess: Boolean,
+    commonFilesystemTtsRoots: List<String>,
     selectedPiperPackId: String?,
-    selectedNatashaPackId: String?,
-    selectedUtrobinPackId: String?,
     piperDiagnostics: PiperPlaybackDiagnostics,
-    natashaDiagnostics: NatashaPlaybackDiagnostics,
-    utrobinDiagnostics: UtrobinPlaybackDiagnostics,
-    onnxDiagnostics: KokoroPlaybackDiagnostics,
-    installedOnnxPacks: List<InstalledOnnxPack>,
-    selectedOnnxPackKey: String?,
     onBack: () -> Unit,
     onChapterSelect: (Int) -> Unit,
     onPreviousChapter: () -> Unit,
@@ -415,8 +728,16 @@ private fun BookReadingScreen(
     onEngineVoiceChange: (String) -> Unit,
     onEngineTunableChange: (String, Float) -> Unit,
     onPerformanceProfileChange: (TtsBookPerformanceProfile) -> Unit,
-    onPickTtsImportFolder: () -> Unit,
-    onSelectOnnxPack: (String, String) -> Unit,
+    onPiperProsodyPresetChange: (PiperProsodyPreset) -> Unit,
+    onOpenTtsImportBrowser: () -> Unit,
+    onPickTtsModelFile: () -> Unit,
+    onGrantAllFilesAccess: () -> Unit,
+    onImportFromCommonFilesystemRoots: () -> Unit,
+    onTtsBrowserEnter: (String, String) -> Unit,
+    onTtsBrowserUp: () -> Unit,
+    onTtsBrowserRefresh: () -> Unit,
+    onImportTtsCandidate: (String) -> Unit,
+    onImportAllVisibleTtsCandidates: () -> Unit,
     onDeleteTtsPack: (String) -> Unit,
     onDeleteSuggestedTtsPacks: () -> Unit,
     onDownloadTtsPack: (String) -> Unit,
@@ -425,17 +746,19 @@ private fun BookReadingScreen(
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showTtsImportBrowser by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
+    val isTtsInitializing = ttsState is TtsState.Initializing
 
     // Track text layout for auto-scroll
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
     // Auto-scroll to highlighted word
     LaunchedEffect(highlightRange) {
-        if (highlightRange != null && textLayoutResult != null) {
-            val layout = textLayoutResult!!
-            val content = currentChapter?.content ?: return@LaunchedEffect
+        if (highlightRange != null) {
+            val layout = textLayoutResult ?: return@LaunchedEffect
+            val content = currentChapter?.content?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
             val offset = highlightRange.first.coerceIn(0, content.length - 1)
             try {
                 val line = layout.getLineForOffset(offset)
@@ -515,13 +838,22 @@ private fun BookReadingScreen(
 
                     FilledIconButton(
                         onClick = onToggleTts,
+                        enabled = !isTtsInitializing,
                         modifier = Modifier.size(56.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isTtsPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isTtsPlaying) "Пауза" else "Воспроизвести",
-                            modifier = Modifier.size(32.dp)
-                        )
+                        if (isTtsInitializing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isTtsPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isTtsPlaying) "Пауза" else "Воспроизвести",
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
                     }
 
                     IconButton(onClick = onStopTts) {
@@ -639,16 +971,15 @@ private fun BookReadingScreen(
             onDismissRequest = { showSettings = false },
             title = { Text("Настройки чтения") },
             text = {
-                val removableSuggestedPacks = detectedTtsPacks.filter { it.suggestedDeletion && it.canDelete }
-                val piperPacks = detectedTtsPacks.filter { it.engineFamily.name == "PIPER" }
-                val natashaPacks = detectedTtsPacks.filter { it.engineFamily.name == "NATASHA" }
-                val utrobinPacks = detectedTtsPacks.filter { it.engineFamily.name == "UTROBIN" }
-                val selectedVoiceId = when (engineType) {
-                    TtsEngineType.SILERO -> sileroVoiceId
-                    TtsEngineType.UTROBIN -> utrobinVoiceId
-                    TtsEngineType.NATASHA -> ""
-                    TtsEngineType.ONNX_EXTERNAL -> ""
-                    TtsEngineType.SYSTEM -> ""
+                val removableSuggestedPacks = detectedTtsPacks.filter {
+                    (it.suggestedDeletion || it.engineFamily.name != "PIPER") && it.canDelete
+                }
+                val piperPacks = detectedTtsPacks.filter {
+                    it.engineFamily.name == "PIPER" && it.isRunnable && it.isRussianCapable
+                }
+                val nonPiperPacks = detectedTtsPacks.filter { it.engineFamily.name != "PIPER" }
+                val incompletePiperPacks = detectedTtsPacks.filter {
+                    it.engineFamily.name == "PIPER" && !(it.isRunnable && it.isRussianCapable)
                 }
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -659,7 +990,7 @@ private fun BookReadingScreen(
                         subtitle = "Скорость, профиль нагрузки и поведение при переходе по главам.",
                     ) {
                         Text(
-                            text = "Скорость речи: ${String.format("%.1f", speechRate)}x",
+                            text = "Скорость речи: ${formatOneDecimal(speechRate)}x",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Slider(
@@ -700,6 +1031,30 @@ private fun BookReadingScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Интонация Piper",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            text = piperProsodyPreset.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PiperProsodyPreset.entries.forEach { preset ->
+                                FilterChip(
+                                    selected = piperProsodyPreset == preset,
+                                    onClick = { onPiperProsodyPresetChange(preset) },
+                                    label = { Text(preset.displayName) },
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -726,32 +1081,40 @@ private fun BookReadingScreen(
                     }
 
                     ReaderSettingsSection(
-                        title = "Модели и голоса",
-                        subtitle = "Ручной импорт пользовательских pack-ов и управление локальной библиотекой.",
+                        title = "Piper: голоса",
+                        subtitle = "В читалке оставлены только русские Piper-голоса и системный движок Android. Тяжелые экспериментальные модели отключены.",
                     ) {
                         OutlinedButton(
-                            onClick = onPickTtsImportFolder,
+                            onClick = {
+                                showTtsImportBrowser = true
+                                onOpenTtsImportBrowser()
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                            Icon(Icons.Default.Folder, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Импорт из папки tts")
+                            Text("Импорт из папки TTS")
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Кнопка нужна для ручного импорта `Utrobin`, `ONNX External` и любых пользовательских pack-ов. Отдельный ручной refresh больше не нужен: список обновляется автоматически после импорта, загрузки и удаления.",
+                            text = "Официальные русские Piper-голоса: Irina, Ruslan, Denis, Dmitri. Уровень у всех medium; отдельного русского high в официальном списке нет.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        lastTtsModelRootUri?.let { savedRoot ->
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Последняя папка tts: $savedRoot",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        lastTtsImportSummary?.let { summary ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                ),
+                            ) {
+                                Text(
+                                    text = summary,
+                                    modifier = Modifier.padding(10.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                         if (removableSuggestedPacks.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(10.dp))
@@ -761,13 +1124,13 @@ private fun BookReadingScreen(
                             ) {
                                 Icon(Icons.Default.DeleteSweep, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Удалить всё на удаление (${removableSuggestedPacks.size})")
+                                Text("Удалить не-Piper модели (${removableSuggestedPacks.size})")
                             }
                         }
                         if (downloadableTtsPacks.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
-                                text = "Быстрая загрузка русских pack-ов",
+                                text = "Скачать русские Piper-голоса",
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             downloadableTtsPacks.forEach { pack ->
@@ -804,19 +1167,19 @@ private fun BookReadingScreen(
                             }
                         }
                         Spacer(modifier = Modifier.height(10.dp))
-                        if (detectedTtsPacks.isEmpty()) {
+                        if (piperPacks.isEmpty()) {
                             Text(
-                                text = "Паки пока не найдены.",
+                                text = "Установленных Piper-голосов пока нет. Скачай один из голосов выше.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
                             Text(
-                                text = "Установленные pack-и",
+                                text = "Установленные Piper-голоса",
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            detectedTtsPacks.forEach { pack ->
+                            piperPacks.forEach { pack ->
                                 ReaderPackCard(
                                     pack = pack,
                                     onDelete = if (pack.canDelete) {
@@ -826,40 +1189,59 @@ private fun BookReadingScreen(
                                     },
                                 )
                             }
+                            if (incompletePiperPacks.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Неполные Piper-пакеты",
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                incompletePiperPacks.forEach { pack ->
+                                    ReaderPackCard(
+                                        pack = pack,
+                                        onDelete = if (pack.canDelete) {
+                                            { onDeleteTtsPack(pack.packId) }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                }
+                            }
+                            if (nonPiperPacks.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Отключены из читалки",
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                nonPiperPacks.forEach { pack ->
+                                    ReaderPackCard(
+                                        pack = pack,
+                                        onDelete = if (pack.canDelete) {
+                                            { onDeleteTtsPack(pack.packId) }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
 
                     ReaderSettingsSection(
                         title = "Движок чтения",
-                        subtitle = "Выбор активного runtime. Детальные настройки показываются только для выбранного движка.",
+                        subtitle = "Сейчас доступны только стабильный Piper и системный Android TTS.",
                     ) {
                         ReaderEngineOption(
                             selected = engineType == TtsEngineType.SILERO,
-                            title = "Piper / Sherpa (оффлайн) — базовый режим",
-                            description = "Низкая нагрузка, стабильно; нужен локальный Piper pack с ONNX-голосом, tokens.txt и espeak-ng-data.",
+                            title = "Piper / Sherpa (оффлайн)",
+                            description = "Основной режим читалки: стабильный русский офлайн-TTS с короткими фрагментами и диагностикой.",
+                            enabled = piperPacks.isNotEmpty(),
                             onClick = { onEngineTypeChange(TtsEngineType.SILERO) },
                         )
                         ReaderEngineOption(
-                            selected = engineType == TtsEngineType.NATASHA,
-                            title = "Natasha VITS2 (оффлайн)",
-                            description = "Лучшая русская интонация среди оффлайн вариантов; выше CPU и расход батареи.",
-                            onClick = { onEngineTypeChange(TtsEngineType.NATASHA) },
-                        )
-                        ReaderEngineOption(
-                            selected = engineType == TtsEngineType.UTROBIN,
-                            title = "Utrobin VITS (оффлайн)",
-                            description = "Русский ONNX/VITS из локального pack-а; средняя нагрузка, качество зависит от токенизации и чанков.",
-                            onClick = { onEngineTypeChange(TtsEngineType.UTROBIN) },
-                        )
-                        ReaderEngineOption(
-                            selected = engineType == TtsEngineType.ONNX_EXTERNAL,
-                            title = "ONNX External (RU модели)",
-                            description = "Пакеты моделей ставятся отдельно, выбор по quality/size.",
-                            onClick = { onEngineTypeChange(TtsEngineType.ONNX_EXTERNAL) },
-                        )
-                        ReaderEngineOption(
                             selected = engineType == TtsEngineType.SYSTEM,
-                            title = "System TTS",
+                            title = "Системный TTS Android",
                             description = "Google TTS или другой установленный движок Android.",
                             onClick = { onEngineTypeChange(TtsEngineType.SYSTEM) },
                         )
@@ -868,24 +1250,20 @@ private fun BookReadingScreen(
                     ReaderSettingsSection(
                         title = when (engineType) {
                             TtsEngineType.SILERO -> "Текущий движок: Piper"
-                            TtsEngineType.NATASHA -> "Текущий движок: Natasha"
-                            TtsEngineType.UTROBIN -> "Текущий движок: Utrobin"
-                            TtsEngineType.ONNX_EXTERNAL -> "Текущий движок: ONNX External"
-                            TtsEngineType.SYSTEM -> "Текущий движок: System TTS"
+                            TtsEngineType.SYSTEM -> "Текущий движок: системный TTS Android"
+                            else -> "Текущий движок отключён"
                         },
                         subtitle = when (engineType) {
-                            TtsEngineType.SILERO -> "Пакет = голос. Здесь выбирается конкретный установленный pack и видна диагностика чтения."
-                            TtsEngineType.NATASHA -> "Первый следующий offline-движок после Piper. Добавлена диагностика и stop на реальном сбое вместо тихого skip."
-                            TtsEngineType.UTROBIN -> "Русский ONNX/VITS со спикерами 0/1. Добавлена диагностика и recovery split вместо молчаливого skip."
-                            TtsEngineType.ONNX_EXTERNAL -> "Показываются только runnable пакеты. Неподдержанные runtime остаются в общей библиотеке выше."
+                            TtsEngineType.SILERO -> "Пакет равен голосу. Здесь выбирается конкретный Piper-голос и видна диагностика чтения."
                             TtsEngineType.SYSTEM -> "Выбор установленного системного TTS и его пользовательских параметров."
+                            else -> "Выбери Piper или системный TTS Android."
                         },
                     ) {
                         when (engineType) {
                             TtsEngineType.SILERO -> {
                                 if (piperPacks.isEmpty()) {
                                     Text(
-                                        text = "Локальные Piper pack-и не найдены.",
+                                        text = "Локальные Piper-пакеты не найдены.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -900,76 +1278,6 @@ private fun BookReadingScreen(
                                 }
                                 Spacer(modifier = Modifier.height(10.dp))
                                 ReaderPiperDiagnosticsCard(piperDiagnostics = piperDiagnostics)
-                            }
-                            TtsEngineType.NATASHA -> {
-                                if (natashaPacks.isEmpty()) {
-                                    Text(
-                                        text = "Локальные Natasha pack-и не найдены.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else {
-                                    natashaPacks.forEach { pack ->
-                                        ReaderPackSelectorRow(
-                                            pack = pack,
-                                            selected = pack.packId == selectedNatashaPackId,
-                                            onClick = { onSelectEnginePack(pack.packId) },
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                ReaderNatashaDiagnosticsCard(natashaDiagnostics = natashaDiagnostics)
-                            }
-                            TtsEngineType.UTROBIN -> {
-                                if (utrobinPacks.isEmpty()) {
-                                    Text(
-                                        text = "Локальные Utrobin pack-и не найдены.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else {
-                                    utrobinPacks.forEach { pack ->
-                                        ReaderPackSelectorRow(
-                                            pack = pack,
-                                            selected = pack.packId == selectedUtrobinPackId,
-                                            onClick = { onSelectEnginePack(pack.packId) },
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                ReaderUtrobinDiagnosticsCard(utrobinDiagnostics = utrobinDiagnostics)
-                            }
-                            TtsEngineType.ONNX_EXTERNAL -> {
-                                if (installedOnnxPacks.isEmpty()) {
-                                    Text(
-                                        text = "Готовые к запуску ONNX-паки не найдены. Неподдержанные runtime и нерусские паки смотри выше в общей библиотеке моделей.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else {
-                                    installedOnnxPacks.forEach { pack ->
-                                        val key = "${pack.modelId}|${pack.precision}"
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { onSelectOnnxPack(pack.modelId, pack.precision) }
-                                                .padding(vertical = 2.dp, horizontal = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            RadioButton(
-                                                selected = key == selectedOnnxPackKey,
-                                                onClick = { onSelectOnnxPack(pack.modelId, pack.precision) },
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Column {
-                                                Text("${pack.modelId} (${pack.precision})", style = MaterialTheme.typography.bodySmall)
-                                                Text("~${pack.estimatedSizeMb} MB", style = MaterialTheme.typography.labelSmall)
-                                            }
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                                ReaderOnnxDiagnosticsCard(onnxDiagnostics = onnxDiagnostics)
                             }
                             TtsEngineType.SYSTEM -> {
                                 if (availableEngines.isEmpty()) {
@@ -997,9 +1305,16 @@ private fun BookReadingScreen(
                                     }
                                 }
                             }
+                            else -> {
+                                Text(
+                                    text = "Этот движок отключён в читалке. Выбери Piper или системный TTS Android.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
 
-                        if (ttsVoiceOptions.isNotEmpty() && engineType != TtsEngineType.SILERO) {
+                        if (ttsVoiceOptions.isNotEmpty() && engineType == TtsEngineType.SYSTEM) {
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
                                 text = "Голос",
@@ -1015,7 +1330,7 @@ private fun BookReadingScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     RadioButton(
-                                        selected = voice.id == selectedVoiceId,
+                                        selected = false,
                                         onClick = { onEngineVoiceChange(voice.id) },
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -1037,6 +1352,8 @@ private fun BookReadingScreen(
                                             "pitch" -> systemPitch
                                             "ort_intra_threads" -> utrobinOrtThreads.toFloat()
                                             "natasha_ort_intra_threads" -> natashaOrtThreads.toFloat()
+                                            "chatterbox_ort_intra_threads" -> chatterboxOrtThreads.toFloat()
+                                            "chatterbox_exaggeration" -> chatterboxExaggeration
                                             "sherpa_num_threads" -> sherpaThreads.toFloat()
                                             else -> tunable.defaultValue
                                         }.coerceIn(tunable.range.start, tunable.range.endInclusive)
@@ -1044,9 +1361,10 @@ private fun BookReadingScreen(
                                         val valueLabel = when (tunable.key) {
                                             "ort_intra_threads",
                                             "natasha_ort_intra_threads",
+                                            "chatterbox_ort_intra_threads",
                                             "sherpa_num_threads",
                                             -> sliderValue.toInt().toString()
-                                            else -> String.format("%.2f", sliderValue)
+                                            else -> formatTwoDecimal(sliderValue)
                                         }
                                         Text(
                                             text = "${tunable.label}: $valueLabel",
@@ -1073,6 +1391,24 @@ private fun BookReadingScreen(
                     Text("Готово")
                 }
             }
+        )
+    }
+
+    if (showTtsImportBrowser) {
+        TtsImportBrowserDialog(
+            browser = ttsImportBrowser,
+            isImporting = isTtsImporting,
+            hasDirectFilesystemTtsAccess = hasDirectFilesystemTtsAccess,
+            commonFilesystemTtsRoots = commonFilesystemTtsRoots,
+            onDismiss = { showTtsImportBrowser = false },
+            onPickModelFile = onPickTtsModelFile,
+            onGrantAllFilesAccess = onGrantAllFilesAccess,
+            onImportFromCommonFilesystemRoots = onImportFromCommonFilesystemRoots,
+            onNavigateUp = onTtsBrowserUp,
+            onRefresh = onTtsBrowserRefresh,
+            onImportAll = onImportAllVisibleTtsCandidates,
+            onEnterDirectory = onTtsBrowserEnter,
+            onImportCandidate = onImportTtsCandidate,
         )
     }
 }
@@ -1117,27 +1453,40 @@ private fun ReaderEngineOption(
     selected: Boolean,
     title: String,
     description: String,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(
             selected = selected,
             onClick = onClick,
+            enabled = enabled,
         )
         Spacer(modifier = Modifier.width(8.dp))
         Column {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (!enabled) {
+                Text(
+                    text = "Нет рабочей русской модели для этого движка.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -1179,7 +1528,7 @@ private fun ReaderPackCard(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    text = "${pack.engineFamily.name} · ${pack.status.name}" +
+                    text = "${pack.engineFamily.label()} · ${pack.status.label()}" +
                         if (pack.suggestedDeletion) " · на удаление" else "",
                     style = MaterialTheme.typography.labelMedium,
                     color = statusColor,
@@ -1208,7 +1557,7 @@ private fun ReaderPackCard(
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = "Удалить пак",
+                        contentDescription = "Удалить пакет",
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -1270,7 +1619,7 @@ private fun ReaderPiperDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Пак: ${piperDiagnostics.packId ?: "—"}",
+                text = "Пакет: ${piperDiagnostics.packId ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -1281,7 +1630,26 @@ private fun ReaderPiperDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Скорость ${String.format("%.1f", piperDiagnostics.speechRate)}x · потоки ${piperDiagnostics.sherpaThreads}",
+                text = "Скорость ${formatOneDecimal(piperDiagnostics.speechRate)}x · потоки ${piperDiagnostics.sherpaThreads}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            piperDiagnostics.lastChunkDurationMs?.let { durationMs ->
+                val audioMs = piperDiagnostics.lastChunkAudioMs?.let { " · аудио ${it}мс" }.orEmpty()
+                val prefetch = if (piperDiagnostics.lastChunkPrefetched) {
+                    " · ожидание предзагрузки ${piperDiagnostics.lastPrefetchWaitMs ?: 0}мс"
+                } else {
+                    ""
+                }
+                val queued = piperDiagnostics.prefetchQueuedIndex?.let { " · готовится #$it" }.orEmpty()
+                Text(
+                    text = "Генерация ${durationMs}мс$audioMs$prefetch · попадания ${piperDiagnostics.prefetchHits}$queued",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = "Интонация: ${piperDiagnostics.prosodyPresetLabel} · шум ${formatTwoDecimal(piperDiagnostics.noiseScale)} / ${formatTwoDecimal(piperDiagnostics.noiseScaleW)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1361,7 +1729,7 @@ private fun ReaderNatashaDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Пак: ${natashaDiagnostics.packId ?: "—"}",
+                text = "Пакет: ${natashaDiagnostics.packId ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -1372,7 +1740,7 @@ private fun ReaderNatashaDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Скорость ${String.format("%.1f", natashaDiagnostics.speechRate)}x · потоки ${natashaDiagnostics.ortThreads}",
+                text = "Скорость ${formatOneDecimal(natashaDiagnostics.speechRate)}x · потоки ${natashaDiagnostics.ortThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1459,7 +1827,7 @@ private fun ReaderUtrobinDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Пак: ${utrobinDiagnostics.packId ?: "—"}",
+                text = "Пакет: ${utrobinDiagnostics.packId ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -1470,7 +1838,7 @@ private fun ReaderUtrobinDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Скорость ${String.format("%.1f", utrobinDiagnostics.speechRate)}x · потоки ${utrobinDiagnostics.ortThreads}",
+                text = "Скорость ${formatOneDecimal(utrobinDiagnostics.speechRate)}x · потоки ${utrobinDiagnostics.ortThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1536,6 +1904,127 @@ private fun ReaderUtrobinDiagnosticsCard(
 }
 
 @Composable
+private fun ReaderChatterboxDiagnosticsCard(
+    chatterboxDiagnostics: ChatterboxPlaybackDiagnostics,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Диагностика Chatterbox",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Язык: ${chatterboxDiagnostics.languageId}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Пакет: ${chatterboxDiagnostics.packId ?: "—"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            chatterboxDiagnostics.voiceId?.let { voiceId ->
+                Text(
+                    text = "Голос: $voiceId",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            chatterboxDiagnostics.referenceVoicePath?.let { voice ->
+                Text(
+                    text = "Эталонный WAV: $voice",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "Чанки: ${chatterboxDiagnostics.completedChunks}/${chatterboxDiagnostics.totalChunks} · восстановлено ${chatterboxDiagnostics.recoveredChunks} · ошибки ${chatterboxDiagnostics.failedChunks}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Скорость ${formatOneDecimal(chatterboxDiagnostics.speechRate)}x · эмоция ${formatTwoDecimal(chatterboxDiagnostics.exaggeration)} · потоки ${chatterboxDiagnostics.ortThreads}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            chatterboxDiagnostics.lastChunkDurationMs?.let { durationMs ->
+                Text(
+                    text = "Последняя генерация: ${durationMs} ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            chatterboxDiagnostics.lastGeneratedTokens?.let { tokenCount ->
+                Text(
+                    text = "Речевые токены: $tokenCount",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            chatterboxDiagnostics.lastRecoveryAction?.let { note ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            chatterboxDiagnostics.lastChunkPreview?.let { preview ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последний фрагмент: $preview",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                chatterboxDiagnostics.lastChunkRange?.let { range ->
+                    Text(
+                        text = "Диапазон: ${range.asDisplayRange()} · глубина ${chatterboxDiagnostics.lastChunkSplitDepth}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            chatterboxDiagnostics.lastFailureMessage?.let { message ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Последняя ошибка: $message",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                chatterboxDiagnostics.lastFailurePreview?.let { preview ->
+                    Text(
+                        text = "Проблемный фрагмент: $preview",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                chatterboxDiagnostics.lastFailureRange?.let { range ->
+                    Text(
+                        text = "Сбой в диапазоне: ${range.asDisplayRange()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ReaderOnnxDiagnosticsCard(
     onnxDiagnostics: KokoroPlaybackDiagnostics,
 ) {
@@ -1557,7 +2046,7 @@ private fun ReaderOnnxDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Пак: ${onnxDiagnostics.packRoot ?: "—"}",
+                text = "Пакет: ${onnxDiagnostics.packRoot ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -1568,7 +2057,7 @@ private fun ReaderOnnxDiagnosticsCard(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Скорость ${String.format("%.1f", onnxDiagnostics.speechRate)}x · потоки ${onnxDiagnostics.ortThreads}",
+                text = "Скорость ${formatOneDecimal(onnxDiagnostics.speechRate)}x · потоки ${onnxDiagnostics.ortThreads}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1640,4 +2129,40 @@ private fun DetectedTtsPack.voiceSummary(): String? {
     return "Голоса: $preview$suffix"
 }
 
+private fun TtsPackEngineFamily.label(): String = when (this) {
+    TtsPackEngineFamily.PIPER -> "Piper"
+    TtsPackEngineFamily.NATASHA -> "Natasha"
+    TtsPackEngineFamily.UTROBIN -> "Utrobin"
+    TtsPackEngineFamily.CHATTERBOX -> "Chatterbox"
+    TtsPackEngineFamily.ONNX_EXTERNAL -> "Внешний ONNX"
+}
+
+private fun TtsPackStatus.label(): String = when (this) {
+    TtsPackStatus.READY -> "готов"
+    TtsPackStatus.READY_NON_RUSSIAN -> "не для русского"
+    TtsPackStatus.INCOMPLETE -> "неполный"
+    TtsPackStatus.UNSUPPORTED_RUNTIME -> "неподдерживаемый рантайм"
+    TtsPackStatus.DISABLED_RUNTIME -> "рантайм отключен"
+    TtsPackStatus.BROKEN_POINTER -> "битая ссылка"
+    TtsPackStatus.INVALID_FILESET -> "неверный набор файлов"
+}
+
 private fun IntRange.asDisplayRange(): String = "${first}..${last}"
+
+@SuppressLint("InlinedApi")
+private fun buildManageAllFilesAccessIntent(packageName: String): Intent {
+    val packageUri = Uri.parse("package:$packageName")
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+    } else {
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+    }
+}
+
+private val RussianNumberLocale: Locale = Locale.forLanguageTag("ru")
+
+private fun formatOneDecimal(value: Float): String =
+    String.format(RussianNumberLocale, "%.1f", value)
+
+private fun formatTwoDecimal(value: Float): String =
+    String.format(RussianNumberLocale, "%.2f", value)

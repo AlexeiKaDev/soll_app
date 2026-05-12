@@ -1,4 +1,61 @@
-import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.compile.JavaCompile
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+
+abstract class StripOnnxRuntimeAarTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val inputAar: RegularFileProperty
+
+    @get:OutputFile
+    abstract val outputAar: RegularFileProperty
+
+    @TaskAction
+    fun strip() {
+        val input = inputAar.get().asFile
+        val output = outputAar.get().asFile
+        output.parentFile.mkdirs()
+
+        ZipInputStream(input.inputStream().buffered()).use { zipIn ->
+            ZipOutputStream(output.outputStream().buffered()).use { zipOut ->
+                var entry = zipIn.nextEntry
+                while (entry != null) {
+                    val name = entry.name
+                    if (name.matches(ONNX_RUNTIME_SO_ENTRY)) {
+                        zipIn.closeEntry()
+                        entry = zipIn.nextEntry
+                        continue
+                    }
+
+                    val outEntry = ZipEntry(name).apply {
+                        time = entry.time
+                        comment = entry.comment
+                        extra = entry.extra
+                    }
+                    zipOut.putNextEntry(outEntry)
+                    if (!entry.isDirectory) {
+                        zipIn.copyTo(zipOut)
+                    }
+                    zipOut.closeEntry()
+                    zipIn.closeEntry()
+                    entry = zipIn.nextEntry
+                }
+            }
+        }
+    }
+
+    private companion object {
+        val ONNX_RUNTIME_SO_ENTRY = Regex("""jni/.*/libonnxruntime\.so""")
+    }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -15,24 +72,41 @@ private val onnxRuntimeAndroidBase: Configuration =
         isCanBeResolved = true
     }
 
-private val stripMicrosoftOnnxRuntimeSo by tasks.registering(Zip::class) {
+private val onnxRuntimeAndroidAar =
+    layout.file(onnxRuntimeAndroidBase.elements.map { elements -> elements.single().asFile })
+
+private val stripMicrosoftOnnxRuntimeSo by tasks.registering(StripOnnxRuntimeAarTask::class) {
     group = "prepare"
     description =
         "Rebuild onnxruntime-android AAR without jni/*/libonnxruntime.so (use Sherpa's copy only)"
-    archiveFileName.set("onnxruntime-android-no-libonnxruntime-so.aar")
-    destinationDirectory.set(layout.buildDirectory.dir("stripped-onnx-android"))
+    inputAar.set(onnxRuntimeAndroidAar)
+    outputAar.set(layout.buildDirectory.file("stripped-onnx-android/onnxruntime-android-no-libonnxruntime-so.aar"))
     dependsOn(onnxRuntimeAndroidBase)
-    from(zipTree(onnxRuntimeAndroidBase.singleFile)) {
-        exclude("jni/**/libonnxruntime.so")
-    }
 }
 
 private val strippedOnnxAndroidAar =
-    objects.fileCollection().from(stripMicrosoftOnnxRuntimeSo.flatMap { it.archiveFile })
+    objects.fileCollection().from(stripMicrosoftOnnxRuntimeSo.flatMap { it.outputAar })
+
+private val hiltJavaProcessors = listOf(
+    "dagger.hilt.processor.internal.uninstallmodules.UninstallModulesProcessor",
+    "dagger.hilt.processor.internal.generatesrootinput.GeneratesRootInputProcessor",
+    "dagger.hilt.android.processor.internal.viewmodel.ViewModelProcessor",
+    "dagger.hilt.processor.internal.aliasof.AliasOfProcessor",
+    "dagger.hilt.processor.internal.root.RootProcessor",
+    "dagger.hilt.processor.internal.earlyentrypoint.EarlyEntryPointProcessor",
+    "dagger.hilt.processor.internal.definecomponent.DefineComponentProcessor",
+    "dagger.hilt.processor.internal.root.ComponentTreeDepsProcessor",
+    "dagger.hilt.android.processor.internal.bindvalue.BindValueProcessor",
+    "dagger.hilt.processor.internal.aggregateddeps.AggregatedDepsProcessor",
+    "dagger.hilt.processor.internal.originatingelement.OriginatingElementProcessor",
+    "dagger.hilt.android.processor.internal.androidentrypoint.AndroidEntryPointProcessor",
+    "dagger.hilt.android.processor.internal.customtestapplication.CustomTestApplicationProcessor",
+    "dagger.internal.codegen.ComponentProcessor",
+).joinToString(",")
 
 android {
     namespace = "com.soll"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.soll"
@@ -49,9 +123,11 @@ android {
             isDebuggable = true
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
             isMinifyEnabled = true
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -85,6 +161,17 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    if (name.startsWith("hiltJavaCompile")) {
+        options.compilerArgs.addAll(listOf("-processor", hiltJavaProcessors))
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
 }
 
 dependencies {
@@ -142,8 +229,10 @@ dependencies {
     implementation(libs.work.runtime.ktx)
 
     // Media session for TTS controls
-    implementation("androidx.media:media:1.7.0")
-    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation(libs.androidx.media)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.commons.compress)
 
     // Java ONNX Runtime API + JNI from stripped AAR; libonnxruntime.so comes from Sherpa AAR.
     implementation(strippedOnnxAndroidAar)
@@ -151,6 +240,9 @@ dependencies {
 
     // Logging
     implementation(libs.timber)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.json)
 
     // Permissions
     implementation(libs.accompanist.permissions)
@@ -160,6 +252,7 @@ dependencies {
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
 
     // Google Play Services
     implementation(libs.play.services.location)

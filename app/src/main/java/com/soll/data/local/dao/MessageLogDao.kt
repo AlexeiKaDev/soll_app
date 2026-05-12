@@ -25,6 +25,9 @@ interface MessageLogDao {
     @Query("SELECT COUNT(*) FROM message_logs")
     fun getCountFlow(): Flow<Int>
 
+    @Query("SELECT chat_id FROM message_logs ORDER BY received_at DESC LIMIT 1")
+    suspend fun getLastChatId(): Long?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(log: MessageLogEntity): Long
 

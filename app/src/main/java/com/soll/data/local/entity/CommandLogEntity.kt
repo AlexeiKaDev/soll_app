@@ -2,12 +2,20 @@ package com.soll.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * Log of executed commands
  */
-@Entity(tableName = "command_logs")
+@Entity(
+    tableName = "command_logs",
+    indices = [
+        Index(value = ["executed_at"]),
+        Index(value = ["command", "executed_at"]),
+        Index(value = ["status", "executed_at"]),
+    ],
+)
 data class CommandLogEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

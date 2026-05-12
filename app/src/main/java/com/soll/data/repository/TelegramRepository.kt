@@ -6,6 +6,7 @@ import com.soll.data.local.dao.CommandLogDao
 import com.soll.data.local.dao.MessageLogDao
 import com.soll.data.local.entity.CommandLogEntity
 import com.soll.data.local.entity.MessageLogEntity
+import com.soll.domain.command.CommandExecutionGateway
 import kotlinx.coroutines.flow.Flow
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -22,9 +23,9 @@ class TelegramRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val messageLogDao: MessageLogDao,
     private val commandLogDao: CommandLogDao
-) {
+) : CommandExecutionGateway {
     private val token: String
-        get() = settingsRepository.botToken ?: throw IllegalStateException("Bot token not set")
+        get() = settingsRepository.botToken ?: throw IllegalStateException("Токен бота не задан")
 
     /**
      * Telegram tokens are `id:secret`. Raw `:` in a path segment breaks OkHttp when resolving
@@ -36,12 +37,12 @@ class TelegramRepository @Inject constructor(
     /**
      * Get bot info
      */
-    suspend fun getMe(): Result<BotInfo> = runCatching {
+    suspend fun getMe(): Result<BotInfo> = runSuspendCatching {
         val response = apiService.getMe(tokenForPath)
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Unknown error")
+            throw Exception(response.description ?: "Неизвестная ошибка Telegram")
         }
     }
 
@@ -49,17 +50,17 @@ class TelegramRepository @Inject constructor(
      * Drop webhook (if any) so long polling via [getUpdates] is allowed. Telegram returns HTTP 409 on getUpdates
      * when a webhook is still active or another client holds a concurrent getUpdates.
      */
-    suspend fun deleteWebhook(dropPendingUpdates: Boolean = false): Result<Unit> = runCatching {
+    suspend fun deleteWebhook(dropPendingUpdates: Boolean = false): Result<Unit> = runSuspendCatching {
         val response = apiService.deleteWebhook(tokenForPath, dropPendingUpdates)
         if (!response.ok) {
-            throw Exception(response.description ?: "deleteWebhook failed")
+            throw Exception(response.description ?: "Не удалось отключить Telegram webhook")
         }
     }
 
     /**
      * Get updates using long polling
      */
-    suspend fun getUpdates(offset: Long? = null, timeout: Int = 30): Result<List<Update>> = runCatching {
+    suspend fun getUpdates(offset: Long? = null, timeout: Int = 30): Result<List<Update>> = runSuspendCatching {
         val response = apiService.getUpdates(
             token = tokenForPath,
             offset = offset,
@@ -74,19 +75,19 @@ class TelegramRepository @Inject constructor(
             }
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to get updates")
+            throw Exception(response.description ?: "Не удалось получить обновления Telegram")
         }
     }
 
     /**
      * Send text message
      */
-    suspend fun sendMessage(
+    override suspend fun sendMessage(
         chatId: Long,
         text: String,
-        parseMode: String? = "HTML",
-        replyToMessageId: Long? = null
-    ): Result<Message> = runCatching {
+        parseMode: String?,
+        replyToMessageId: Long?
+    ): Result<Message> = runSuspendCatching {
         val request = SendMessageRequest(
             chatId = chatId,
             text = text,
@@ -97,7 +98,7 @@ class TelegramRepository @Inject constructor(
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to send message")
+            throw Exception(response.description ?: "Не удалось отправить сообщение")
         }
     }
 
@@ -108,7 +109,7 @@ class TelegramRepository @Inject constructor(
         chatId: Long,
         file: File,
         caption: String? = null
-    ): Result<Message> = runCatching {
+    ): Result<Message> = runSuspendCatching {
         val chatIdBody = chatId.toString().toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = caption?.toRequestBody("text/plain".toMediaTypeOrNull())
         val parseModeBody = "HTML".toRequestBody("text/plain".toMediaTypeOrNull())
@@ -128,7 +129,7 @@ class TelegramRepository @Inject constructor(
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to send document")
+            throw Exception(response.description ?: "Не удалось отправить документ")
         }
     }
 
@@ -139,7 +140,7 @@ class TelegramRepository @Inject constructor(
         chatId: Long,
         file: File,
         caption: String? = null
-    ): Result<Message> = runCatching {
+    ): Result<Message> = runSuspendCatching {
         val chatIdBody = chatId.toString().toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = caption?.toRequestBody("text/plain".toMediaTypeOrNull())
         val parseModeBody = "HTML".toRequestBody("text/plain".toMediaTypeOrNull())
@@ -158,7 +159,7 @@ class TelegramRepository @Inject constructor(
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to send photo")
+            throw Exception(response.description ?: "Не удалось отправить фото")
         }
     }
 
@@ -170,7 +171,7 @@ class TelegramRepository @Inject constructor(
         latitude: Double,
         longitude: Double,
         accuracy: Double? = null
-    ): Result<Message> = runCatching {
+    ): Result<Message> = runSuspendCatching {
         val request = SendLocationRequest(
             chatId = chatId,
             latitude = latitude,
@@ -181,7 +182,7 @@ class TelegramRepository @Inject constructor(
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to send location")
+            throw Exception(response.description ?: "Не удалось отправить геолокацию")
         }
     }
 
@@ -193,7 +194,7 @@ class TelegramRepository @Inject constructor(
         file: File,
         caption: String? = null,
         duration: Int? = null
-    ): Result<Message> = runCatching {
+    ): Result<Message> = runSuspendCatching {
         val chatIdBody = chatId.toString().toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = caption?.toRequestBody("text/plain".toMediaTypeOrNull())
         val durationBody = duration?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -212,19 +213,19 @@ class TelegramRepository @Inject constructor(
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to send voice")
+            throw Exception(response.description ?: "Не удалось отправить голосовое сообщение")
         }
     }
 
     /**
      * Get file info for downloading
      */
-    suspend fun getFile(fileId: String): Result<TelegramFile> = runCatching {
+    suspend fun getFile(fileId: String): Result<TelegramFile> = runSuspendCatching {
         val response = apiService.getFile(tokenForPath, fileId)
         if (response.ok && response.result != null) {
             response.result
         } else {
-            throw Exception(response.description ?: "Failed to get file")
+            throw Exception(response.description ?: "Не удалось получить файл Telegram")
         }
     }
 
@@ -260,16 +261,16 @@ class TelegramRepository @Inject constructor(
         }
     }
 
-    suspend fun logCommand(
+    override suspend fun logCommand(
         command: String,
         args: String?,
         chatId: Long,
         userId: Long?,
         username: String?,
         status: String,
-        errorMessage: String? = null,
-        responseText: String? = null,
-        executionTimeMs: Long? = null
+        errorMessage: String?,
+        responseText: String?,
+        executionTimeMs: Long?
     ) {
         try {
             val logEntity = CommandLogEntity(
@@ -298,6 +299,8 @@ class TelegramRepository @Inject constructor(
     suspend fun getMessageCount(): Int = messageLogDao.getCount()
 
     fun getMessageCountFlow(): Flow<Int> = messageLogDao.getCountFlow()
+
+    suspend fun getLastChatId(): Long? = messageLogDao.getLastChatId()
 
     suspend fun clearLogs() {
         messageLogDao.deleteAll()

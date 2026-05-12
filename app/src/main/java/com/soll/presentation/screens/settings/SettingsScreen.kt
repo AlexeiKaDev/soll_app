@@ -3,8 +3,10 @@ package com.soll.presentation.screens.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,6 +18,18 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.soll.domain.assistant.RiskTier
+import com.soll.domain.deviceqa.DeviceQaCategory
+import com.soll.domain.deviceqa.DeviceQaCheck
+import com.soll.domain.deviceqa.DeviceQaCheckId
+import com.soll.domain.deviceqa.DeviceQaStatus
+import com.soll.domain.deviceqa.DeviceQaSummary
+import com.soll.ui.theme.SollThemeVariant
+import com.soll.ui.components.PassiveChip
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +38,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showToken by remember { mutableStateOf(false) }
+    var showSollToken by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshBatteryStatus()
@@ -51,10 +66,37 @@ fun SettingsScreen(
         ) {
             // Header
             Text(
-                text = "Settings",
+                text = "Настройки",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold
             )
+
+            ThemeSection(
+                selectedVariant = uiState.appThemeVariant,
+                onVariantSelected = viewModel::setAppThemeVariant,
+            )
+
+            DeviceQaSection(
+                checks = uiState.deviceQaChecks,
+                isPostingNotification = uiState.isPostingDeviceQaNotification,
+                onRefresh = viewModel::refreshDeviceQa,
+                onTestNotification = viewModel::postDeviceQaNotification,
+                onOpenNotifications = viewModel::openNotificationSettings,
+                onOpenBattery = viewModel::openBatterySettings,
+                onOpenNfc = viewModel::openNfcSettings,
+                onPassed = viewModel::markDeviceQaPassed,
+                onProblem = viewModel::markDeviceQaProblem,
+                onClear = viewModel::clearDeviceQaResult,
+                onReport = viewModel::showDeviceQaReport,
+            )
+
+            uiState.deviceQaReport?.let { report ->
+                DeviceQaReportDialog(
+                    report = report,
+                    onShare = viewModel::shareDeviceQaReport,
+                    onDismiss = viewModel::dismissDeviceQaReport,
+                )
+            }
 
             // Bot Token Section
             Card(
@@ -65,7 +107,7 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Bot Token",
+                        text = "Токен бота",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -73,7 +115,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = uiState.token,
                         onValueChange = { viewModel.updateToken(it) },
-                        label = { Text("Telegram Bot Token") },
+                        label = { Text("Токен Telegram-бота") },
                         placeholder = { Text("123456789:ABC-DEF...") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -87,7 +129,7 @@ fun SettingsScreen(
                                 IconButton(onClick = { showToken = !showToken }) {
                                     Icon(
                                         imageVector = if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = "Toggle visibility"
+                                        contentDescription = "Показать или скрыть токен"
                                     )
                                 }
                             }
@@ -106,7 +148,7 @@ fun SettingsScreen(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "Connected to ${uiState.botUsername}",
+                                text = "Подключено к ${uiState.botUsername}",
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -125,13 +167,358 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text("Save & Verify Token")
+                        Text("Сохранить и проверить токен")
                     }
 
                     Text(
-                        text = "Get your bot token from @BotFather on Telegram",
+                        text = "Получите токен бота у @BotFather в Telegram",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Soll Backend Section
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Сервер Soll",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Text(
+                        text = "Подключение к локальному серверу Soll для проверки состояния, задач, черновых заметок и будущей синхронизации.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.sollServerUrl,
+                        onValueChange = viewModel::updateSollServerUrl,
+                        label = { Text("URL сервера") },
+                        placeholder = { Text("http://192.168.1.10:8000/") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.sollAccessToken,
+                        onValueChange = viewModel::updateSollAccessToken,
+                        label = { Text("Bearer-токен") },
+                        placeholder = { Text("access_token из /api/v1/auth/login") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (showSollToken) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { showSollToken = !showSollToken }) {
+                                Icon(
+                                    imageVector = if (showSollToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Показать или скрыть токен Soll"
+                                )
+                            }
+                        },
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.sollSyncIntervalMinutes,
+                        onValueChange = viewModel::updateSollSyncInterval,
+                        label = { Text("Интервал синхронизации, минут") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Загружать файлы только по Wi-Fi",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Для будущих загрузок заметок и медиа",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.sollWifiOnlyUpload,
+                            onCheckedChange = viewModel::setSollWifiOnlyUpload
+                        )
+                    }
+
+                    uiState.sollHealthStatus?.let { status ->
+                        PassiveChip(
+                            text = status,
+                            icon = if (status == "Работает") Icons.Default.CheckCircle else Icons.Default.Warning,
+                        )
+                    }
+
+                    uiState.sollHealthMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    uiState.sollSyncSummary?.let { summary ->
+                        Text(
+                            text = summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { viewModel.saveSollSettings() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Сохранить")
+                        }
+                        Button(
+                            onClick = { viewModel.checkSollHealth() },
+                            enabled = !uiState.isCheckingSollHealth && !uiState.isSyncingSoll,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (uiState.isCheckingSollHealth) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text("Проверить")
+                        }
+                    }
+
+                    Button(
+                        onClick = { viewModel.syncSollNow() },
+                        enabled = !uiState.isCheckingSollHealth && !uiState.isSyncingSoll,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (uiState.isSyncingSoll) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Синхронизировать сейчас")
+                    }
+                }
+            }
+
+            // Voice Section
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Голос",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    VoicePolicyRow(
+                        icon = Icons.Default.Lock,
+                        title = "Только на разблокированном устройстве",
+                        description = "Блокировать запуск голоса, если экран заблокирован",
+                        checked = uiState.voiceRequiresUnlockedDevice,
+                        onCheckedChange = viewModel::setVoiceRequiresUnlockedDevice,
+                    )
+
+                    VoicePolicyRow(
+                        icon = Icons.Default.Headset,
+                        title = "Только с гарнитурой",
+                        description = "Запускать голосовой ввод только при подключенных наушниках или гарнитуре",
+                        checked = uiState.voiceRequiresHeadset,
+                        onCheckedChange = viewModel::setVoiceRequiresHeadset,
+                    )
+
+                    VoicePolicyRow(
+                        icon = Icons.Default.CloudOff,
+                        title = "Локальное STT",
+                        description = "Использовать on-device распознавание Android, если оно доступно",
+                        checked = uiState.voiceLocalOnly,
+                        onCheckedChange = viewModel::setVoiceLocalOnly,
+                    )
+
+                    VoicePolicyRow(
+                        icon = Icons.Default.RecordVoiceOver,
+                        title = "Фраза «Солл»",
+                        description = "Выполнять ручную голосовую команду только после фразы «Солл»",
+                        checked = uiState.voiceWakePhraseRequired,
+                        onCheckedChange = viewModel::setVoiceWakePhraseRequired,
+                    )
+                }
+            }
+
+            // Proactive Suggestions Section
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column {
+                                Text(
+                                    text = "Предложения",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Локальные подсказки на главном экране без пуш-спама",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = uiState.proactiveSuggestionsEnabled,
+                            onCheckedChange = viewModel::setProactiveSuggestionsEnabled,
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Лимит в день: ${uiState.proactiveSuggestionsDailyLimit}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Slider(
+                            value = uiState.proactiveSuggestionsDailyLimit.toFloat(),
+                            onValueChange = {
+                                viewModel.setProactiveSuggestionsDailyLimit(it.roundToInt())
+                            },
+                            valueRange = 1f..6f,
+                            steps = 4,
+                            enabled = uiState.proactiveSuggestionsEnabled,
+                        )
+                        Text(
+                            text = "Принятые и скрытые предложения не появляются повторно в течение дня, отложенные возвращаются позже.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    ProactiveDeliveryRow(
+                        icon = Icons.Default.Notifications,
+                        title = "Системные уведомления",
+                        description = "Показывать полезные предложения через Android не чаще одного раза в день",
+                        checked = uiState.proactiveSystemDeliveryEnabled,
+                        enabled = uiState.proactiveSuggestionsEnabled,
+                        onCheckedChange = viewModel::setProactiveSystemDeliveryEnabled,
+                    )
+
+                    ProactiveDeliveryRow(
+                        icon = Icons.AutoMirrored.Filled.Send,
+                        title = "Telegram",
+                        description = "Отправлять предложения в последний чат, который писал боту. По умолчанию выключено.",
+                        checked = uiState.proactiveTelegramDeliveryEnabled,
+                        enabled = uiState.proactiveSuggestionsEnabled,
+                        onCheckedChange = viewModel::setProactiveTelegramDeliveryEnabled,
+                    )
+                }
+            }
+
+            // Assistant Memory Section
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Storage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "Память ассистента",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Только локально: принятые предложения и будущие явные предпочтения. Просмотр, экспорт и очистка находятся в логах.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = uiState.assistantMemoryEnabled,
+                        onCheckedChange = viewModel::setAssistantMemoryEnabled,
                     )
                 }
             }
@@ -149,11 +536,11 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Auto-start on Boot",
+                            text = "Автозапуск после включения",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Start bot service automatically when device boots",
+                            text = "Автоматически запускать сервис бота после включения устройства",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -186,7 +573,7 @@ fun SettingsScreen(
                                 MaterialTheme.colorScheme.error
                         )
                         Text(
-                            text = "Battery Optimization",
+                            text = "Оптимизация батареи",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -194,9 +581,9 @@ fun SettingsScreen(
 
                     Text(
                         text = if (uiState.isBatteryOptimizationDisabled)
-                            "Battery optimization is disabled for Soll. The bot can run reliably in background."
+                            "Оптимизация батареи отключена для Soll. Бот сможет надежнее работать в фоне."
                         else
-                            "Battery optimization is enabled. This may cause the bot to stop working in background. Disable it for reliable operation.",
+                            "Оптимизация батареи включена. Из-за этого бот может останавливаться в фоне. Отключите ее для надежной работы.",
                         style = MaterialTheme.typography.bodyMedium
                     )
 
@@ -207,7 +594,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Default.BatteryAlert, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Disable Battery Optimization")
+                            Text("Отключить оптимизацию батареи")
                         }
                     }
 
@@ -215,7 +602,7 @@ fun SettingsScreen(
                         onClick = { viewModel.openBatterySettings() },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Open Battery Settings")
+                        Text("Открыть настройки батареи")
                     }
                 }
             }
@@ -229,13 +616,13 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Permissions",
+                        text = "Разрешения",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
 
                     Text(
-                        text = "Grant permissions to enable all bot commands. Tap a permission to open settings.",
+                        text = "Выдайте разрешения, чтобы работали все команды бота. Управление доступно в настройках приложения.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -246,7 +633,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.Settings, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Open App Permissions")
+                        Text("Открыть разрешения приложения")
                     }
 
                     OutlinedButton(
@@ -255,14 +642,66 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.Brightness6, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Allow Modify System Settings")
+                        Text("Разрешить изменение системных настроек")
                     }
 
                     Text(
-                        text = "Required: SMS, Calls, Contacts, Camera, Microphone, Location, Storage",
+                        text = "Нужно: SMS, звонки, контакты, камера, микрофон, геолокация, хранилище",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            // Capabilities Section
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Security, contentDescription = null)
+                                Text(
+                                    text = "Возможности",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = "Управляйте тем, какие команды Telegram можно выполнять.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.riskyCapabilitiesEnabled,
+                            onCheckedChange = { viewModel.setRiskyCapabilitiesEnabled(it) }
+                        )
+                    }
+
+                    Text(
+                        text = if (uiState.riskyCapabilitiesEnabled)
+                            "Рискованные команды доступны, если включен их отдельный переключатель."
+                        else
+                            "Рискованные команды заблокированы глобально. Безопасные информационные команды продолжают работать.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    uiState.capabilityGroups.forEach { group ->
+                        CapabilityGroup(group = group, onToggle = viewModel::setCapabilityEnabled)
+                    }
                 }
             }
 
@@ -284,15 +723,15 @@ fun SettingsScreen(
                             tint = MaterialTheme.colorScheme.tertiary
                         )
                         Text(
-                            text = "Keep App Running",
+                            text = "Не останавливать приложение",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
 
                     Text(
-                        text = "Some devices (Xiaomi, Huawei, Samsung, Oppo) have aggressive battery saving. " +
-                                "You may need to manually configure auto-start and background permissions.",
+                        text = "Некоторые устройства (Xiaomi, Huawei, Samsung, Oppo) агрессивно экономят батарею. " +
+                                "Может понадобиться вручную настроить автозапуск и фоновую работу.",
                         style = MaterialTheme.typography.bodyMedium
                     )
 
@@ -302,7 +741,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.RocketLaunch, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Open Auto-Start Settings")
+                        Text("Открыть настройки автозапуска")
                     }
                 }
             }
@@ -316,18 +755,18 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "About",
+                        text = "О приложении",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Soll allows you to control your Android device remotely through Telegram. " +
-                                "Send commands to your bot and receive information about your device.",
+                        text = "Soll позволяет удаленно управлять Android-устройством через Telegram. " +
+                                "Отправляйте команды боту и получайте информацию об устройстве.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Version 1.0.0",
+                        text = "Версия 1.0.0",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -335,4 +774,561 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ThemeSection(
+    selectedVariant: SollThemeVariant,
+    onVariantSelected: (SollThemeVariant) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Тема",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Text(
+                text = "Все темы темные; переключение меняет палитру приложения без возврата к светлому режиму.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SollThemeVariant.entries.forEach { variant ->
+                    FilterChip(
+                        selected = selectedVariant == variant,
+                        onClick = { onVariantSelected(variant) },
+                        label = { Text(variant.title) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Text(
+                text = selectedVariant.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeviceQaSection(
+    checks: List<DeviceQaCheck>,
+    isPostingNotification: Boolean,
+    onRefresh: () -> Unit,
+    onTestNotification: () -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenBattery: () -> Unit,
+    onOpenNfc: () -> Unit,
+    onPassed: (DeviceQaCheckId) -> Unit,
+    onProblem: (DeviceQaCheckId) -> Unit,
+    onClear: (DeviceQaCheckId) -> Unit,
+    onReport: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Build,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Проверка устройства",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = DeviceQaSummary.headline(checks),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Обновить проверку")
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onOpenNotifications,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Default.Notifications, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Уведомления")
+                }
+                Button(
+                    onClick = onTestNotification,
+                    enabled = !isPostingNotification,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (isPostingNotification) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(Icons.Default.NotificationsActive, contentDescription = null)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Тест")
+                }
+            }
+
+            OutlinedButton(
+                onClick = onReport,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Отчет")
+            }
+
+            DeviceQaCategory.entries.forEach { category ->
+                val group = checks.filter { it.category == category }
+                if (group.isNotEmpty()) {
+                    Text(
+                        text = category.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    group.forEach { check ->
+                        DeviceQaRow(
+                            check = check,
+                            onAction = {
+                                when (check.id) {
+                                    DeviceQaCheckId.NOTIFICATION_PERMISSION,
+                                    DeviceQaCheckId.NOTIFICATION_CHANNELS,
+                                    DeviceQaCheckId.NOTIFICATION_ANDROID13_FLOW,
+                                    DeviceQaCheckId.NOTIFICATION_MEDIA_SESSION,
+                                    DeviceQaCheckId.MUSIC_LOCKSCREEN_CONTROLS -> onOpenNotifications()
+                                    DeviceQaCheckId.NOTIFICATION_TAP_ROUTING -> onTestNotification()
+                                    DeviceQaCheckId.BATTERY_OPTIMIZATION,
+                                    DeviceQaCheckId.MUSIC_SCREEN_OFF -> onOpenBattery()
+                                    DeviceQaCheckId.WIDGET_LAUNCHER_COLD,
+                                    DeviceQaCheckId.WIDGET_MEDIA_CONTROLS,
+                                    DeviceQaCheckId.THEME_VISUAL_PASS,
+                                    DeviceQaCheckId.MUSIC_AUDIO_FOCUS -> onRefresh()
+                                    DeviceQaCheckId.NFC_OWNED_TAGS,
+                                    DeviceQaCheckId.NFC_ACCESS_FOB_DIAGNOSTIC -> onOpenNfc()
+                                }
+                            },
+                            onPassed = { onPassed(check.id) },
+                            onProblem = { onProblem(check.id) },
+                            onClear = { onClear(check.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceQaReportDialog(
+    report: String,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Отчет проверки") },
+        text = {
+            SelectionContainer {
+                Text(
+                    text = report,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onShare) {
+                Icon(Icons.Default.Share, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Поделиться")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть")
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeviceQaRow(
+    check: DeviceQaCheck,
+    onAction: () -> Unit,
+    onPassed: () -> Unit,
+    onProblem: () -> Unit,
+    onClear: () -> Unit,
+) {
+    val status = check.effectiveStatus
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = status.icon(),
+                    contentDescription = null,
+                    tint = status.tint(),
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = check.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = check.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    check.expectedResult?.let { expected ->
+                        Text(
+                            text = "Ожидание: $expected",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    check.roadmapRef?.let { ref ->
+                        Text(
+                            text = "План: $ref",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    check.lastManualResult?.let { result ->
+                        Text(
+                            text = "Ручная проверка: ${result.status.label}, ${formatQaTime(result.checkedAt)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        result.deviceSummary?.let { device ->
+                            Text(
+                                text = "Устройство: $device",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                PassiveChip(text = status.label)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                check.actionLabel?.let { label ->
+                    OutlinedButton(
+                        onClick = onAction,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(label)
+                    }
+                }
+                if (check.manual) {
+                    OutlinedButton(
+                        onClick = onPassed,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Прошло")
+                    }
+                    OutlinedButton(
+                        onClick = onProblem,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Проблема")
+                    }
+                }
+            }
+
+            if (check.lastManualResult != null) {
+                TextButton(onClick = onClear) {
+                    Text("Сбросить ручную отметку")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceQaStatus.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
+    DeviceQaStatus.OK,
+    DeviceQaStatus.MANUAL_OK -> Icons.Default.CheckCircle
+    DeviceQaStatus.WARNING,
+    DeviceQaStatus.NEEDS_MANUAL_TEST -> Icons.Default.Warning
+    DeviceQaStatus.PROBLEM,
+    DeviceQaStatus.MANUAL_PROBLEM -> Icons.Default.Error
+}
+
+@Composable
+private fun DeviceQaStatus.tint() = when (this) {
+    DeviceQaStatus.OK,
+    DeviceQaStatus.MANUAL_OK -> MaterialTheme.colorScheme.primary
+    DeviceQaStatus.WARNING,
+    DeviceQaStatus.NEEDS_MANUAL_TEST -> MaterialTheme.colorScheme.tertiary
+    DeviceQaStatus.PROBLEM,
+    DeviceQaStatus.MANUAL_PROBLEM -> MaterialTheme.colorScheme.error
+}
+
+private fun formatQaTime(timestamp: Long): String =
+    SimpleDateFormat("dd.MM HH:mm", Locale.forLanguageTag("ru")).format(Date(timestamp))
+
+@Composable
+private fun VoicePolicyRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+    }
+}
+
+@Composable
+private fun ProactiveDeliveryRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+        )
+    }
+}
+
+@Composable
+private fun CapabilityGroup(
+    group: CapabilityGroupUiState,
+    onToggle: (String, Boolean) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = group.riskTier.title(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = group.riskTier.description(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        group.items.forEach { item ->
+            CapabilityRow(item = item, onToggle = onToggle)
+        }
+    }
+}
+
+@Composable
+private fun CapabilityRow(
+    item: CapabilityItemUiState,
+    onToggle: (String, Boolean) -> Unit
+) {
+    val enabled = !item.blockedByGlobalRiskToggle
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (item.auditRequired) {
+                        PassiveChip(text = "Аудит", icon = Icons.Default.History)
+                    }
+                }
+                Text(
+                    text = item.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (item.blockedByGlobalRiskToggle) {
+                    Text(
+                        text = "Заблокировано глобальным переключателем рискованных возможностей",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (item.permissions.isNotEmpty()) {
+                    Text(
+                        text = item.permissions.joinToString(", ") { it.substringAfterLast(".") },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Switch(
+                checked = item.configuredEnabled,
+                enabled = enabled,
+                onCheckedChange = { onToggle(item.id, it) }
+            )
+        }
+    }
+}
+
+private fun RiskTier.title(): String = when (this) {
+    RiskTier.SAFE_INFO -> "Безопасная информация"
+    RiskTier.PERSONAL_DATA -> "Личные данные"
+    RiskTier.DEVICE_CONTROL -> "Управление устройством"
+    RiskTier.COMMUNICATION -> "Связь"
+    RiskTier.FILE_MEDIA -> "Файлы и медиа"
+    RiskTier.MONEY_OR_EXTERNAL_ACTION -> "Внешние действия"
+    RiskTier.DUAL_USE_HARDWARE -> "Железо двойного назначения"
+    RiskTier.BLOCKED -> "Заблокировано"
+}
+
+private fun RiskTier.description(): String = when (this) {
+    RiskTier.SAFE_INFO -> "Статус и справка только на чтение."
+    RiskTier.PERSONAL_DATA -> "Команды, которые могут открыть приватные локальные данные."
+    RiskTier.DEVICE_CONTROL -> "Команды, которые меняют состояние устройства."
+    RiskTier.COMMUNICATION -> "Команды, которые связываются с людьми или внешними целями."
+    RiskTier.FILE_MEDIA -> "Команды, которые снимают, читают или отправляют локальные файлы/медиа."
+    RiskTier.MONEY_OR_EXTERNAL_ACTION -> "Резерв для будущих инструментов с внешними последствиями."
+    RiskTier.DUAL_USE_HARDWARE -> "Резерв для gated-инструментов железа и security lab."
+    RiskTier.BLOCKED -> "Команды, которые никогда не должны запускаться."
 }

@@ -21,7 +21,7 @@ import javax.inject.Singleton
 /**
  * Внешние ONNX-паки с устройства.
  * Реализован **kokoro_v1** ([Kokoro-82M ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)).
- * MOSS / Chatterbox / Supertonic — другая топология графов и рантайм; пока не подключены.
+ * Chatterbox вынесен в отдельный движок; MOSS / Supertonic здесь по-прежнему не поддержаны.
  */
 @Singleton
 class OnnxExternalBookEngine @Inject constructor(

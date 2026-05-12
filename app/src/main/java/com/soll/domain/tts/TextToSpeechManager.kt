@@ -4,9 +4,11 @@ import android.speech.tts.TextToSpeech
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
+import com.soll.domain.tts.PiperProsodyPreset
 import com.soll.domain.tts.UtrobinPlaybackDiagnostics
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import com.soll.domain.tts.book.PiperSherpaBookEngine
+import com.soll.domain.tts.book.ChatterboxBookEngine
 import com.soll.domain.tts.book.SystemAndroidBookEngine
 import com.soll.domain.tts.book.TtsBookEngine
 import com.soll.domain.tts.book.TtsPrepareResult
@@ -14,6 +16,7 @@ import com.soll.domain.tts.book.TtsVoiceOption
 import com.soll.domain.tts.book.NatashaVitsBookEngine
 import com.soll.domain.tts.book.OnnxExternalBookEngine
 import com.soll.domain.tts.book.UtrobinVitsBookEngine
+import com.soll.domain.tts.chatterbox.ChatterboxPlaybackDiagnostics
 import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
 import com.soll.domain.tts.onnx.InstalledOnnxPack
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +50,7 @@ enum class TtsEngineType {
     SILERO,
     UTROBIN,
     NATASHA,
+    CHATTERBOX,
     ONNX_EXTERNAL,
 }
 
@@ -65,6 +69,7 @@ class TextToSpeechManager @Inject constructor(
     private val piperEngine: PiperSherpaBookEngine,
     private val utrobinEngine: UtrobinVitsBookEngine,
     private val natashaEngine: NatashaVitsBookEngine,
+    private val chatterboxEngine: ChatterboxBookEngine,
     private val onnxExternalEngine: OnnxExternalBookEngine,
 ) {
     private val engines: Map<TtsEngineType, TtsBookEngine> = mapOf(
@@ -72,6 +77,7 @@ class TextToSpeechManager @Inject constructor(
         TtsEngineType.SILERO to piperEngine,
         TtsEngineType.UTROBIN to utrobinEngine,
         TtsEngineType.NATASHA to natashaEngine,
+        TtsEngineType.CHATTERBOX to chatterboxEngine,
         TtsEngineType.ONNX_EXTERNAL to onnxExternalEngine,
     )
 
@@ -97,6 +103,7 @@ class TextToSpeechManager @Inject constructor(
     val piperDiagnostics: StateFlow<PiperPlaybackDiagnostics> = piperEngine.diagnostics
     val natashaDiagnostics: StateFlow<NatashaPlaybackDiagnostics> = natashaEngine.diagnostics
     val utrobinDiagnostics: StateFlow<UtrobinPlaybackDiagnostics> = utrobinEngine.diagnostics
+    val chatterboxDiagnostics: StateFlow<ChatterboxPlaybackDiagnostics> = chatterboxEngine.diagnostics
     val onnxDiagnostics: StateFlow<KokoroPlaybackDiagnostics> = onnxExternalEngine.diagnostics
 
     private var currentText: String? = null
@@ -147,6 +154,13 @@ class TextToSpeechManager @Inject constructor(
             }
         }
         scope.launch {
+            chatterboxEngine.playbackFailures.collect { failure ->
+                if (_engineType.value == TtsEngineType.CHATTERBOX) {
+                    _state.value = TtsState.Error(failure.toUserMessage())
+                }
+            }
+        }
+        scope.launch {
             onnxExternalEngine.runtimeFailures.collect { failure ->
                 if (_engineType.value == TtsEngineType.ONNX_EXTERNAL) {
                     _state.value = TtsState.Error(failure.toUserMessage())
@@ -178,7 +192,7 @@ class TextToSpeechManager @Inject constructor(
         shutdownSystemTtsForRecreate()
         _state.value = TtsState.Initializing
         systemEngine.setup(enginePackage) { ok ->
-            _state.value = if (ok) TtsState.Ready else TtsState.Error("TTS initialization failed")
+            _state.value = if (ok) TtsState.Ready else TtsState.Error("Не удалось запустить TTS")
         }
         return true
     }
@@ -188,6 +202,7 @@ class TextToSpeechManager @Inject constructor(
     suspend fun initializeUtrobin(): Boolean = prepareEngine(TtsEngineType.UTROBIN)
 
     suspend fun initializeNatasha(): Boolean = prepareEngine(TtsEngineType.NATASHA)
+    suspend fun initializeChatterbox(): Boolean = prepareEngine(TtsEngineType.CHATTERBOX)
     suspend fun initializeOnnxExternal(): Boolean = prepareEngine(TtsEngineType.ONNX_EXTERNAL)
 
     suspend fun prepareEngine(type: TtsEngineType): Boolean {
@@ -197,7 +212,7 @@ class TextToSpeechManager @Inject constructor(
         _state.value = if (result.success) {
             TtsState.Ready
         } else {
-            TtsState.Error(result.message ?: "Failed to initialize ${engine.displayName}")
+            TtsState.Error(result.message ?: "Не удалось запустить движок: ${engine.displayName}")
         }
         return result.success
     }
@@ -232,6 +247,11 @@ class TextToSpeechManager @Inject constructor(
                     natashaEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
                 }
             }
+            TtsEngineType.CHATTERBOX -> {
+                scope.launch(Dispatchers.IO) {
+                    chatterboxEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
+                }
+            }
             TtsEngineType.ONNX_EXTERNAL -> {
                 scope.launch(Dispatchers.IO) {
                     onnxExternalEngine.speakChapter(text) { _chapterFinished.tryEmit(Unit) }
@@ -247,6 +267,7 @@ class TextToSpeechManager @Inject constructor(
             TtsEngineType.SILERO -> piperEngine.pause()
             TtsEngineType.UTROBIN -> utrobinEngine.pause()
             TtsEngineType.NATASHA -> natashaEngine.pause()
+            TtsEngineType.CHATTERBOX -> chatterboxEngine.pause()
             TtsEngineType.ONNX_EXTERNAL -> onnxExternalEngine.pause()
         }
         _isSpeaking.value = false
@@ -278,6 +299,9 @@ class TextToSpeechManager @Inject constructor(
             TtsEngineType.NATASHA -> {
                 scope.launch(Dispatchers.IO) { natashaEngine.resume() }
             }
+            TtsEngineType.CHATTERBOX -> {
+                scope.launch(Dispatchers.IO) { chatterboxEngine.resume() }
+            }
             TtsEngineType.ONNX_EXTERNAL -> {
                 scope.launch(Dispatchers.IO) { onnxExternalEngine.resume() }
             }
@@ -293,6 +317,7 @@ class TextToSpeechManager @Inject constructor(
             TtsEngineType.SILERO -> piperEngine.stop()
             TtsEngineType.UTROBIN -> utrobinEngine.stop()
             TtsEngineType.NATASHA -> natashaEngine.stop()
+            TtsEngineType.CHATTERBOX -> chatterboxEngine.stop()
             TtsEngineType.ONNX_EXTERNAL -> onnxExternalEngine.stop()
         }
         _isSpeaking.value = false
@@ -309,11 +334,16 @@ class TextToSpeechManager @Inject constructor(
         piperEngine.setSpeechRate(coerced)
         utrobinEngine.setSpeechRate(coerced)
         natashaEngine.setSpeechRate(coerced)
+        chatterboxEngine.setSpeechRate(coerced)
         onnxExternalEngine.setSpeechRate(coerced)
     }
 
     fun setPitch(pitch: Float) {
         systemEngine.setPitch(pitch.coerceIn(0.5f, 2.0f))
+    }
+
+    fun applyPiperProsodyPreset(preset: PiperProsodyPreset) {
+        piperEngine.applyProsodyPreset(preset)
     }
 
     fun setLanguage(locale: Locale): Boolean = systemEngine.setLanguage(locale)
@@ -357,6 +387,7 @@ class TextToSpeechManager @Inject constructor(
         piperEngine.shutdown()
         utrobinEngine.shutdown()
         natashaEngine.shutdown()
+        chatterboxEngine.shutdown()
         onnxExternalEngine.shutdown()
         _state.value = TtsState.Idle
         _isSpeaking.value = false

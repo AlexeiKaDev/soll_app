@@ -15,14 +15,14 @@ class DownloadHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "download"
-    override val description = "Download file: /download <path>"
+    override val description = "Отправить файл: /download <путь>"
 
     // Telegram file size limit is 50MB for bots
     private val maxFileSize = 50L * 1024 * 1024
 
     override suspend fun execute(message: Message, args: String?) {
         if (args.isNullOrBlank()) {
-            reply(message, "Usage: /download <file_path>\n\nExample: /download /sdcard/Download/file.pdf")
+            reply(message, "Использование: /download <путь_к_файлу>\n\nПример: /download /sdcard/Download/file.pdf")
             return
         }
 
@@ -30,32 +30,32 @@ class DownloadHandler(
         val file = File(filePath)
 
         if (!file.exists()) {
-            reply(message, "❌ File not found: $filePath")
+            reply(message, "❌ Файл не найден: $filePath")
             return
         }
 
         if (file.isDirectory) {
-            reply(message, "❌ Cannot download a directory. Use /files to browse.")
+            reply(message, "❌ Нельзя отправить папку. Используйте /files для просмотра.")
             return
         }
 
         if (!file.canRead()) {
-            reply(message, "❌ Cannot read file: Permission denied.")
+            reply(message, "❌ Не удается прочитать файл: нет доступа.")
             return
         }
 
         val fileSize = file.length()
         if (fileSize > maxFileSize) {
-            reply(message, "❌ File is too large (${formatSize(fileSize)}). Maximum size is 50 MB.")
+            reply(message, "❌ Файл слишком большой (${formatSize(fileSize)}). Максимум 50 MB.")
             return
         }
 
         if (fileSize == 0L) {
-            reply(message, "❌ File is empty.")
+            reply(message, "❌ Файл пустой.")
             return
         }
 
-        reply(message, "📤 Uploading: ${file.name} (${formatSize(fileSize)})...")
+        reply(message, "📤 Отправляю: ${file.name} (${formatSize(fileSize)})...")
 
         try {
             val result = telegramRepository.sendDocument(
@@ -65,12 +65,12 @@ class DownloadHandler(
             )
 
             if (result.isFailure) {
-                reply(message, "❌ Failed to upload file: ${result.exceptionOrNull()?.message}")
+                reply(message, "❌ Не удалось отправить файл: ${result.exceptionOrNull()?.message}")
             }
 
         } catch (e: Exception) {
             Timber.e(e, "Error uploading file")
-            reply(message, "❌ Error uploading file: ${e.message}")
+            reply(message, "❌ Ошибка отправки файла: ${e.message}")
         }
     }
 

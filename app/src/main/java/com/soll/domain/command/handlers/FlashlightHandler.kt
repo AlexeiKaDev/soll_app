@@ -12,7 +12,7 @@ class FlashlightHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "flashlight"
-    override val description = "Toggle flashlight on/off"
+    override val description = "Переключить фонарик: /flashlight [вкл|выкл]"
 
     private var isFlashlightOn = false
 
@@ -22,23 +22,23 @@ class FlashlightHandler(
         try {
             val cameraId = cameraManager.cameraIdList.firstOrNull()
             if (cameraId == null) {
-                reply(message, "❌ No camera with flashlight found")
+                reply(message, "❌ Камера с фонариком не найдена")
                 return
             }
 
-            val turnOn = when (args?.lowercase()) {
-                "on", "1", "true" -> true
-                "off", "0", "false" -> false
+            val turnOn = when (args?.trim()?.lowercase()) {
+                "on", "1", "true", "вкл", "включить", "да" -> true
+                "off", "0", "false", "выкл", "выключить", "нет" -> false
                 else -> !isFlashlightOn // Toggle
             }
 
             cameraManager.setTorchMode(cameraId, turnOn)
             isFlashlightOn = turnOn
 
-            val status = if (turnOn) "ON 🔦" else "OFF"
-            reply(message, "✅ Flashlight is now $status")
+            val status = if (turnOn) "включен 🔦" else "выключен"
+            reply(message, "✅ Фонарик $status")
         } catch (e: Exception) {
-            reply(message, "❌ Failed to control flashlight: ${e.message}")
+            reply(message, "❌ Не удалось управлять фонариком: ${e.message}")
         }
     }
 }

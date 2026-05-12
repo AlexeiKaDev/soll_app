@@ -25,6 +25,12 @@ cameraX = "1.3.2"
 playServicesLocation = "21.1.0"
 jsoup = "1.17.2"
 documentfile = "1.0.1"
+media3 = "1.10.0"
+mlkitBarcodeScanning = "17.3.0"
+androidxMedia = "1.7.0"
+commonsCompress = "1.27.1"
+junit = "4.13.2"
+json = "20240303"
 
 [libraries]
 # Core Android
@@ -94,6 +100,13 @@ jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 
 # Storage / SAF
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+androidx-media = { group = "androidx.media", name = "media", version.ref = "androidxMedia" }
+mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcodeScanning" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+json = { group = "org.json", name = "json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

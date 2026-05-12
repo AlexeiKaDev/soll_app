@@ -69,7 +69,7 @@ class SystemAndroidBookEngine @Inject constructor(
         val listener = TextToSpeech.OnInitListener { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let { engine ->
-                    val lang = engine.setLanguage(Locale("ru", "RU"))
+                    val lang = engine.setLanguage(Locale.forLanguageTag("ru-RU"))
                     if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
                         engine.setLanguage(Locale.getDefault())
                     }
@@ -103,7 +103,7 @@ class SystemAndroidBookEngine @Inject constructor(
                 } ?: onInitialized(false)
             } else {
                 _isReady.value = false
-                Timber.e("System TTS init failed: $status")
+                Timber.e("Системный TTS не запустился: $status")
                 onInitialized(false)
             }
         }
@@ -147,7 +147,7 @@ class SystemAndroidBookEngine @Inject constructor(
         }
         tts?.speak(currentChunks[currentChunkIndex], TextToSpeech.QUEUE_FLUSH, null, "chunk_$currentChunkIndex")
             ?: run {
-                Timber.e("System TTS: speak called but TTS is null")
+                Timber.e("Системный TTS: попытка озвучивания без готового движка")
                 onChapterFinished()
             }
     }

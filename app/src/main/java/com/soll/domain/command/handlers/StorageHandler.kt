@@ -15,7 +15,7 @@ class StorageHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "storage"
-    override val description = "Get storage information"
+    override val description = "Показать информацию о хранилище"
 
     override suspend fun execute(message: Message, args: String?) {
         val internalStorage = getStorageInfo(Environment.getDataDirectory())
@@ -26,22 +26,22 @@ class StorageHandler(
         }
 
         val text = buildString {
-            append("<b>Storage Information</b>\n\n")
+            append("<b>Хранилище</b>\n\n")
 
-            append("<b>Internal Storage:</b>\n")
+            append("<b>Внутреннее хранилище:</b>\n")
             append(internalStorage)
 
             if (externalStorage != null) {
-                append("\n\n<b>External Storage:</b>\n")
+                append("\n\n<b>Внешнее хранилище:</b>\n")
                 append(externalStorage)
             }
 
             // App specific storage
             val appDir = context.filesDir
             val appCacheDir = context.cacheDir
-            append("\n\n<b>App Storage:</b>\n")
-            append("Files: ${formatSize(getDirSize(appDir))}\n")
-            append("Cache: ${formatSize(getDirSize(appCacheDir))}")
+            append("\n\n<b>Хранилище приложения:</b>\n")
+            append("Файлы: ${formatSize(getDirSize(appDir))}\n")
+            append("Кэш: ${formatSize(getDirSize(appCacheDir))}")
         }
 
         reply(message, text)
@@ -56,9 +56,9 @@ class StorageHandler(
 
         val df = DecimalFormat("#.##")
         return buildString {
-            append("Total: ${formatSize(totalBytes)}\n")
-            append("Used: ${formatSize(usedBytes)} (${df.format(usedPercent)}%)\n")
-            append("Available: ${formatSize(availableBytes)}")
+            append("Всего: ${formatSize(totalBytes)}\n")
+            append("Занято: ${formatSize(usedBytes)} (${df.format(usedPercent)}%)\n")
+            append("Доступно: ${formatSize(availableBytes)}")
         }
     }
 

@@ -14,40 +14,40 @@ class InfoHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "info"
-    override val description = "Get device information"
+    override val description = "Показать информацию об устройстве"
 
     override suspend fun execute(message: Message, args: String?) {
         val text = """
-            |<b>Device Information</b>
+            |<b>Информация об устройстве</b>
             |
-            |<b>Device:</b>
-            |Manufacturer: ${Build.MANUFACTURER}
-            |Model: ${Build.MODEL}
-            |Brand: ${Build.BRAND}
-            |Device: ${Build.DEVICE}
+            |<b>Устройство:</b>
+            |Производитель: ${Build.MANUFACTURER}
+            |Модель: ${Build.MODEL}
+            |Бренд: ${Build.BRAND}
+            |Код устройства: ${Build.DEVICE}
             |
             |<b>Android:</b>
-            |Version: Android ${Build.VERSION.RELEASE}
-            |API Level: ${Build.VERSION.SDK_INT}
-            |Security Patch: ${Build.VERSION.SECURITY_PATCH}
+            |Версия: Android ${Build.VERSION.RELEASE}
+            |Уровень API: ${Build.VERSION.SDK_INT}
+            |Патч безопасности: ${Build.VERSION.SECURITY_PATCH}
             |
-            |<b>System:</b>
-            |Board: ${Build.BOARD}
-            |Hardware: ${Build.HARDWARE}
-            |Bootloader: ${Build.BOOTLOADER}
+            |<b>Система:</b>
+            |Плата: ${Build.BOARD}
+            |Железо: ${Build.HARDWARE}
+            |Загрузчик: ${Build.BOOTLOADER}
             |
-            |<b>Build:</b>
-            |Build ID: ${Build.ID}
+            |<b>Сборка:</b>
+            |ID сборки: ${Build.ID}
             |Fingerprint: ${Build.FINGERPRINT.take(50)}...
             |
             |<b>Soll:</b>
-            |Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})
-            |Package: ${BuildConfig.APPLICATION_ID}
+            |Версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})
+            |Пакет: ${BuildConfig.APPLICATION_ID}
             |Debug: ${BuildConfig.DEBUG}
             |
             |<b>Locale:</b>
             |${Locale.getDefault().displayName}
-            |Timezone: ${TimeZone.getDefault().id}
+            |Часовой пояс: ${TimeZone.getDefault().id}
         """.trimMargin()
 
         reply(message, text)

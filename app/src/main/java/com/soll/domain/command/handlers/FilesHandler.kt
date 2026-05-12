@@ -17,7 +17,7 @@ class FilesHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "files"
-    override val description = "List files in directory"
+    override val description = "Показать файлы в папке"
 
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
 
@@ -28,7 +28,7 @@ class FilesHandler(
         val file = File(path)
 
         if (!file.exists()) {
-            reply(message, "Path not found: $path")
+            reply(message, "Путь не найден: $path")
             return
         }
 
@@ -42,12 +42,12 @@ class FilesHandler(
         // List directory contents
         val files = file.listFiles()
         if (files == null) {
-            reply(message, "Cannot access directory: $path\nPermission denied or invalid path.")
+            reply(message, "Нет доступа к папке: $path\nПроверьте разрешения или путь.")
             return
         }
 
         if (files.isEmpty()) {
-            reply(message, "<b>📁 $path</b>\n\n<i>Directory is empty</i>")
+            reply(message, "<b>📁 $path</b>\n\n<i>Папка пустая</i>")
             return
         }
 
@@ -59,7 +59,7 @@ class FilesHandler(
 
             // Show parent directory link if not root
             if (file.parentFile != null && file.absolutePath != "/") {
-                append("📂 <code>..</code> (parent)\n")
+                append("📂 <code>..</code> (выше)\n")
             }
 
             var dirCount = 0
@@ -77,10 +77,10 @@ class FilesHandler(
             }
 
             if (sorted.size > 50) {
-                append("\n<i>... and ${sorted.size - 50} more items</i>\n")
+                append("\n<i>... еще элементов: ${sorted.size - 50}</i>\n")
             }
 
-            append("\n<b>Total:</b> $dirCount folders, $fileCount files")
+            append("\n<b>Итого:</b> папок: $dirCount, файлов: $fileCount")
         }
 
         reply(message, text)
@@ -88,34 +88,34 @@ class FilesHandler(
 
     private fun getFileInfo(file: File): String {
         return buildString {
-            append("<b>📄 File Info</b>\n\n")
-            append("<b>Name:</b> ${file.name}\n")
-            append("<b>Path:</b> <code>${file.absolutePath}</code>\n")
-            append("<b>Size:</b> ${formatSize(file.length())}\n")
-            append("<b>Modified:</b> ${dateFormat.format(Date(file.lastModified()))}\n")
-            append("<b>Readable:</b> ${if (file.canRead()) "Yes" else "No"}\n")
-            append("<b>Writable:</b> ${if (file.canWrite()) "Yes" else "No"}\n")
+            append("<b>📄 Файл</b>\n\n")
+            append("<b>Имя:</b> ${file.name}\n")
+            append("<b>Путь:</b> <code>${file.absolutePath}</code>\n")
+            append("<b>Размер:</b> ${formatSize(file.length())}\n")
+            append("<b>Изменен:</b> ${dateFormat.format(Date(file.lastModified()))}\n")
+            append("<b>Чтение:</b> ${if (file.canRead()) "да" else "нет"}\n")
+            append("<b>Запись:</b> ${if (file.canWrite()) "да" else "нет"}\n")
 
             // Get extension
             val ext = file.extension.lowercase()
-            append("<b>Type:</b> ${getFileType(ext)}")
+            append("<b>Тип:</b> ${getFileType(ext)}")
         }
     }
 
     private fun getFileType(extension: String): String {
         return when (extension) {
-            "jpg", "jpeg", "png", "gif", "bmp", "webp" -> "Image"
-            "mp4", "mkv", "avi", "mov", "wmv", "flv" -> "Video"
-            "mp3", "wav", "ogg", "flac", "aac", "m4a" -> "Audio"
-            "pdf" -> "PDF Document"
-            "doc", "docx" -> "Word Document"
-            "xls", "xlsx" -> "Excel Spreadsheet"
+            "jpg", "jpeg", "png", "gif", "bmp", "webp" -> "изображение"
+            "mp4", "mkv", "avi", "mov", "wmv", "flv" -> "видео"
+            "mp3", "wav", "ogg", "flac", "aac", "m4a" -> "аудио"
+            "pdf" -> "PDF-документ"
+            "doc", "docx" -> "Word-документ"
+            "xls", "xlsx" -> "Excel-таблица"
             "ppt", "pptx" -> "PowerPoint"
-            "txt" -> "Text File"
-            "zip", "rar", "7z", "tar", "gz" -> "Archive"
-            "apk" -> "Android App"
-            "json", "xml", "html", "css", "js" -> "Code/Markup"
-            else -> extension.ifEmpty { "Unknown" }
+            "txt" -> "текстовый файл"
+            "zip", "rar", "7z", "tar", "gz" -> "архив"
+            "apk" -> "Android-приложение"
+            "json", "xml", "html", "css", "js" -> "код/разметка"
+            else -> extension.ifEmpty { "неизвестно" }
         }
     }
 

@@ -15,14 +15,14 @@ class VibrateHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "vibrate"
-    override val description = "Vibrate device"
+    override val description = "Вибрация устройства: /vibrate [мс]"
 
     override suspend fun execute(message: Message, args: String?) {
         val duration = args?.toLongOrNull() ?: 500L
         val actualDuration = duration.coerceIn(100L, 5000L) // Min 100ms, Max 5s
 
         vibrate(actualDuration)
-        reply(message, "✅ Device vibrated for ${actualDuration}ms")
+        reply(message, "✅ Вибрация выполнена: ${actualDuration} мс.")
     }
 
     @Suppress("DEPRECATION")
@@ -35,11 +35,7 @@ class VibrateHandler(
         }
 
         if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                vibrator.vibrate(duration)
-            }
+            vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
         }
     }
 }

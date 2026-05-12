@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.NFC" />
+
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <!-- SMS & Calls -->
     <uses-permission android:name="android.permission.READ_SMS" />
@@ -27,7 +32,6 @@
     <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- Storage -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -39,6 +43,7 @@
         tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- System -->
@@ -54,15 +59,18 @@
     <!-- Features -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <application
         android:name=".SollApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:usesCleartextTraffic="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:usesCleartextTraffic="${usesCleartextTraffic}"
         android:supportsRtl="true"
         android:theme="@style/Theme.Soll"
         tools:targetApi="34">
@@ -90,6 +98,64 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
+        <!-- Music Foreground Service -->
+        <service
+            android:name=".data.service.MusicPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true"
+            android:permission="android.permission.BIND_MEDIA_BROWSER_SERVICE">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Home screen widgets -->
+        <receiver
+            android:name=".presentation.widgets.MusicWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_music_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_music_info" />
+        </receiver>
+
+        <receiver
+            android:name=".presentation.widgets.ReaderWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_reader_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_reader_info" />
+        </receiver>
+
+        <receiver
+            android:name=".presentation.widgets.NotesWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_notes_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_notes_info" />
+        </receiver>
+
         <!-- Boot Receiver -->
         <receiver
             android:name=".data.service.BootReceiver"
@@ -100,11 +166,6 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
-
-        <receiver
-            android:name=".data.service.CourseReminderReceiver"
-            android:exported="false"
-            android:enabled="true" />
 
         <!-- File Provider for sharing files -->
         <provider

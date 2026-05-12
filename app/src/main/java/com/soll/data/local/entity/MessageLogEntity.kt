@@ -2,12 +2,20 @@ package com.soll.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * Log of received messages
  */
-@Entity(tableName = "message_logs")
+@Entity(
+    tableName = "message_logs",
+    indices = [
+        Index(value = ["update_id"]),
+        Index(value = ["received_at"]),
+        Index(value = ["chat_id", "received_at"]),
+    ],
+)
 data class MessageLogEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

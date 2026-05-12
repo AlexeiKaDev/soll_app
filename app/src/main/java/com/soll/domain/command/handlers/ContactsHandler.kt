@@ -16,11 +16,11 @@ class ContactsHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "contacts"
-    override val description = "List contacts or search: /contacts [query]"
+    override val description = "Показать контакты или найти: /contacts [запрос]"
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "Contacts permission not granted. Please grant READ_CONTACTS permission in app settings.")
+            reply(message, "Нет разрешения на контакты. Выдайте READ_CONTACTS в настройках приложения.")
             return
         }
 
@@ -34,9 +34,9 @@ class ContactsHandler(
 
         if (contacts.isEmpty()) {
             val msg = if (query != null) {
-                "No contacts found matching: $query"
+                "Контакты по запросу не найдены: $query"
             } else {
-                "No contacts found."
+                "Контакты не найдены."
             }
             reply(message, msg)
             return
@@ -44,9 +44,9 @@ class ContactsHandler(
 
         val text = buildString {
             if (query != null) {
-                append("<b>🔍 Contacts matching \"$query\"</b>\n\n")
+                append("<b>🔍 Контакты по запросу \"$query\"</b>\n\n")
             } else {
-                append("<b>📇 Contacts (${contacts.size})</b>\n\n")
+                append("<b>📇 Контакты (${contacts.size})</b>\n\n")
             }
 
             contacts.forEachIndexed { index, contact ->
@@ -61,7 +61,7 @@ class ContactsHandler(
             }
 
             if (contacts.size >= 30 && query == null) {
-                append("<i>Showing first 30 contacts. Use /contacts &lt;name&gt; to search.</i>")
+                append("<i>Показаны первые 30 контактов. Для поиска используйте /contacts &lt;имя&gt;.</i>")
             }
         }
 
@@ -98,7 +98,7 @@ class ContactsHandler(
 
                 while (it.moveToNext()) {
                     val id = it.getLong(idIndex)
-                    val name = it.getString(nameIndex) ?: "Unknown"
+                    val name = it.getString(nameIndex) ?: "неизвестно"
                     contactsMap[id] = ContactData(id, name, mutableListOf(), mutableListOf())
                 }
             }
@@ -137,7 +137,7 @@ class ContactsHandler(
 
                 while (it.moveToNext()) {
                     val id = it.getLong(idIndex)
-                    val name = it.getString(nameIndex) ?: "Unknown"
+                    val name = it.getString(nameIndex) ?: "неизвестно"
                     contactsMap[id] = ContactData(id, name, mutableListOf(), mutableListOf())
                 }
             }

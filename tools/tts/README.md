@@ -39,3 +39,30 @@ Output:
 - For Doogee S200 class devices:
   - default: `moss_nano_100m`
   - high quality (if acceptable latency/size): `chatterbox_multilingual` INT4.
+
+## Piper voice dataset preparation
+
+The shared Piper dataset preparation tool lives in the main Soll project:
+`D:\Projects\Soll\server\scripts\prepare_piper_voice_dataset.py`.
+
+Current Burunov training defaults are aimed at a clean `high` Piper voice from
+scratch:
+
+```powershell
+D:\Projects\Soll\server\scripts\train_piper_voice.ps1 -Action preprocess `
+  -Dataset D:\Projects\soll_app\voice\datasets\burunov_full `
+  -TrainDir D:\Projects\soll_app\voice\training\burunov_high_scratch `
+  -Quality high
+
+D:\Projects\Soll\server\scripts\train_piper_voice.ps1 -Action train `
+  -Dataset D:\Projects\soll_app\voice\datasets\burunov_full `
+  -TrainDir D:\Projects\soll_app\voice\training\burunov_high_scratch `
+  -Quality high -TrainingMode scratch -BatchSize auto `
+  -NumWorkers 16 -MaxEpochs 2200 -CheckpointEpochs 10 `
+  -TestEveryEpochs 50 -VoiceName burunov
+```
+
+The training script writes control samples to
+`voice/training/burunov_high_scratch/test_wavs/` every 50 epochs and exports an
+Android-ready Piper/Sherpa pack with `tokens.txt`, ONNX metadata and
+`espeak-ng-data`.

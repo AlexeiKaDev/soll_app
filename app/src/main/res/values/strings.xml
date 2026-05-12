@@ -2,48 +2,32 @@
 <resources>
     <string name="app_name">Soll</string>
 
-    <!-- Navigation -->
-    <string name="nav_home">Home</string>
-    <string name="nav_logs">Logs</string>
-    <string name="nav_settings">Settings</string>
+    <!-- Уведомления -->
+    <string name="notification_title">Soll работает</string>
+    <string name="notification_text">Ожидаю сообщения Telegram</string>
 
-    <!-- Home Screen -->
-    <string name="bot_status">Bot Status</string>
-    <string name="status_running">Running</string>
-    <string name="status_stopped">Stopped</string>
-    <string name="status_error">Error</string>
-    <string name="start_bot">Start Bot</string>
-    <string name="stop_bot">Stop Bot</string>
-    <string name="messages_processed">Messages Processed</string>
-    <string name="uptime">Uptime</string>
-    <string name="last_message">Last Message</string>
-
-    <!-- Settings Screen -->
-    <string name="bot_token">Bot Token</string>
-    <string name="bot_token_hint">Enter your Telegram bot token</string>
-    <string name="save_token">Save Token</string>
-    <string name="token_saved">Token saved successfully</string>
-    <string name="token_invalid">Invalid token format</string>
-    <string name="auto_start">Auto Start on Boot</string>
-    <string name="auto_start_desc">Start bot automatically when device boots</string>
-    <string name="battery_optimization">Battery Optimization</string>
-    <string name="battery_optimization_desc">Disable battery optimization for reliable background work</string>
-    <string name="request_permission">Request Permission</string>
-
-    <!-- Notifications -->
-    <string name="notification_channel_name">Bot Service</string>
-    <string name="notification_channel_description">Shows bot service status</string>
-    <string name="notification_title">Soll is running</string>
-    <string name="notification_text">Listening for Telegram messages</string>
-
-    <!-- Errors -->
-    <string name="error_no_token">Please set bot token first</string>
-    <string name="error_network">Network error</string>
-    <string name="error_api">Telegram API error</string>
-
-    <!-- Commands -->
-    <string name="cmd_start_desc">Show welcome message</string>
-    <string name="cmd_ping_desc">Check if bot is alive</string>
-    <string name="cmd_status_desc">Get device status</string>
-    <string name="cmd_info_desc">Get device info</string>
+    <!-- Виджеты -->
+    <string name="widget_music_name">Soll Музыка</string>
+    <string name="widget_music_description">Быстрое управление музыкой Soll</string>
+    <string name="widget_music_artwork">Обложка альбома</string>
+    <string name="widget_music_title">Музыка</string>
+    <string name="widget_music_subtitle">Очередь</string>
+    <string name="widget_music_previous">Предыдущий трек</string>
+    <string name="widget_music_play">Играть</string>
+    <string name="widget_music_next">Следующий трек</string>
+    <string name="widget_music_stop">Стоп</string>
+    <string name="widget_reader_name">Soll Читалка</string>
+    <string name="widget_reader_description">Быстрое управление чтением вслух</string>
+    <string name="widget_reader_artwork">Обложка книги</string>
+    <string name="widget_reader_title">Читалка</string>
+    <string name="widget_reader_subtitle">Книга</string>
+    <string name="widget_reader_previous">Предыдущая глава</string>
+    <string name="widget_reader_play">Играть</string>
+    <string name="widget_reader_next">Следующая глава</string>
+    <string name="widget_reader_stop">Стоп</string>
+    <string name="widget_notes_name">Soll Заметки</string>
+    <string name="widget_notes_description">Быстрый вход в заметки Soll</string>
+    <string name="widget_notes_title">Заметки</string>
+    <string name="widget_notes_subtitle">Список</string>
+    <string name="widget_notes_open">Открыть заметки</string>
 </resources>

@@ -82,7 +82,7 @@ object NatashaSymbolTokenizer {
             .replace("\r", " ")
             .replace("\n", " ")
             .replace('\t', ' ')
-            .lowercase(Locale("ru", "RU"))
+            .lowercase(Locale.forLanguageTag("ru-RU"))
         val sb = StringBuilder(lower.length * 2)
         var previousWasSpace = false
         var i = 0

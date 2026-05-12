@@ -20,13 +20,13 @@ class SmsHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "sms"
-    override val description = "Read SMS messages"
+    override val description = "Прочитать SMS-сообщения"
 
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "SMS permission not granted. Please grant SMS permission in app settings.")
+            reply(message, "Нет разрешения на чтение SMS. Выдайте READ_SMS в настройках приложения.")
             return
         }
 
@@ -36,12 +36,12 @@ class SmsHandler(
         val smsList = readSms(limitedCount)
 
         if (smsList.isEmpty()) {
-            reply(message, "No SMS messages found.")
+            reply(message, "SMS-сообщения не найдены.")
             return
         }
 
         val text = buildString {
-            append("<b>📱 Last $limitedCount SMS Messages</b>\n\n")
+            append("<b>📱 Последние SMS: $limitedCount</b>\n\n")
 
             smsList.forEachIndexed { index, sms ->
                 append("<b>${index + 1}.</b> ")
@@ -91,7 +91,7 @@ class SmsHandler(
                 val typeIndex = it.getColumnIndex("type")
 
                 while (it.moveToNext()) {
-                    val address = it.getString(addressIndex) ?: "Unknown"
+                    val address = it.getString(addressIndex) ?: "неизвестно"
                     val body = it.getString(bodyIndex) ?: ""
                     val date = it.getLong(dateIndex)
                     val type = it.getInt(typeIndex)

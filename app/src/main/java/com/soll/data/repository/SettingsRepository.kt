@@ -3,8 +3,23 @@ package com.soll.data.repository
 import android.content.SharedPreferences
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.entity.BotConfigEntity
+import com.soll.domain.assistant.Capability
+import com.soll.domain.assistant.CapabilitySettings
+import com.soll.domain.assistant.proactive.ProactiveSuggestionFeedback
+import com.soll.domain.deviceqa.DeviceQaCheckId
+import com.soll.domain.deviceqa.DeviceQaManualResult
+import com.soll.domain.deviceqa.DeviceQaStatus
+import com.soll.domain.music.MusicRepeatMode
+import com.soll.domain.music.MusicSettings
+import com.soll.domain.notes.NoteSettings
+import com.soll.domain.scanner.ScannerDuplicatePolicy
+import com.soll.domain.scanner.ScannerSettings
+import com.soll.domain.tts.PiperProsodyPreset
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -12,7 +27,7 @@ import javax.inject.Singleton
 class SettingsRepository @Inject constructor(
     private val sharedPreferences: SharedPreferences,
     private val botConfigDao: BotConfigDao
-) {
+) : CapabilitySettings {
     companion object {
         private const val KEY_BOT_TOKEN = "bot_token"
         private const val KEY_AUTO_START = "auto_start"
@@ -27,10 +42,15 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_UTROBIN_SPEAKER = "tts_utrobin_speaker"
         private const val KEY_TTS_UTROBIN_ORT_THREADS = "tts_utrobin_ort_threads"
         private const val KEY_TTS_NATASHA_ORT_THREADS = "tts_natasha_ort_threads"
+        private const val KEY_TTS_CHATTERBOX_ORT_THREADS = "tts_chatterbox_ort_threads"
+        private const val KEY_TTS_CHATTERBOX_EXAGGERATION = "tts_chatterbox_exaggeration"
+        private const val KEY_TTS_CHATTERBOX_VOICE = "tts_chatterbox_voice"
         private const val KEY_TTS_SHERPA_NUM_THREADS = "tts_sherpa_num_threads"
+        private const val KEY_TTS_PIPER_PROSODY_PRESET = "tts_piper_prosody_preset"
         private const val KEY_TTS_PIPER_PACK_ID = "tts_piper_pack_id"
         private const val KEY_TTS_NATASHA_PACK_ID = "tts_natasha_pack_id"
         private const val KEY_TTS_UTROBIN_PACK_ID = "tts_utrobin_pack_id"
+        private const val KEY_TTS_CHATTERBOX_PACK_ID = "tts_chatterbox_pack_id"
         private const val KEY_TTS_BOOK_PERF_PROFILE = "tts_book_perf_profile"
         private const val KEY_BOOK_READER_S200_BOOTSTRAP = "book_reader_s200_bootstrap_done"
         private const val KEY_TTS_SYSTEM_PITCH = "tts_system_pitch"
@@ -39,7 +59,59 @@ class SettingsRepository @Inject constructor(
         /** Последний URI дерева для импортa ONNX-паков (SAF); для повтора «указать ту же папку». */
         private const val KEY_TTS_ONNX_IMPORT_TREE_URI = "tts_onnx_import_tree_uri"
         private const val KEY_TTS_MODEL_ROOT_URI = "tts_model_root_uri"
+        private const val KEY_RISKY_CAPABILITIES_ENABLED = "risky_capabilities_enabled"
+        private const val KEY_CAPABILITY_ENABLED_PREFIX = "capability_enabled_"
+        private const val KEY_SOLL_SERVER_URL = "soll_server_url"
+        private const val KEY_SOLL_ACCESS_TOKEN = "soll_access_token"
+        private const val KEY_SOLL_SYNC_INTERVAL_MINUTES = "soll_sync_interval_minutes"
+        private const val KEY_SOLL_WIFI_ONLY_UPLOAD = "soll_wifi_only_upload"
+        private const val KEY_VOICE_REQUIRES_UNLOCKED_DEVICE = "voice_requires_unlocked_device"
+        private const val KEY_VOICE_REQUIRES_HEADSET = "voice_requires_headset"
+        private const val KEY_VOICE_LOCAL_ONLY = "voice_local_only"
+        private const val KEY_VOICE_WAKE_PHRASE_REQUIRED = "voice_wake_phrase_required"
+        private const val KEY_MUSIC_RESUME_LAST_TRACK = "music_resume_last_track"
+        private const val KEY_MUSIC_PAUSE_FOR_TTS = "music_pause_for_tts"
+        private const val KEY_MUSIC_STOP_TTS_ON_START = "music_stop_tts_on_start"
+        private const val KEY_MUSIC_HEADSET_CONTROLS = "music_headset_controls"
+        private const val KEY_MUSIC_AUTO_RESCAN_ON_OPEN = "music_auto_rescan_on_open"
+        private const val KEY_MUSIC_STRICT_AUDIO_FILTER = "music_strict_audio_filter"
+        private const val KEY_MUSIC_SHOW_BACKGROUND_HINTS = "music_show_background_hints"
+        private const val KEY_MUSIC_DEFAULT_SHUFFLE = "music_default_shuffle"
+        private const val KEY_MUSIC_DEFAULT_REPEAT_MODE = "music_default_repeat_mode"
+        private const val KEY_SCANNER_DUPLICATE_POLICY = "scanner_duplicate_policy"
+        private const val KEY_NOTE_AUTO_SYNC = "note_auto_sync"
+        private const val KEY_NOTE_WIFI_ONLY = "note_wifi_only"
+        private const val KEY_NOTE_KEEP_LOCAL_AFTER_SYNC = "note_keep_local_after_sync"
+        private const val KEY_NOTE_DEFAULT_TAGS = "note_default_tags"
+        private const val KEY_DEVICE_AUTH_TOKEN_PREFIX = "device_auth_token_"
+        private const val KEY_PROACTIVE_SUGGESTIONS_ENABLED = "proactive_suggestions_enabled"
+        private const val KEY_PROACTIVE_SUGGESTIONS_DAILY_LIMIT = "proactive_suggestions_daily_limit"
+        private const val KEY_PROACTIVE_SYSTEM_DELIVERY_ENABLED = "proactive_system_delivery_enabled"
+        private const val KEY_PROACTIVE_TELEGRAM_DELIVERY_ENABLED = "proactive_telegram_delivery_enabled"
+        private const val KEY_PROACTIVE_ACCEPTED_PREFIX = "proactive_accepted_at_"
+        private const val KEY_PROACTIVE_DISMISSED_PREFIX = "proactive_dismissed_at_"
+        private const val KEY_PROACTIVE_SNOOZED_PREFIX = "proactive_snoozed_until_"
+        private const val KEY_PROACTIVE_DELIVERED_PREFIX = "proactive_delivered_at_"
+        private const val KEY_ASSISTANT_MEMORY_ENABLED = "assistant_memory_enabled"
+        private const val KEY_DEVICE_QA_STATUS_PREFIX = "device_qa_status_"
+        private const val KEY_DEVICE_QA_CHECKED_AT_PREFIX = "device_qa_checked_at_"
+        private const val KEY_DEVICE_QA_DEVICE_PREFIX = "device_qa_device_"
+        private const val KEY_APP_THEME_VARIANT = "app_theme_variant"
+        private const val DEFAULT_APP_THEME_VARIANT = "classic"
+        private const val SUGGESTION_SNOOZE_MS = 2 * 60 * 60_000L
+        private const val DAY_MS = 24 * 60 * 60_000L
     }
+
+    private val _appThemeVariantFlow = MutableStateFlow(readAppThemeVariant())
+    val appThemeVariantFlow: StateFlow<String> = _appThemeVariantFlow.asStateFlow()
+
+    var appThemeVariant: String
+        get() = readAppThemeVariant()
+        set(value) {
+            val normalized = normalizeAppThemeVariant(value)
+            sharedPreferences.edit().putString(KEY_APP_THEME_VARIANT, normalized).apply()
+            _appThemeVariantFlow.value = normalized
+        }
 
     // Bot Token (encrypted storage)
     var botToken: String?
@@ -110,6 +182,25 @@ class SettingsRepository @Inject constructor(
             .putInt(KEY_TTS_NATASHA_ORT_THREADS, value.coerceIn(1, 4))
             .apply()
 
+    /** ONNX intra-op threads for Chatterbox book engine (1–4). */
+    var ttsChatterboxOrtIntraThreads: Int
+        get() = sharedPreferences.getInt(KEY_TTS_CHATTERBOX_ORT_THREADS, 2).coerceIn(1, 4)
+        set(value) = sharedPreferences.edit()
+            .putInt(KEY_TTS_CHATTERBOX_ORT_THREADS, value.coerceIn(1, 4))
+            .apply()
+
+    /** Chatterbox emotion exaggeration (0.3–0.9). */
+    var ttsChatterboxExaggeration: Float
+        get() = sharedPreferences.getFloat(KEY_TTS_CHATTERBOX_EXAGGERATION, 0.5f).coerceIn(0.3f, 0.9f)
+        set(value) = sharedPreferences.edit()
+            .putFloat(KEY_TTS_CHATTERBOX_EXAGGERATION, value.coerceIn(0.3f, 0.9f))
+            .apply()
+
+    /** Chatterbox reference voice id (= wav file name without extension). */
+    var ttsChatterboxVoice: String?
+        get() = sharedPreferences.getString(KEY_TTS_CHATTERBOX_VOICE, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_CHATTERBOX_VOICE, value).apply()
+
     /** Sherpa OfflineTts numThreads for Piper (1–4). */
     var ttsSherpaNumThreads: Int
         get() = sharedPreferences.getInt(
@@ -123,6 +214,15 @@ class SettingsRepository @Inject constructor(
             .putInt(KEY_TTS_SHERPA_NUM_THREADS, value.coerceIn(1, 4))
             .apply()
 
+    var ttsPiperProsodyPreset: String
+        get() = sharedPreferences.getString(
+            KEY_TTS_PIPER_PROSODY_PRESET,
+            PiperProsodyPreset.DEFAULT.storageKey,
+        ) ?: PiperProsodyPreset.DEFAULT.storageKey
+        set(value) = sharedPreferences.edit()
+            .putString(KEY_TTS_PIPER_PROSODY_PRESET, PiperProsodyPreset.fromStorage(value).storageKey)
+            .apply()
+
     var ttsPiperPackId: String?
         get() = sharedPreferences.getString(KEY_TTS_PIPER_PACK_ID, null)
         set(value) = sharedPreferences.edit().putString(KEY_TTS_PIPER_PACK_ID, value).apply()
@@ -134,6 +234,10 @@ class SettingsRepository @Inject constructor(
     var ttsUtrobinPackId: String?
         get() = sharedPreferences.getString(KEY_TTS_UTROBIN_PACK_ID, null)
         set(value) = sharedPreferences.edit().putString(KEY_TTS_UTROBIN_PACK_ID, value).apply()
+
+    var ttsChatterboxPackId: String?
+        get() = sharedPreferences.getString(KEY_TTS_CHATTERBOX_PACK_ID, null)
+        set(value) = sharedPreferences.edit().putString(KEY_TTS_CHATTERBOX_PACK_ID, value).apply()
 
     /**
      * Book reader preset: battery / balanced / quality (threads + chunk merge).
@@ -161,11 +265,12 @@ class SettingsRepository @Inject constructor(
         sharedPreferences.edit()
             .putInt(KEY_TTS_UTROBIN_ORT_THREADS, ort)
             .putInt(KEY_TTS_NATASHA_ORT_THREADS, ort)
+            .putInt(KEY_TTS_CHATTERBOX_ORT_THREADS, ort)
             .putInt(KEY_TTS_SHERPA_NUM_THREADS, sh)
             .apply()
     }
 
-    /** System TTS pitch (1 = default). */
+    /** Тон системного TTS (1 = значение по умолчанию). */
     var ttsSystemPitch: Float
         get() = sharedPreferences.getFloat(KEY_TTS_SYSTEM_PITCH, 1.0f)
         set(value) = sharedPreferences.edit().putFloat(KEY_TTS_SYSTEM_PITCH, value).apply()
@@ -188,6 +293,335 @@ class SettingsRepository @Inject constructor(
             .putString(KEY_TTS_MODEL_ROOT_URI, value)
             .putString(KEY_TTS_ONNX_IMPORT_TREE_URI, value)
             .apply()
+
+    override fun isRiskyCapabilitiesEnabled(): Boolean =
+        sharedPreferences.getBoolean(KEY_RISKY_CAPABILITIES_ENABLED, true)
+
+    fun setRiskyCapabilitiesEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean(KEY_RISKY_CAPABILITIES_ENABLED, enabled).apply()
+    }
+
+    override fun isCapabilityEnabled(capability: Capability): Boolean =
+        sharedPreferences.getBoolean(capabilityEnabledKey(capability.id), capability.enabledByDefault)
+
+    fun setCapabilityEnabled(capabilityId: String, enabled: Boolean) {
+        sharedPreferences.edit().putBoolean(capabilityEnabledKey(capabilityId), enabled).apply()
+    }
+
+    private fun capabilityEnabledKey(capabilityId: String): String =
+        KEY_CAPABILITY_ENABLED_PREFIX + capabilityId.lowercase()
+
+    var sollServerUrl: String
+        get() = sharedPreferences.getString(KEY_SOLL_SERVER_URL, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_SERVER_URL, value.trim()).apply()
+
+    var sollAccessToken: String
+        get() = sharedPreferences.getString(KEY_SOLL_ACCESS_TOKEN, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_ACCESS_TOKEN, value.trim()).apply()
+
+    var sollSyncIntervalMinutes: Int
+        get() = sharedPreferences.getInt(KEY_SOLL_SYNC_INTERVAL_MINUTES, 60).coerceIn(5, 1440)
+        set(value) = sharedPreferences.edit()
+            .putInt(KEY_SOLL_SYNC_INTERVAL_MINUTES, value.coerceIn(5, 1440))
+            .apply()
+
+    var sollWifiOnlyUpload: Boolean
+        get() = sharedPreferences.getBoolean(KEY_SOLL_WIFI_ONLY_UPLOAD, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_SOLL_WIFI_ONLY_UPLOAD, value).apply()
+
+    var voiceRequiresUnlockedDevice: Boolean
+        get() = sharedPreferences.getBoolean(KEY_VOICE_REQUIRES_UNLOCKED_DEVICE, true)
+        set(value) = sharedPreferences.edit()
+            .putBoolean(KEY_VOICE_REQUIRES_UNLOCKED_DEVICE, value)
+            .apply()
+
+    var voiceRequiresHeadset: Boolean
+        get() = sharedPreferences.getBoolean(KEY_VOICE_REQUIRES_HEADSET, false)
+        set(value) = sharedPreferences.edit()
+            .putBoolean(KEY_VOICE_REQUIRES_HEADSET, value)
+            .apply()
+
+    var voiceLocalOnly: Boolean
+        get() = sharedPreferences.getBoolean(KEY_VOICE_LOCAL_ONLY, false)
+        set(value) = sharedPreferences.edit()
+            .putBoolean(KEY_VOICE_LOCAL_ONLY, value)
+            .apply()
+
+    var voiceWakePhraseRequired: Boolean
+        get() = sharedPreferences.getBoolean(KEY_VOICE_WAKE_PHRASE_REQUIRED, false)
+        set(value) = sharedPreferences.edit()
+            .putBoolean(KEY_VOICE_WAKE_PHRASE_REQUIRED, value)
+            .apply()
+
+    var musicResumeLastTrack: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_RESUME_LAST_TRACK, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_RESUME_LAST_TRACK, value).apply()
+
+    var musicPauseForTts: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_PAUSE_FOR_TTS, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_PAUSE_FOR_TTS, value).apply()
+
+    var musicStopTtsOnStart: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_STOP_TTS_ON_START, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_STOP_TTS_ON_START, value).apply()
+
+    var musicHeadsetControls: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_HEADSET_CONTROLS, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_HEADSET_CONTROLS, value).apply()
+
+    var musicAutoRescanOnOpen: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_AUTO_RESCAN_ON_OPEN, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_AUTO_RESCAN_ON_OPEN, value).apply()
+
+    var musicStrictAudioFilter: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_STRICT_AUDIO_FILTER, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_STRICT_AUDIO_FILTER, value).apply()
+
+    var musicShowBackgroundHints: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_SHOW_BACKGROUND_HINTS, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_SHOW_BACKGROUND_HINTS, value).apply()
+
+    var musicDefaultShuffle: Boolean
+        get() = sharedPreferences.getBoolean(KEY_MUSIC_DEFAULT_SHUFFLE, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_MUSIC_DEFAULT_SHUFFLE, value).apply()
+
+    var musicDefaultRepeatMode: MusicRepeatMode
+        get() = runCatching {
+            MusicRepeatMode.valueOf(
+                sharedPreferences.getString(KEY_MUSIC_DEFAULT_REPEAT_MODE, MusicRepeatMode.OFF.name)
+                    ?: MusicRepeatMode.OFF.name
+            )
+        }.getOrDefault(MusicRepeatMode.OFF)
+        set(value) = sharedPreferences.edit().putString(KEY_MUSIC_DEFAULT_REPEAT_MODE, value.name).apply()
+
+    fun getMusicSettings(): MusicSettings = MusicSettings(
+        resumeLastTrack = musicResumeLastTrack,
+        pauseMusicForTts = musicPauseForTts,
+        stopTtsOnMusicStart = musicStopTtsOnStart,
+        headsetControlsEnabled = musicHeadsetControls,
+        autoRescanOnOpen = musicAutoRescanOnOpen,
+        strictAudioFilter = musicStrictAudioFilter,
+        showBackgroundHints = musicShowBackgroundHints,
+        defaultShuffle = musicDefaultShuffle,
+        defaultRepeatMode = musicDefaultRepeatMode,
+    )
+
+    fun saveMusicSettings(settings: MusicSettings) {
+        sharedPreferences.edit()
+            .putBoolean(KEY_MUSIC_RESUME_LAST_TRACK, settings.resumeLastTrack)
+            .putBoolean(KEY_MUSIC_PAUSE_FOR_TTS, settings.pauseMusicForTts)
+            .putBoolean(KEY_MUSIC_STOP_TTS_ON_START, settings.stopTtsOnMusicStart)
+            .putBoolean(KEY_MUSIC_HEADSET_CONTROLS, settings.headsetControlsEnabled)
+            .putBoolean(KEY_MUSIC_AUTO_RESCAN_ON_OPEN, settings.autoRescanOnOpen)
+            .putBoolean(KEY_MUSIC_STRICT_AUDIO_FILTER, settings.strictAudioFilter)
+            .putBoolean(KEY_MUSIC_SHOW_BACKGROUND_HINTS, settings.showBackgroundHints)
+            .putBoolean(KEY_MUSIC_DEFAULT_SHUFFLE, settings.defaultShuffle)
+            .putString(KEY_MUSIC_DEFAULT_REPEAT_MODE, settings.defaultRepeatMode.name)
+            .apply()
+    }
+
+    var scannerDuplicatePolicy: ScannerDuplicatePolicy
+        get() = ScannerDuplicatePolicy.fromStorage(
+            sharedPreferences.getString(KEY_SCANNER_DUPLICATE_POLICY, null),
+        )
+        set(value) = sharedPreferences.edit()
+            .putString(KEY_SCANNER_DUPLICATE_POLICY, value.storageKey)
+            .apply()
+
+    fun getScannerSettings(): ScannerSettings = ScannerSettings(
+        duplicatePolicy = scannerDuplicatePolicy,
+    )
+
+    fun saveScannerSettings(settings: ScannerSettings) {
+        sharedPreferences.edit()
+            .putString(KEY_SCANNER_DUPLICATE_POLICY, settings.duplicatePolicy.storageKey)
+            .apply()
+    }
+
+    var noteAutoSync: Boolean
+        get() = sharedPreferences.getBoolean(KEY_NOTE_AUTO_SYNC, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_NOTE_AUTO_SYNC, value).apply()
+
+    var noteWifiOnly: Boolean
+        get() = sharedPreferences.getBoolean(KEY_NOTE_WIFI_ONLY, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_NOTE_WIFI_ONLY, value).apply()
+
+    var noteKeepLocalAfterSync: Boolean
+        get() = sharedPreferences.getBoolean(KEY_NOTE_KEEP_LOCAL_AFTER_SYNC, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_NOTE_KEEP_LOCAL_AFTER_SYNC, value).apply()
+
+    var noteDefaultTags: String
+        get() = sharedPreferences.getString(KEY_NOTE_DEFAULT_TAGS, "mobile, заметки") ?: "mobile, заметки"
+        set(value) = sharedPreferences.edit().putString(KEY_NOTE_DEFAULT_TAGS, value.trim()).apply()
+
+    fun getNoteSettings(): NoteSettings = NoteSettings(
+        autoSync = noteAutoSync,
+        wifiOnly = noteWifiOnly,
+        keepLocalAfterSync = noteKeepLocalAfterSync,
+        defaultTags = noteDefaultTags,
+    )
+
+    fun saveNoteSettings(settings: NoteSettings) {
+        sharedPreferences.edit()
+            .putBoolean(KEY_NOTE_AUTO_SYNC, settings.autoSync)
+            .putBoolean(KEY_NOTE_WIFI_ONLY, settings.wifiOnly)
+            .putBoolean(KEY_NOTE_KEEP_LOCAL_AFTER_SYNC, settings.keepLocalAfterSync)
+            .putString(KEY_NOTE_DEFAULT_TAGS, settings.defaultTags.trim())
+            .apply()
+    }
+
+    fun getDeviceAuthToken(deviceId: String): String =
+        sharedPreferences.getString(deviceAuthTokenKey(deviceId), "") ?: ""
+
+    fun setDeviceAuthToken(deviceId: String, token: String) {
+        val key = deviceAuthTokenKey(deviceId)
+        sharedPreferences.edit().apply {
+            if (token.isBlank()) {
+                remove(key)
+            } else {
+                putString(key, token.trim())
+            }
+        }.apply()
+    }
+
+    private fun deviceAuthTokenKey(deviceId: String): String =
+        KEY_DEVICE_AUTH_TOKEN_PREFIX + deviceId.lowercase()
+            .replace(Regex("[^a-z0-9_.:-]"), "_")
+
+    var proactiveSuggestionsEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_PROACTIVE_SUGGESTIONS_ENABLED, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_PROACTIVE_SUGGESTIONS_ENABLED, value).apply()
+
+    var proactiveSuggestionsDailyLimit: Int
+        get() = sharedPreferences.getInt(KEY_PROACTIVE_SUGGESTIONS_DAILY_LIMIT, 3).coerceIn(1, 6)
+        set(value) = sharedPreferences.edit()
+            .putInt(KEY_PROACTIVE_SUGGESTIONS_DAILY_LIMIT, value.coerceIn(1, 6))
+            .apply()
+
+    var proactiveSystemDeliveryEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_PROACTIVE_SYSTEM_DELIVERY_ENABLED, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_PROACTIVE_SYSTEM_DELIVERY_ENABLED, value).apply()
+
+    var proactiveTelegramDeliveryEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_PROACTIVE_TELEGRAM_DELIVERY_ENABLED, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_PROACTIVE_TELEGRAM_DELIVERY_ENABLED, value).apply()
+
+    fun isProactiveSuggestionSuppressed(suggestionId: String, nowMillis: Long): Boolean {
+        val cleanId = suggestionId.suggestionKey()
+        val snoozedUntil = sharedPreferences.getLong(KEY_PROACTIVE_SNOOZED_PREFIX + cleanId, 0L)
+        if (snoozedUntil > nowMillis) return true
+
+        val currentDay = nowMillis / DAY_MS
+        val dismissedAt = sharedPreferences.getLong(KEY_PROACTIVE_DISMISSED_PREFIX + cleanId, 0L)
+        if (dismissedAt > 0L && dismissedAt / DAY_MS == currentDay) return true
+
+        val acceptedAt = sharedPreferences.getLong(KEY_PROACTIVE_ACCEPTED_PREFIX + cleanId, 0L)
+        return acceptedAt > 0L && acceptedAt / DAY_MS == currentDay
+    }
+
+    fun recordProactiveSuggestionFeedback(
+        suggestionId: String,
+        feedback: ProactiveSuggestionFeedback,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        val cleanId = suggestionId.suggestionKey()
+        sharedPreferences.edit().apply {
+            when (feedback) {
+                ProactiveSuggestionFeedback.ACCEPTED -> {
+                    putLong(KEY_PROACTIVE_ACCEPTED_PREFIX + cleanId, nowMillis)
+                    remove(KEY_PROACTIVE_SNOOZED_PREFIX + cleanId)
+                }
+                ProactiveSuggestionFeedback.DISMISSED -> {
+                    putLong(KEY_PROACTIVE_DISMISSED_PREFIX + cleanId, nowMillis)
+                    remove(KEY_PROACTIVE_SNOOZED_PREFIX + cleanId)
+                }
+                ProactiveSuggestionFeedback.SNOOZED -> {
+                    putLong(KEY_PROACTIVE_SNOOZED_PREFIX + cleanId, nowMillis + SUGGESTION_SNOOZE_MS)
+                }
+            }
+        }.apply()
+    }
+
+    fun shouldDeliverProactiveSuggestion(
+        suggestionId: String,
+        deliveryTarget: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val key = proactiveDeliveryKey(suggestionId, deliveryTarget)
+        val currentDay = nowMillis / DAY_MS
+        val deliveredAt = sharedPreferences.getLong(key, 0L)
+        return deliveredAt == 0L || deliveredAt / DAY_MS != currentDay
+    }
+
+    fun recordProactiveSuggestionDelivered(
+        suggestionId: String,
+        deliveryTarget: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        sharedPreferences.edit()
+            .putLong(proactiveDeliveryKey(suggestionId, deliveryTarget), nowMillis)
+            .apply()
+    }
+
+    private fun String.suggestionKey(): String =
+        lowercase().replace(Regex("[^a-z0-9_.:-]"), "_")
+
+    private fun proactiveDeliveryKey(suggestionId: String, deliveryTarget: String): String =
+        KEY_PROACTIVE_DELIVERED_PREFIX + deliveryTarget.suggestionKey() + "_" + suggestionId.suggestionKey()
+
+    var assistantMemoryEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_ASSISTANT_MEMORY_ENABLED, true)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_ASSISTANT_MEMORY_ENABLED, value).apply()
+
+    fun getDeviceQaManualResult(id: DeviceQaCheckId): DeviceQaManualResult? {
+        val status = sharedPreferences.getString(deviceQaStatusKey(id), null)
+            ?.let { runCatching { DeviceQaStatus.valueOf(it) }.getOrNull() }
+            ?: return null
+        if (status != DeviceQaStatus.MANUAL_OK && status != DeviceQaStatus.MANUAL_PROBLEM) return null
+        val checkedAt = sharedPreferences.getLong(deviceQaCheckedAtKey(id), 0L)
+        if (checkedAt <= 0L) return null
+        val deviceSummary = sharedPreferences.getString(deviceQaDeviceKey(id), null)
+            ?.takeIf { it.isNotBlank() }
+        return DeviceQaManualResult(
+            status = status,
+            checkedAt = checkedAt,
+            deviceSummary = deviceSummary,
+        )
+    }
+
+    fun setDeviceQaManualResult(id: DeviceQaCheckId, result: DeviceQaManualResult) {
+        sharedPreferences.edit()
+            .putString(deviceQaStatusKey(id), result.status.name)
+            .putLong(deviceQaCheckedAtKey(id), result.checkedAt)
+            .putString(deviceQaDeviceKey(id), result.deviceSummary.orEmpty())
+            .apply()
+    }
+
+    fun clearDeviceQaManualResult(id: DeviceQaCheckId) {
+        sharedPreferences.edit()
+            .remove(deviceQaStatusKey(id))
+            .remove(deviceQaCheckedAtKey(id))
+            .remove(deviceQaDeviceKey(id))
+            .apply()
+    }
+
+    private fun deviceQaStatusKey(id: DeviceQaCheckId): String =
+        KEY_DEVICE_QA_STATUS_PREFIX + id.storageKey
+
+    private fun deviceQaCheckedAtKey(id: DeviceQaCheckId): String =
+        KEY_DEVICE_QA_CHECKED_AT_PREFIX + id.storageKey
+
+    private fun deviceQaDeviceKey(id: DeviceQaCheckId): String =
+        KEY_DEVICE_QA_DEVICE_PREFIX + id.storageKey
+
+    private fun readAppThemeVariant(): String =
+        normalizeAppThemeVariant(sharedPreferences.getString(KEY_APP_THEME_VARIANT, DEFAULT_APP_THEME_VARIANT))
+
+    private fun normalizeAppThemeVariant(value: String?): String =
+        when (value) {
+            "classic", "aurora", "aquik" -> value
+            else -> DEFAULT_APP_THEME_VARIANT
+        }
 
     // Bot configs from database
     fun getAllBotConfigs(): Flow<List<BotConfigEntity>> = botConfigDao.getAllConfigs()
@@ -229,7 +663,7 @@ class SettingsRepository @Inject constructor(
     }
 
     fun hasValidToken(): Boolean {
-        return !botToken.isNullOrBlank() && botToken!!.contains(":")
+        return botToken?.takeIf { it.isNotBlank() }?.contains(":") == true
     }
 
     fun validateToken(token: String): Boolean {

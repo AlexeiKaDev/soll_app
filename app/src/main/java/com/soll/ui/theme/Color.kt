@@ -2,16 +2,16 @@ package com.soll.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary - Telegram Blue
-val Primary = Color(0xFF0088CC)
-val PrimaryLight = Color(0xFF5AB8FF)
-val PrimaryDark = Color(0xFF005B9A)
+// Primary - Soll green
+val Primary = Color(0xFF247A52)
+val PrimaryLight = Color(0xFF4CAF7A)
+val PrimaryDark = Color(0xFF0F5132)
 val OnPrimary = Color.White
 
-// Secondary - Teal (from IVARO)
-val Secondary = Color(0xFF006A67)
-val SecondaryLight = Color(0xFF4A9996)
-val SecondaryDark = Color(0xFF003D3B)
+// Secondary - Soll green
+val Secondary = Color(0xFF247A52)
+val SecondaryLight = Color(0xFF4CAF7A)
+val SecondaryDark = Color(0xFF0F5132)
 val OnSecondary = Color.White
 
 // Tertiary
@@ -45,10 +45,10 @@ val StatusRunning = Color(0xFF4CAF50)
 val StatusStopped = Color(0xFF9E9E9E)
 val StatusError = Color(0xFFE53935)
 
-val PrimaryContainer = Color(0xFFD0ECFF)
-val OnPrimaryContainer = Color(0xFF001D31)
-val SecondaryContainer = Color(0xFFB5F1EC)
-val OnSecondaryContainer = Color(0xFF00201E)
+val PrimaryContainer = Color(0xFFDCE8C7)
+val OnPrimaryContainer = Color(0xFF10380F)
+val SecondaryContainer = Color(0xFFDCE8C7)
+val OnSecondaryContainer = Color(0xFF10380F)
 val TertiaryContainer = Color(0xFFD3E4FF)
 val OnTertiaryContainer = Color(0xFF041C35)
 val ErrorContainer = Color(0xFFFFDAD6)
@@ -60,14 +60,14 @@ val InverseSurface = Color(0xFF2F3033)
 val InversePrimary = PrimaryLight
 val OnSurfaceVariant = Color(0xFF44474D)
 
-val DarkPrimary = Color(0xFF8DCDFF)
-val DarkOnPrimary = Color(0xFF003351)
-val DarkPrimaryContainer = Color(0xFF004B74)
-val DarkOnPrimaryContainer = Color(0xFFD0ECFF)
-val DarkSecondary = Color(0xFF80D4CE)
-val DarkOnSecondary = Color(0xFF003735)
-val DarkSecondaryContainer = Color(0xFF004F4C)
-val DarkOnSecondaryContainer = Color(0xFFB5F1EC)
+val DarkPrimary = Color(0xFF7FD9A3)
+val DarkOnPrimary = Color(0xFF00391E)
+val DarkPrimaryContainer = Color(0xFF145A38)
+val DarkOnPrimaryContainer = Color(0xFFC9F3D6)
+val DarkSecondary = Color(0xFF7FD9A3)
+val DarkOnSecondary = Color(0xFF00391E)
+val DarkSecondaryContainer = Color(0xFF145A38)
+val DarkOnSecondaryContainer = Color(0xFFC9F3D6)
 val DarkTertiary = Color(0xFFB3C8EA)
 val DarkOnTertiary = Color(0xFF1B314B)
 val DarkTertiaryContainer = Color(0xFF334863)
@@ -135,3 +135,50 @@ val md_theme_dark_outline = DarkOutline
 val md_theme_dark_inverseOnSurface = DarkInverseOnSurface
 val md_theme_dark_inverseSurface = DarkInverseSurface
 val md_theme_dark_inversePrimary = DarkInversePrimary
+
+val AuroraDarkPrimary = Color(0xFF8AE36B)
+val AuroraDarkOnPrimary = Color(0xFF0A2A12)
+val AuroraDarkPrimaryContainer = Color(0xFF1D5A2A)
+val AuroraDarkOnPrimaryContainer = Color(0xFFD8FFD0)
+val AuroraDarkSecondary = Color(0xFFFFC857)
+val AuroraDarkOnSecondary = Color(0xFF382900)
+val AuroraDarkSecondaryContainer = Color(0xFF604500)
+val AuroraDarkOnSecondaryContainer = Color(0xFFFFE4A8)
+val AuroraDarkTertiary = Color(0xFF8EC5FF)
+val AuroraDarkOnTertiary = Color(0xFF003256)
+val AuroraDarkTertiaryContainer = Color(0xFF174C75)
+val AuroraDarkOnTertiaryContainer = Color(0xFFD0E7FF)
+val AuroraDarkBackground = Color(0xFF0D1110)
+val AuroraDarkOnBackground = Color(0xFFE6EFE8)
+val AuroraDarkSurface = Color(0xFF121917)
+val AuroraDarkOnSurface = Color(0xFFE6EFE8)
+val AuroraDarkSurfaceVariant = Color(0xFF2A332F)
+val AuroraDarkOnSurfaceVariant = Color(0xFFC4D0C6)
+val AuroraDarkOutline = Color(0xFF8A958C)
+val AuroraDarkInverseOnSurface = Color(0xFF0D1110)
+val AuroraDarkInverseSurface = Color(0xFFE6EFE8)
+val AuroraDarkInversePrimary = Color(0xFF247A52)
+
+// Aquik dark theme, copied from the Compose AquikTheme palette.
+val AquikDarkPrimary = Color(0xFF4DDAD5)
+val AquikDarkOnPrimary = Color(0xFF003735)
+val AquikDarkPrimaryContainer = Color(0xFF00504D)
+val AquikDarkOnPrimaryContainer = Color(0xFF6FF7F2)
+val AquikDarkSecondary = Color(0xFFB0CCCA)
+val AquikDarkOnSecondary = Color(0xFF1B3534)
+val AquikDarkSecondaryContainer = Color(0xFF324B4A)
+val AquikDarkOnSecondaryContainer = Color(0xFFCCE8E6)
+val AquikDarkTertiary = Color(0xFFB5C7E9)
+val AquikDarkOnTertiary = Color(0xFF1E314B)
+val AquikDarkTertiaryContainer = Color(0xFF354863)
+val AquikDarkOnTertiaryContainer = Color(0xFFD3E4FF)
+val AquikDarkBackground = Color(0xFF191C1C)
+val AquikDarkOnBackground = Color(0xFFE0E3E2)
+val AquikDarkSurface = Color(0xFF191C1C)
+val AquikDarkOnSurface = Color(0xFFE0E3E2)
+val AquikDarkSurfaceVariant = Color(0xFF3F4948)
+val AquikDarkOnSurfaceVariant = Color(0xFFBEC9C7)
+val AquikDarkOutline = Color(0xFF889391)
+val AquikDarkInverseOnSurface = Color(0xFF191C1C)
+val AquikDarkInverseSurface = Color(0xFFE0E3E2)
+val AquikDarkInversePrimary = Color(0xFF006A67)

@@ -726,7 +726,7 @@ class KokoroOnnxTtsEngine @Inject constructor(
         }
     }
 
-    private fun playAudio(data: FloatArray) {
+    private suspend fun playAudio(data: FloatArray) {
         val shorts = ShortArray(data.size) { i ->
             (data[i] * Short.MAX_VALUE).toInt().coerceIn(
                 Short.MIN_VALUE.toInt(),
@@ -745,19 +745,22 @@ class KokoroOnnxTtsEngine @Inject constructor(
             .setBufferSizeInBytes(shorts.size * 2)
             .setTransferMode(AudioTrack.MODE_STATIC).build()
         audioTrack = track
-        track.write(shorts, 0, shorts.size)
-        track.play()
-        val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
-        var elapsed = 0L
-        while (elapsed < totalMs && !isPaused && (playbackJob?.isActive != false)) {
-            val step = minOf(20L, totalMs - elapsed)
-            Thread.sleep(step)
-            elapsed += step
-        }
         try {
-            track.stop()
-            track.release()
-        } catch (_: Exception) {
+            track.write(shorts, 0, shorts.size)
+            track.play()
+            val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
+            var elapsed = 0L
+            while (elapsed < totalMs && !isPaused && (playbackJob?.isActive != false)) {
+                val step = minOf(20L, totalMs - elapsed)
+                delay(step)
+                elapsed += step
+            }
+        } finally {
+            runCatching {
+                track.stop()
+                track.release()
+            }
+            if (audioTrack == track) audioTrack = null
         }
     }
 

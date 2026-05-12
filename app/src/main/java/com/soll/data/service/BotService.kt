@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
@@ -46,6 +45,7 @@ class BotService : Service() {
 
     companion object {
         private const val WAKELOCK_TAG = "Soll::BotServiceWakeLock"
+        private const val STARTUP_WAKELOCK_MS = 60_000L
         private const val ACTION_STOP = "com.soll.ACTION_STOP"
 
         val isRunning: StateFlow<Boolean> get() = _instance?._isRunning?.asStateFlow() ?: MutableStateFlow(false)
@@ -61,12 +61,7 @@ class BotService : Service() {
             private set
 
         fun start(context: Context) {
-            val intent = Intent(context, BotService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startForegroundService(Intent(context, BotService::class.java))
         }
 
         fun stop(context: Context) {
@@ -91,13 +86,12 @@ class BotService : Service() {
         // Start as foreground service immediately
         startForeground(SollApplication.NOTIFICATION_ID, createNotification())
 
-        // Acquire wake lock
-        acquireWakeLock()
+        acquireStartupWakeLock()
 
         // Start polling
         startPolling()
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -105,6 +99,7 @@ class BotService : Service() {
     override fun onDestroy() {
         Timber.d("BotService onDestroy")
         stopPolling()
+        serviceScope.cancel()
         releaseWakeLock()
         _isRunning.value = false
         settingsRepository.isServiceRunning = false
@@ -114,15 +109,6 @@ class BotService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         Timber.d("BotService onTaskRemoved")
-        // Restart service if it was running
-        if (settingsRepository.autoStartEnabled) {
-            val restartIntent = Intent(this, BotService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(restartIntent)
-            } else {
-                startService(restartIntent)
-            }
-        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -134,7 +120,7 @@ class BotService : Service() {
 
         if (!settingsRepository.hasValidToken()) {
             Timber.e("No valid bot token")
-            lastError = "No valid bot token configured"
+            lastError = "Токен бота не задан или имеет неверный формат"
             stopSelf()
             return
         }
@@ -151,10 +137,10 @@ class BotService : Service() {
             // Verify bot token first
             val botInfoResult = telegramRepository.getMe()
             if (botInfoResult.isFailure) {
-                lastError = "Invalid bot token: ${botInfoResult.exceptionOrNull()?.message}"
+                lastError = "Токен бота не прошел проверку: ${botInfoResult.exceptionOrNull()?.message}"
                 Timber.e("Failed to verify bot: $lastError")
                 withContext(Dispatchers.Main) {
-                    updateNotification("Error: $lastError")
+                    updateNotification("Ошибка: $lastError")
                 }
                 delay(30000) // Wait before retry
             }
@@ -167,6 +153,7 @@ class BotService : Service() {
                 onSuccess = { Timber.d("deleteWebhook: ok (long polling mode)") },
                 onFailure = { Timber.w(it, "deleteWebhook failed; getUpdates may return 409 if webhook is set") },
             )
+            releaseWakeLock()
 
             while (isActive) {
                 try {
@@ -189,7 +176,7 @@ class BotService : Service() {
                             lastError = error.message
                             Timber.e(error, "Failed to get updates")
                             withContext(Dispatchers.Main) {
-                                updateNotification("Error: ${error.message}")
+                                updateNotification("Ошибка: ${error.message}")
                             }
                             if (error is HttpException && error.code() == 409) {
                                 Timber.w("409 Conflict: clearing webhook / retrying (also check no second bot instance)")
@@ -214,7 +201,6 @@ class BotService : Service() {
     private fun stopPolling() {
         pollingJob?.cancel()
         pollingJob = null
-        serviceScope.cancel()
     }
 
     private suspend fun processUpdates(updates: List<Update>) {
@@ -236,7 +222,7 @@ class BotService : Service() {
 
         // Update notification with message count
         withContext(Dispatchers.Main) {
-            updateNotification("Messages: $messagesProcessed")
+            updateNotification("Сообщений: $messagesProcessed")
         }
     }
 
@@ -259,68 +245,55 @@ class BotService : Service() {
         }
     }
 
-    private fun createNotification(): Notification {
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val stopIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, BotService::class.java).apply { action = ACTION_STOP },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
+    private fun createNotification(text: String = getString(R.string.notification_text)): Notification {
         return NotificationCompat.Builder(this, SollApplication.NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(pendingIntent)
-            .addAction(R.drawable.ic_stop, "Stop", stopIntent)
+            .setContentIntent(contentPendingIntent())
+            .addAction(R.drawable.ic_stop, "Стоп", stopPendingIntent())
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
-    private fun updateNotification(text: String) {
-        val notification = NotificationCompat.Builder(this, SollApplication.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(
-                PendingIntent.getActivity(
-                    this,
-                    0,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+    private fun contentPendingIntent(): PendingIntent =
+        PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
+    private fun stopPendingIntent(): PendingIntent =
+        PendingIntent.getService(
+            this,
+            1,
+            Intent(this, BotService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+    private fun updateNotification(text: String) {
         try {
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-            notificationManager.notify(SollApplication.NOTIFICATION_ID, notification)
+            notificationManager.notify(SollApplication.NOTIFICATION_ID, createNotification(text))
         } catch (e: Exception) {
             Timber.e(e, "Failed to update notification")
         }
     }
 
-    private fun acquireWakeLock() {
+    private fun acquireStartupWakeLock() {
         if (wakeLock == null) {
             val powerManager = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 WAKELOCK_TAG
             ).apply {
-                acquire(10 * 60 * 1000L) // 10 minutes, will be refreshed
+                setReferenceCounted(false)
+                acquire(STARTUP_WAKELOCK_MS)
             }
-            Timber.d("WakeLock acquired")
+            Timber.d("Startup WakeLock acquired")
         }
     }
 

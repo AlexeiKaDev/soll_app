@@ -14,19 +14,19 @@ class LogsHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "logs"
-    override val description = "Show recent command logs"
+    override val description = "Показать последние логи команд"
 
     override suspend fun execute(message: Message, args: String?) {
         val logs = telegramRepository.getCommandLogs(20).first()
-        val dateFormat = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+        val dateFormat = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
 
         if (logs.isEmpty()) {
-            reply(message, "No command logs yet.")
+            reply(message, "Логов команд пока нет.")
             return
         }
 
         val text = buildString {
-            append("<b>Recent Commands</b>\n\n")
+            append("<b>Последние команды</b>\n\n")
 
             logs.forEach { log ->
                 val date = dateFormat.format(Date(log.executedAt))
@@ -38,9 +38,9 @@ class LogsHandler(
                 append("$status <code>/${log.command}</code>")
                 log.args?.let { append(" $it") }
                 append("\n   $date")
-                log.executionTimeMs?.let { append(" (${it}ms)") }
+                log.executionTimeMs?.let { append(" (${it} мс)") }
                 if (log.status == "error" && log.errorMessage != null) {
-                    append("\n   Error: ${log.errorMessage.take(50)}")
+                    append("\n   Ошибка: ${log.errorMessage.take(50)}")
                 }
                 append("\n\n")
             }

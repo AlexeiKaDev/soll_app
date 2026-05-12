@@ -14,7 +14,9 @@ import com.soll.domain.tts.catalog.DetectedTtsPack
 import com.soll.domain.tts.catalog.TtsPackLibrary
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -76,14 +78,13 @@ class SileroJitEngine @Inject constructor(
     private var mergeTotalCap = 360
     private var selectedPackId: String? = null
     private var activeSignature: String? = null
+    private var prosodyPreset: PiperProsodyPreset = PiperProsodyPreset.DEFAULT
 
     companion object {
         private const val MIN_MODEL_BYTES = 1_000_000L
         private const val MAX_RECOVERY_SPLIT_DEPTH = 3
         private const val MIN_RECOVERY_CHUNK_CHARS = 36
         private const val MIN_RECOVERY_SIDE_CHARS = 18
-        private const val PIPER_MAX_MERGE_SHORT = 180
-        private const val PIPER_MAX_MERGE_TOTAL = 300
         private const val CHUNK_PREVIEW_LIMIT = 88
 
         private val VOICE_LABELS = mapOf(
@@ -91,6 +92,7 @@ class SileroJitEngine @Inject constructor(
             "denis" to "Денис (м)",
             "dmitri" to "Дмитрий (м)",
             "ruslan" to "Руслан (м)",
+            "burunov" to "Бурунов (м)",
         )
 
         private val PARAGRAPH_SEPARATOR_REGEX = Regex("""\n{2,}""")
@@ -133,6 +135,15 @@ class SileroJitEngine @Inject constructor(
         val audio: FloatArray? = null,
         val durationMs: Long,
         val errorMessage: String? = null,
+        val fromPrefetch: Boolean = false,
+        val prefetchWaitMs: Long? = null,
+    )
+
+    private data class PrefetchedChunk(
+        val index: Int,
+        val sessionId: Long,
+        val chunk: SentenceInfo,
+        val generation: Deferred<GenerationAttempt>,
     )
 
     private data class RecoverySplit(
@@ -152,6 +163,22 @@ class SileroJitEngine @Inject constructor(
     }
 
     fun getSherpaNumThreads(): Int = sherpaNumThreads
+
+    fun getProsodyPreset(): PiperProsodyPreset = prosodyPreset
+
+    fun applyProsodyPreset(preset: PiperProsodyPreset) {
+        if (preset == prosodyPreset) return
+        prosodyPreset = preset
+        _diagnostics.update {
+            it.copy(
+                prosodyPresetKey = preset.storageKey,
+                prosodyPresetLabel = preset.displayName,
+                noiseScale = preset.noiseScale,
+                noiseScaleW = preset.noiseScaleW,
+            )
+        }
+        invalidateRuntime()
+    }
 
     fun applySherpaNumThreads(value: Float) {
         applySherpaNumThreadsInternal(value.roundToInt())
@@ -176,7 +203,10 @@ class SileroJitEngine @Inject constructor(
         setSelectedPackId(pack.packId)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun setUseV5(enabled: Boolean) {}
+
+    @Suppress("UNUSED_PARAMETER")
     fun setV5SpeakerId(id: Int) {}
 
     fun setSelectedPackId(packId: String?) {
@@ -188,19 +218,19 @@ class SileroJitEngine @Inject constructor(
 
     suspend fun initialize(): TtsPrepareResult = withContext(Dispatchers.IO) {
         val pack = resolveUsablePack()
-            ?: return@withContext failedPrepare("Не найден полный Piper/Sherpa pack в локальной папке tts")
+            ?: return@withContext failedPrepare("Не найден полный Piper/Sherpa-пакет в локальной папке tts")
 
         val root = File(pack.rootDir)
         val tokensFile = File(root, "tokens.txt")
         val dataDir = File(root, "espeak-ng-data")
         if (!tokensFile.exists()) {
-            return@withContext failedPrepare("В Piper pack нет tokens.txt", root.absolutePath)
+            return@withContext failedPrepare("В Piper-пакете нет tokens.txt", root.absolutePath)
         }
         if (!dataDir.isDirectory) {
-            return@withContext failedPrepare("В Piper pack нет espeak-ng-data", root.absolutePath)
+            return@withContext failedPrepare("В Piper-пакете нет espeak-ng-data", root.absolutePath)
         }
         val modelFile = resolveVoiceModelFile(root)
-            ?: return@withContext failedPrepare("Не найден ONNX-файл Piper в выбранном pack", root.absolutePath)
+            ?: return@withContext failedPrepare("Не найден ONNX-файл Piper в выбранном пакете", root.absolutePath)
         if (modelFile.length() < MIN_MODEL_BYTES) {
             return@withContext failedPrepare(
                 "ONNX-файл Piper слишком маленький: ${modelFile.name}",
@@ -211,7 +241,8 @@ class SileroJitEngine @Inject constructor(
         val resolvedVoiceId = pack.voices.firstOrNull()?.id ?: detectVoiceId(modelFile)
         val resolvedVoiceLabel = pack.voices.firstOrNull()?.label ?: resolvedVoiceId?.let(::voiceLabel) ?: modelFile.name
 
-        val signature = "${root.absolutePath}|${modelFile.absolutePath}|$sherpaNumThreads"
+        val preset = prosodyPreset
+        val signature = "${root.absolutePath}|${modelFile.absolutePath}|$sherpaNumThreads|${preset.storageKey}"
         try {
             if (tts == null || activeSignature != signature) {
                 stop()
@@ -222,6 +253,9 @@ class SileroJitEngine @Inject constructor(
                             model = modelFile.absolutePath,
                             tokens = tokensFile.absolutePath,
                             dataDir = dataDir.absolutePath,
+                            noiseScale = preset.noiseScale,
+                            noiseScaleW = preset.noiseScaleW,
+                            lengthScale = preset.lengthScale,
                         ),
                         numThreads = sherpaNumThreads,
                         debug = false,
@@ -237,16 +271,23 @@ class SileroJitEngine @Inject constructor(
                     packId = pack.packId,
                     voiceId = resolvedVoiceId,
                     voiceLabel = resolvedVoiceLabel,
+                    prosodyPresetKey = preset.storageKey,
+                    prosodyPresetLabel = preset.displayName,
+                    noiseScale = preset.noiseScale,
+                    noiseScaleW = preset.noiseScaleW,
                     speechRate = speechRate,
                     sherpaThreads = sherpaNumThreads,
                 )
             }
             Timber.d(
-                "Piper/Sherpa ready: model=%s voice=%s sampleRate=%d threads=%d selectedPack=%s",
+                "Piper/Sherpa ready: model=%s voice=%s sampleRate=%d threads=%d preset=%s noise=%.3f noiseW=%.3f selectedPack=%s",
                 modelFile.absolutePath,
                 resolvedVoiceLabel,
                 sampleRate,
                 sherpaNumThreads,
+                preset.storageKey,
+                preset.noiseScale,
+                preset.noiseScaleW,
                 pack.packId,
             )
             TtsPrepareResult(
@@ -269,13 +310,21 @@ class SileroJitEngine @Inject constructor(
         chapterFinishedCallback = onChapterFinished
         playbackSessionId++
         resetDiagnosticsForSession(sentences.size)
+        val tuning = currentVoiceTuning()
         Timber.d(
-            "Piper speakChapter: chunks=%d pack=%s voice=%s rate=%.2f threads=%d",
+            "Piper speakChapter: chunks=%d pack=%s voice=%s rate=%.2f threads=%d preset=%s noise=%.3f noiseW=%.3f merge=%d/%d pause=%d/%d",
             sentences.size,
             diagnostics.value.packId,
             diagnostics.value.voiceLabel,
             speechRate,
             sherpaNumThreads,
+            prosodyPreset.storageKey,
+            prosodyPreset.noiseScale,
+            prosodyPreset.noiseScaleW,
+            tuning.mergeShortCap,
+            tuning.mergeTotalCap,
+            tuning.sentencePauseMs,
+            tuning.paragraphPauseMs,
         )
         resume()
     }
@@ -290,25 +339,93 @@ class SileroJitEngine @Inject constructor(
         _isSpeaking.value = true
 
         playbackJob = launch(Dispatchers.IO) {
+            var pendingPrefetch: PrefetchedChunk? = null
+
+            fun startPrefetch(index: Int): PrefetchedChunk? {
+                if (index >= sentences.size || !canContinue(sessionId)) return null
+                val chunk = sentences[index]
+                Timber.d(
+                    "Piper prefetch start: idx=%d chars=%d preview=%s",
+                    index,
+                    chunk.text.length,
+                    previewText(chunk.text),
+                )
+                _diagnostics.update { it.copy(prefetchQueuedIndex = index + 1) }
+                return PrefetchedChunk(
+                    index = index,
+                    sessionId = sessionId,
+                    chunk = chunk,
+                    generation = async(Dispatchers.IO) { generateAudio(chunk, index) },
+                )
+            }
+
             try {
                 while (currentSentenceIndex < sentences.size && isActive && !isPaused && sessionId == playbackSessionId) {
+                    val chunkIndex = currentSentenceIndex
                     val sentence = sentences[currentSentenceIndex]
+                    val prefetched = pendingPrefetch?.takeIf {
+                        it.index == chunkIndex && it.sessionId == sessionId && it.chunk == sentence
+                    }
+                    if (prefetched == null) {
+                        pendingPrefetch?.generation?.cancel()
+                    }
+                    pendingPrefetch = null
+
+                    val attempt = if (prefetched != null) {
+                        val waitStartedAt = SystemClock.elapsedRealtime()
+                        val result = prefetched.generation.await()
+                        val waitMs = SystemClock.elapsedRealtime() - waitStartedAt
+                        Timber.d(
+                            "Piper prefetch hit: idx=%d waitMs=%d genMs=%d audio=%s preview=%s",
+                            chunkIndex,
+                            waitMs,
+                            result.durationMs,
+                            result.audio?.size ?: 0,
+                            previewText(sentence.text),
+                        )
+                        _diagnostics.update {
+                            it.copy(
+                                prefetchHits = it.prefetchHits + 1,
+                                prefetchQueuedIndex = null,
+                            )
+                        }
+                        result.copy(fromPrefetch = true, prefetchWaitMs = waitMs)
+                    } else {
+                        generateAudio(sentence, chunkIndex)
+                    }
+
+                    var nextPrefetch: PrefetchedChunk? = null
+                    fun startNextPrefetchOnce() {
+                        if (nextPrefetch == null) {
+                            nextPrefetch = startPrefetch(chunkIndex + 1)
+                        }
+                    }
+
                     val outcome = playChunkWithRecovery(
                         chunk = sentence,
-                        chunkIndex = currentSentenceIndex,
+                        chunkIndex = chunkIndex,
                         sessionId = sessionId,
+                        precomputedAttempt = attempt,
+                        onAudioReady = ::startNextPrefetchOnce,
                     )
                     when (outcome.status) {
                         ChunkPlayStatus.SUCCESS -> {
                             recordChunkSuccess(outcome.usedRecovery)
                             if (!isPaused && sessionId == playbackSessionId) {
                                 currentSentenceIndex++
+                                pendingPrefetch = nextPrefetch
+                            } else {
+                                nextPrefetch?.generation?.cancel()
                             }
                         }
 
-                        ChunkPlayStatus.INTERRUPTED -> break
+                        ChunkPlayStatus.INTERRUPTED -> {
+                            nextPrefetch?.generation?.cancel()
+                            break
+                        }
 
                         ChunkPlayStatus.FAILED -> {
+                            nextPrefetch?.generation?.cancel()
                             val failure = outcome.failure ?: buildPlaybackFailure(
                                 message = "Не удалось озвучить фрагмент",
                                 chunk = sentence,
@@ -343,6 +460,9 @@ class SileroJitEngine @Inject constructor(
                 }
                 _isSpeaking.value = false
                 _currentWordRange.value = null
+            } finally {
+                pendingPrefetch?.generation?.cancel()
+                _diagnostics.update { it.copy(prefetchQueuedIndex = null) }
             }
         }
     }
@@ -351,20 +471,24 @@ class SileroJitEngine @Inject constructor(
         chunk: SentenceInfo,
         chunkIndex: Int,
         sessionId: Long,
+        precomputedAttempt: GenerationAttempt? = null,
+        onAudioReady: (() -> Unit)? = null,
     ): ChunkPlayOutcome {
         if (!canContinue(sessionId)) return ChunkPlayOutcome(ChunkPlayStatus.INTERRUPTED)
 
         markChunkAttempt(chunk)
         _currentWordRange.value = chunk.range()
 
-        val attempt = generateAudio(chunk, chunkIndex)
+        val attempt = precomputedAttempt ?: generateAudio(chunk, chunkIndex)
+        recordChunkGeneration(chunk, attempt)
         val audio = attempt.audio
         if (audio != null && audio.isNotEmpty()) {
             if (!canContinue(sessionId)) return ChunkPlayOutcome(ChunkPlayStatus.INTERRUPTED)
+            onAudioReady?.invoke()
             val fullyPlayed = coroutineScope {
                 val wordJob = launch(Dispatchers.IO) { trackWordsInSentence(chunk, audio.size) }
                 try {
-                    playAudioBlocking(audio, sessionId)
+                    playAudio(audio, sessionId)
                 } finally {
                     wordJob.cancel()
                 }
@@ -520,7 +644,7 @@ class SileroJitEngine @Inject constructor(
         }
     }
 
-    private fun playAudioBlocking(audioData: FloatArray, sessionId: Long): Boolean {
+    private suspend fun playAudio(audioData: FloatArray, sessionId: Long): Boolean {
         val shorts = ShortArray(audioData.size) { i ->
             (audioData[i] * Short.MAX_VALUE).toInt()
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
@@ -545,21 +669,23 @@ class SileroJitEngine @Inject constructor(
             .build()
 
         audioTrack = track
-        track.write(shorts, 0, shorts.size)
-        track.play()
-        val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
         var elapsed = 0L
-        while (elapsed < totalMs && canContinue(sessionId)) {
-            val step = minOf(20L, totalMs - elapsed)
-            Thread.sleep(step)
-            elapsed += step
-        }
+        val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
         try {
-            track.stop()
-            track.release()
-        } catch (_: Exception) {
+            track.write(shorts, 0, shorts.size)
+            track.play()
+            while (elapsed < totalMs && canContinue(sessionId)) {
+                val step = minOf(20L, totalMs - elapsed)
+                delay(step)
+                elapsed += step
+            }
+        } finally {
+            runCatching {
+                track.stop()
+                track.release()
+            }
+            if (audioTrack == track) audioTrack = null
         }
-        audioTrack = null
         return elapsed >= totalMs && canContinue(sessionId)
     }
 
@@ -629,6 +755,7 @@ class SileroJitEngine @Inject constructor(
         return VOICE_LABELS.keys.firstOrNull { voiceId ->
             name.contains("-$voiceId-") ||
                 name.endsWith("-$voiceId-medium") ||
+                name.endsWith("-$voiceId-high") ||
                 name.endsWith(voiceId)
         }
     }
@@ -701,7 +828,7 @@ class SileroJitEngine @Inject constructor(
                     rawText = fullText.substring(paragraphStart + localStart, paragraphStart + localEnd),
                     isParagraphEnd = false,
                 ),
-            )?.let(chunks::add)
+            )?.let { chunks += splitLargeChunk(it) }
             localStart = localEnd
         }
         if (localStart < paragraph.length) {
@@ -713,9 +840,74 @@ class SileroJitEngine @Inject constructor(
                     rawText = fullText.substring(paragraphStart + localStart, paragraphEndExclusive),
                     isParagraphEnd = true,
                 ),
-            )?.let(chunks::add)
+            )?.let { chunks += splitLargeChunk(it) }
         }
         return chunks
+    }
+
+    private fun splitLargeChunk(chunk: SentenceInfo): List<SentenceInfo> {
+        val maxChars = currentVoiceTuning().mergeTotalCap.coerceIn(120, 260)
+        if (chunk.text.length <= maxChars) return listOf(chunk)
+
+        val raw = chunk.rawText
+        val result = mutableListOf<SentenceInfo>()
+        var cursor = 0
+        while (cursor < raw.length) {
+            val remaining = raw.length - cursor
+            if (remaining <= maxChars) {
+                buildChunkFromRawText(
+                    rawText = raw.substring(cursor),
+                    globalStartOffset = chunk.startOffset + cursor,
+                    splitDepth = chunk.splitDepth,
+                    sourceTag = "${chunk.sourceTag}:split",
+                    mergedCount = 1,
+                    pauseAfterMs = chunk.pauseAfterMs,
+                )?.let(result::add)
+                break
+            }
+
+            val hardEnd = (cursor + maxChars).coerceAtMost(raw.length)
+            val window = raw.substring(cursor, hardEnd)
+            val minSide = (maxChars / 3).coerceAtLeast(MIN_RECOVERY_SIDE_CHARS)
+            val localSplit = chooseLargeChunkSplit(window, minSide) ?: maxChars
+            val pieceEnd = (cursor + localSplit).coerceIn(cursor + 1, raw.length)
+            buildChunkFromRawText(
+                rawText = raw.substring(cursor, pieceEnd),
+                globalStartOffset = chunk.startOffset + cursor,
+                splitDepth = chunk.splitDepth,
+                sourceTag = "${chunk.sourceTag}:split",
+                mergedCount = 1,
+                pauseAfterMs = currentVoiceTuning().sentencePauseMs,
+            )?.let(result::add)
+            cursor = pieceEnd
+        }
+
+        if (result.size > 1) {
+            Timber.d(
+                "Piper split large chunk: chars=%d parts=%d max=%d preview=%s",
+                chunk.text.length,
+                result.size,
+                maxChars,
+                previewText(chunk.text),
+            )
+        }
+        return result.ifEmpty { listOf(chunk) }
+    }
+
+    private fun chooseLargeChunkSplit(window: String, minSide: Int): Int? {
+        val patterns = listOf(
+            Regex("""[.!?]+(?:["»”']+)?\s+"""),
+            Regex("""[,;:—–]\s+"""),
+            Regex("""\s+"""),
+        )
+        for (pattern in patterns) {
+            pattern.findAll(window)
+                .map { it.range.last + 1 }
+                .filter { it >= minSide && it < window.length }
+                .lastOrNull()
+                ?.let { return it }
+        }
+        return null
     }
 
     private fun mergeNearbySentences(sentences: List<SentenceInfo>): List<SentenceInfo> {
@@ -723,8 +915,9 @@ class SileroJitEngine @Inject constructor(
         val merged = mutableListOf<SentenceInfo>()
         var current = sentences.first()
         val tuning = currentVoiceTuning()
-        val maxShort = mergeShortThreshold.coerceAtMost(tuning.mergeShortCap.coerceAtMost(PIPER_MAX_MERGE_SHORT))
-        val maxTotal = mergeTotalCap.coerceAtMost(tuning.mergeTotalCap.coerceAtMost(PIPER_MAX_MERGE_TOTAL))
+        val preset = prosodyPreset
+        val maxShort = minOf(preset.mergeShortCap(mergeShortThreshold), tuning.mergeShortCap)
+        val maxTotal = minOf(preset.mergeTotalCap(mergeTotalCap), tuning.mergeTotalCap)
         for (i in 1 until sentences.size) {
             val next = sentences[i]
             val shouldMerge = current.text.length < maxShort &&
@@ -850,10 +1043,15 @@ class SileroJitEngine @Inject constructor(
     private fun resetDiagnosticsForSession(totalChunks: Int) {
         val pack = resolveUsablePack()
         val voice = pack?.voices?.firstOrNull()
+        val preset = prosodyPreset
         _diagnostics.value = PiperPlaybackDiagnostics(
             packId = pack?.packId ?: selectedPackId,
             voiceId = voice?.id ?: diagnostics.value.voiceId,
             voiceLabel = voice?.label ?: diagnostics.value.voiceLabel,
+            prosodyPresetKey = preset.storageKey,
+            prosodyPresetLabel = preset.displayName,
+            noiseScale = preset.noiseScale,
+            noiseScaleW = preset.noiseScaleW,
             speechRate = speechRate,
             sherpaThreads = sherpaNumThreads,
             totalChunks = totalChunks,
@@ -866,6 +1064,23 @@ class SileroJitEngine @Inject constructor(
                 lastChunkPreview = previewText(chunk.text),
                 lastChunkRange = chunk.range(),
                 lastChunkSplitDepth = chunk.splitDepth,
+            )
+        }
+    }
+
+    private fun recordChunkGeneration(chunk: SentenceInfo, attempt: GenerationAttempt) {
+        val audioMs = attempt.audio?.let { samples ->
+            (samples.size * 1000L / sampleRate).coerceAtLeast(1L)
+        }
+        _diagnostics.update {
+            it.copy(
+                lastChunkPreview = previewText(chunk.text),
+                lastChunkRange = chunk.range(),
+                lastChunkSplitDepth = chunk.splitDepth,
+                lastChunkDurationMs = attempt.durationMs,
+                lastChunkAudioMs = audioMs,
+                lastChunkPrefetched = attempt.fromPrefetch,
+                lastPrefetchWaitMs = attempt.prefetchWaitMs,
             )
         }
     }
@@ -921,23 +1136,44 @@ class SileroJitEngine @Inject constructor(
     private fun prepareTextForPiper(text: String): String {
         return text
             .replace('\u00A0', ' ')
+            .replace(Regex("""(?m)^\s*[IVXLCDM]+\s+(?=[А-ЯЁ])""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\[\s*\d{1,4}\s*]"""), " ")
+            .replace(Regex("""[{]\s*\d{1,4}\s*[}]"""), " ")
             .replace("…", "...")
             .replace("“", "\"")
             .replace("”", "\"")
             .replace("«", "\"")
             .replace("»", "\"")
+            .replace("„", "\"")
+            .replace("‚", "'")
             .replace(Regex("""\bи\s+т\.\s*д\.""", RegexOption.IGNORE_CASE), "и так далее")
             .replace(Regex("""\bи\s+т\.\s*п\.""", RegexOption.IGNORE_CASE), "и тому подобное")
+            .replace(Regex("""\bт\.\s*е\.""", RegexOption.IGNORE_CASE), "то есть")
+            .replace(Regex("""\bт\.\s*к\.""", RegexOption.IGNORE_CASE), "так как")
             .replace(Regex("""\bт\.\s*д\.""", RegexOption.IGNORE_CASE), "так далее")
             .replace(Regex("""\bт\.\s*п\.""", RegexOption.IGNORE_CASE), "тому подобное")
+            .replace(Regex("""(?<=\d)\s*г\.""", RegexOption.IGNORE_CASE), " года")
+            .replace(Regex("""\bг\.\s*(?=[А-ЯЁ])"""), "город ")
+            .replace(Regex("""\bул\.\s*""", RegexOption.IGNORE_CASE), "улица ")
+            .replace(Regex("""\bстр\.\s*""", RegexOption.IGNORE_CASE), "страница ")
+            .replace(Regex("""\bрис\.\s*""", RegexOption.IGNORE_CASE), "рисунок ")
+            .replace(Regex("""\bруб\.\s*""", RegexOption.IGNORE_CASE), "рублей ")
+            .replace(Regex("""\bтыс\.\s*""", RegexOption.IGNORE_CASE), "тысяч ")
+            .replace(Regex("""\bмлн\.?\s*""", RegexOption.IGNORE_CASE), "миллионов ")
+            .replace(Regex("""\bмлрд\.?\s*""", RegexOption.IGNORE_CASE), "миллиардов ")
+            .replace(Regex("""\bд-р\s+""", RegexOption.IGNORE_CASE), "доктор ")
+            .replace(Regex("""\bдр\.\s*""", RegexOption.IGNORE_CASE), "другие ")
             .replace("№", "номер ")
+            .replace("%", " процентов ")
+            .replace("&", " и ")
             .replace(Regex("""\s*[—–]\s*"""), " — ")
+            .replace(Regex("""\s*/\s*"""), " или ")
             .replace(Regex("""[ \t]+"""), " ")
             .trim()
     }
 
     private fun currentVoiceTuning(): PiperVoiceTuning {
-        return when (diagnostics.value.voiceId?.lowercase()) {
+        val base = when (diagnostics.value.voiceId?.lowercase()) {
             "irina" -> PiperVoiceTuning(
                 mergeShortCap = 165,
                 mergeTotalCap = 250,
@@ -962,6 +1198,12 @@ class SileroJitEngine @Inject constructor(
                 sentencePauseMs = 105L,
                 paragraphPauseMs = 205L,
             )
+            "burunov" -> PiperVoiceTuning(
+                mergeShortCap = 120,
+                mergeTotalCap = 190,
+                sentencePauseMs = 85L,
+                paragraphPauseMs = 170L,
+            )
             else -> PiperVoiceTuning(
                 mergeShortCap = 170,
                 mergeTotalCap = 260,
@@ -969,6 +1211,13 @@ class SileroJitEngine @Inject constructor(
                 paragraphPauseMs = 220L,
             )
         }
+        val preset = prosodyPreset
+        return PiperVoiceTuning(
+            mergeShortCap = preset.mergeShortCap(base.mergeShortCap),
+            mergeTotalCap = preset.mergeTotalCap(base.mergeTotalCap),
+            sentencePauseMs = preset.sentencePauseMs(base.sentencePauseMs),
+            paragraphPauseMs = preset.paragraphPauseMs(base.paragraphPauseMs),
+        )
     }
 
     private fun pauseForChunk(rawText: String, isParagraphEnd: Boolean): Long {
@@ -982,9 +1231,9 @@ class SileroJitEngine @Inject constructor(
         }
     }
 
-    private fun applyChunkPause(chunk: SentenceInfo, sessionId: Long) {
+    private suspend fun applyChunkPause(chunk: SentenceInfo, sessionId: Long) {
         val pauseMs = chunk.pauseAfterMs.coerceAtLeast(0L)
         if (pauseMs <= 0L || !canContinue(sessionId)) return
-        Thread.sleep(pauseMs)
+        delay(pauseMs)
     }
 }

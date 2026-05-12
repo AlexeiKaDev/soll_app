@@ -165,7 +165,7 @@ class BreathingViewModel @Inject constructor(
         phaseJob = viewModelScope.launch {
             val pairsTotal = config.breathsPerRound
             val maxHalfStep = 2 * pairsTotal
-            while (true) {
+            while (isActive) {
                 val state = _uiState.value
                 if (state.phase != BreathingPhase.BREATHING) break
                 delay(config.breathingStepMs)
@@ -212,7 +212,7 @@ class BreathingViewModel @Inject constructor(
     private fun startHoldLoop() {
         phaseJob?.cancel()
         phaseJob = viewModelScope.launch {
-            while (true) {
+            while (isActive) {
                 val state = _uiState.value
                 if (state.phase != BreathingPhase.HOLD) break
                 delay(1000)
@@ -258,7 +258,7 @@ class BreathingViewModel @Inject constructor(
     private fun startRecoveryLoop() {
         phaseJob?.cancel()
         phaseJob = viewModelScope.launch {
-            while (true) {
+            while (isActive) {
                 val state = _uiState.value
                 if (state.phase != BreathingPhase.RECOVERY) break
                 delay(1000)
@@ -315,7 +315,7 @@ class BreathingViewModel @Inject constructor(
 
     private fun mapEntityToHistoryRow(e: BreathingSessionEntity): BreathingHistoryRowUi {
         val zdt = Instant.ofEpochMilli(e.endedAtMillis).atZone(ZoneId.systemDefault())
-        val formatter = DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm", Locale("ru"))
+        val formatter = DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm", Locale.forLanguageTag("ru"))
         val durMin = e.durationSeconds / 60
         val durSec = e.durationSeconds % 60
         val durationLabel = "$durMin:${durSec.toString().padStart(2, '0')}"

@@ -19,13 +19,13 @@ class CallsHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "calls"
-    override val description = "View call log"
+    override val description = "Показать журнал звонков"
 
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "Call log permission not granted. Please grant READ_CALL_LOG permission in app settings.")
+            reply(message, "Нет разрешения на журнал звонков. Выдайте READ_CALL_LOG в настройках приложения.")
             return
         }
 
@@ -35,12 +35,12 @@ class CallsHandler(
         val calls = readCallLog(limitedCount)
 
         if (calls.isEmpty()) {
-            reply(message, "No call records found.")
+            reply(message, "Записи звонков не найдены.")
             return
         }
 
         val text = buildString {
-            append("<b>📞 Last $limitedCount Calls</b>\n\n")
+            append("<b>📞 Последние звонки: $limitedCount</b>\n\n")
 
             calls.forEachIndexed { index, call ->
                 val icon = when (call.type) {
@@ -53,12 +53,12 @@ class CallsHandler(
                 }
 
                 val typeText = when (call.type) {
-                    CallLog.Calls.INCOMING_TYPE -> "Incoming"
-                    CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
-                    CallLog.Calls.MISSED_TYPE -> "Missed"
-                    CallLog.Calls.REJECTED_TYPE -> "Rejected"
-                    CallLog.Calls.BLOCKED_TYPE -> "Blocked"
-                    else -> "Unknown"
+                    CallLog.Calls.INCOMING_TYPE -> "входящий"
+                    CallLog.Calls.OUTGOING_TYPE -> "исходящий"
+                    CallLog.Calls.MISSED_TYPE -> "пропущенный"
+                    CallLog.Calls.REJECTED_TYPE -> "отклоненный"
+                    CallLog.Calls.BLOCKED_TYPE -> "заблокированный"
+                    else -> "неизвестно"
                 }
 
                 append("<b>${index + 1}.</b> $icon ")
@@ -114,7 +114,7 @@ class CallsHandler(
                 while (it.moveToNext()) {
                     calls.add(
                         CallData(
-                            number = it.getString(numberIndex) ?: "Unknown",
+                            number = it.getString(numberIndex) ?: "неизвестно",
                             name = it.getString(nameIndex),
                             date = dateFormat.format(Date(it.getLong(dateIndex))),
                             duration = it.getLong(durationIndex),
@@ -132,10 +132,10 @@ class CallsHandler(
 
     private fun formatDuration(seconds: Long): String {
         return when {
-            seconds == 0L -> "0s"
-            seconds < 60 -> "${seconds}s"
-            seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
-            else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
+            seconds == 0L -> "0 сек"
+            seconds < 60 -> "$seconds сек"
+            seconds < 3600 -> "${seconds / 60} мин ${seconds % 60} сек"
+            else -> "${seconds / 3600} ч ${(seconds % 3600) / 60} мин"
         }
     }
 

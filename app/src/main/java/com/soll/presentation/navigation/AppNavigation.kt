@@ -4,50 +4,79 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.soll.presentation.screens.home.HomeScreen
+import com.soll.presentation.screens.assistant.AssistantDashboardScreen
+import com.soll.presentation.screens.devices.DevicesScreen
 import com.soll.presentation.screens.logs.LogsScreen
 import com.soll.presentation.screens.settings.SettingsScreen
+import com.soll.presentation.screens.tasks.TaskBoardScreen
 import com.soll.presentation.screens.tools.ToolsScreen
+import com.soll.presentation.screens.tools.asksoll.AskSollScreen
 import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
-import com.soll.presentation.screens.tools.coursecoach.CourseCoachScreen
-
-sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    data object Home : Screen("home", "Home", Icons.Default.Home)
-    data object Tools : Screen("tools", "Tools", Icons.Default.Build)
-    data object Logs : Screen("logs", "Logs", Icons.Default.History)
-    data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
-}
-
-// Additional routes (not in bottom bar)
-object Routes {
-    const val BOOK_READER = "book_reader"
-    const val BREATHING = "guided_breathing"
-    const val COURSE_COACH = "course_coach"
-}
+import com.soll.presentation.screens.tools.fieldmap.FieldMapScreen
+import com.soll.presentation.screens.tools.music.MusicScreen
+import com.soll.presentation.screens.tools.nfc.NfcToolsScreen
+import com.soll.presentation.screens.tools.rawnote.RawNoteScreen
+import com.soll.presentation.screens.tools.scanner.ScannerScreen
+import com.soll.presentation.screens.voice.VoiceScreen
 
 @Composable
-fun AppNavigation(modifier: Modifier = Modifier) {
+fun AppNavigation(
+    modifier: Modifier = Modifier,
+    launchCommand: AppLaunchCommand? = null,
+    onLaunchCommandConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
-    val screens = listOf(Screen.Home, Screen.Tools, Screen.Logs, Screen.Settings)
+    val screens = AppDestinations.bottomBar
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    var pendingLogsTab by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(launchCommand?.nonce) {
+        val command = launchCommand ?: return@LaunchedEffect
+        when (command.section) {
+            AppLaunchTargets.SECTION_LOGS -> {
+                pendingLogsTab = when (command.logsTab) {
+                    AppLaunchTargets.LOGS_TAB_NOTIFICATIONS -> LOGS_TAB_NOTIFICATIONS
+                    else -> null
+                }
+                navController.navigate(AppDestinations.Logs.route) {
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            AppLaunchTargets.SECTION_BOOK_READER -> {
+                navController.navigate(Routes.BOOK_READER) {
+                    launchSingleTop = true
+                }
+            }
+            AppLaunchTargets.SECTION_MUSIC -> {
+                navController.navigate(Routes.MUSIC) {
+                    launchSingleTop = true
+                }
+            }
+            AppLaunchTargets.SECTION_NOTES -> {
+                navController.navigate(Routes.RAW_NOTE) {
+                    launchSingleTop = true
+                }
+            }
+        }
+        onLaunchCommandConsumed()
+    }
 
     // Hide bottom bar on certain screens
     val showBottomBar = currentRoute in screens.map { it.route }
@@ -85,31 +114,34 @@ fun AppNavigation(modifier: Modifier = Modifier) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Home.route,
+            startDestination = AppDestinations.Home.route,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            composable(Screen.Home.route) {
-                HomeScreen()
+            composable(AppDestinations.Home.route) {
+                AssistantDashboardScreen()
             }
-            composable(Screen.Tools.route) {
+            composable(AppDestinations.Tasks.route) {
+                TaskBoardScreen()
+            }
+            composable(AppDestinations.Devices.route) {
+                DevicesScreen()
+            }
+            composable(AppDestinations.Tools.route) {
                 ToolsScreen(
-                    onNavigateToCourseCoach = {
-                        navController.navigate(Routes.COURSE_COACH)
-                    },
-                    onNavigateToBookReader = {
-                        navController.navigate(Routes.BOOK_READER)
-                    },
-                    onNavigateToBreathing = {
-                        navController.navigate(Routes.BREATHING)
+                    onNavigateToDestination = { destination ->
+                        navController.navigate(destination.route)
                     },
                 )
             }
-            composable(Screen.Logs.route) {
-                LogsScreen()
+            composable(AppDestinations.Logs.route) {
+                LogsScreen(
+                    initialTab = pendingLogsTab,
+                    onInitialTabConsumed = { pendingLogsTab = null },
+                )
             }
-            composable(Screen.Settings.route) {
+            composable(AppDestinations.Settings.route) {
                 SettingsScreen()
             }
             composable(Routes.BOOK_READER) {
@@ -122,11 +154,43 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                     onBack = { navController.popBackStack() }
                 )
             }
-            composable(Routes.COURSE_COACH) {
-                CourseCoachScreen(
+            composable(Routes.RAW_NOTE) {
+                RawNoteScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.MUSIC) {
+                MusicScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.SCANNER) {
+                ScannerScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.NFC) {
+                NfcToolsScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.FIELD_MAP) {
+                FieldMapScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.VOICE) {
+                VoiceScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.ASK_SOLL) {
+                AskSollScreen(
                     onBack = { navController.popBackStack() }
                 )
             }
         }
     }
 }
+
+private const val LOGS_TAB_NOTIFICATIONS = 3

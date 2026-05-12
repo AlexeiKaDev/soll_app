@@ -18,7 +18,7 @@ class WifiHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "wifi"
-    override val description = "WiFi info: /wifi [status]"
+    override val description = "Статус Wi-Fi: /wifi [статус]"
 
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -27,9 +27,9 @@ class WifiHandler(
         val action = args?.trim()?.lowercase() ?: "status"
 
         when (action) {
-            "status", "" -> showStatus(message)
-            "on", "off" -> showToggleNotSupported(message)
-            else -> reply(message, "Usage: /wifi [status]\n\n<i>Note: WiFi toggle is not supported on Android 10+</i>")
+            "status", "статус", "" -> showStatus(message)
+            "on", "off", "вкл", "выкл", "включить", "выключить" -> showToggleNotSupported(message)
+            else -> reply(message, "Использование: /wifi [статус]\n\n<i>Переключение Wi-Fi недоступно на Android 10+</i>")
         }
     }
 
@@ -39,33 +39,33 @@ class WifiHandler(
         val isConnected = isWifiConnected()
 
         val text = buildString {
-            append("<b>📶 WiFi Status</b>\n\n")
-            append("WiFi: ${if (isEnabled) "🟢 ON" else "🔴 OFF"}\n")
+            append("<b>📶 Статус Wi-Fi</b>\n\n")
+            append("Wi-Fi: ${if (isEnabled) "🟢 включен" else "🔴 выключен"}\n")
 
             if (isEnabled && isConnected) {
-                append("Status: Connected\n\n")
+                append("Статус: подключено\n\n")
 
                 // Get connection info
                 val wifiInfo = wifiManager.connectionInfo
                 if (wifiInfo != null) {
-                    val ssid = wifiInfo.ssid?.replace("\"", "") ?: "Unknown"
+                    val ssid = wifiInfo.ssid?.replace("\"", "") ?: "неизвестно"
                     if (ssid != "<unknown ssid>") {
-                        append("<b>Network:</b> $ssid\n")
+                        append("<b>Сеть:</b> $ssid\n")
                     }
 
                     val rssi = wifiInfo.rssi
                     val signalLevel = WifiManager.calculateSignalLevel(rssi, 5)
                     val signalPercent = signalLevel * 25
-                    append("<b>Signal:</b> $signalPercent% (${getSignalDescription(signalLevel)})\n")
+                    append("<b>Сигнал:</b> $signalPercent% (${getSignalDescription(signalLevel)})\n")
 
                     val linkSpeed = wifiInfo.linkSpeed
                     if (linkSpeed > 0) {
-                        append("<b>Speed:</b> $linkSpeed Mbps\n")
+                        append("<b>Скорость:</b> $linkSpeed Mbps\n")
                     }
 
                     val frequency = wifiInfo.frequency
                     val band = if (frequency > 4900) "5 GHz" else "2.4 GHz"
-                    append("<b>Band:</b> $band\n")
+                    append("<b>Диапазон:</b> $band\n")
 
                     // IP Address
                     val ip = intToIp(wifiInfo.ipAddress)
@@ -74,11 +74,11 @@ class WifiHandler(
                     }
                 }
             } else if (isEnabled) {
-                append("Status: Not connected\n")
+                append("Статус: не подключено\n")
             }
 
-            append("\n<i>Note: WiFi toggle is not supported on Android 10+. ")
-            append("Use device settings to enable/disable WiFi.</i>")
+            append("\n<i>Переключение Wi-Fi недоступно на Android 10+. ")
+            append("Включайте и выключайте Wi-Fi через настройки устройства.</i>")
         }
 
         reply(message, text)
@@ -87,9 +87,9 @@ class WifiHandler(
     private suspend fun showToggleNotSupported(message: Message) {
         reply(
             message,
-            "⚠️ WiFi toggle is not supported on Android 10+.\n\n" +
-            "Due to Android restrictions, apps cannot programmatically enable or disable WiFi.\n\n" +
-            "Please use device settings to toggle WiFi."
+            "⚠️ Переключение Wi-Fi недоступно на Android 10+.\n\n" +
+            "Из-за ограничений Android приложения не могут программно включать или выключать Wi-Fi.\n\n" +
+            "Используйте настройки устройства."
         )
     }
 
@@ -101,11 +101,11 @@ class WifiHandler(
 
     private fun getSignalDescription(level: Int): String {
         return when (level) {
-            4 -> "Excellent"
-            3 -> "Good"
-            2 -> "Fair"
-            1 -> "Weak"
-            else -> "Very Weak"
+            4 -> "отличный"
+            3 -> "хороший"
+            2 -> "средний"
+            1 -> "слабый"
+            else -> "очень слабый"
         }
     }
 

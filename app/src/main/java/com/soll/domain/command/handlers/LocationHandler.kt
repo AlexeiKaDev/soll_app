@@ -29,7 +29,7 @@ class LocationHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "location"
-    override val description = "Get current GPS location"
+    override val description = "Получить текущую GPS-геолокацию"
 
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
@@ -38,22 +38,22 @@ class LocationHandler(
 
     override suspend fun execute(message: Message, args: String?) {
         if (!hasPermission()) {
-            reply(message, "Location permission not granted. Please grant location permission in app settings.")
+            reply(message, "Нет разрешения на геолокацию. Выдайте ACCESS_FINE_LOCATION в настройках приложения.")
             return
         }
 
         if (!isLocationEnabled()) {
-            reply(message, "Location services are disabled. Please enable GPS in device settings.")
+            reply(message, "Геолокация выключена. Включите GPS в настройках устройства.")
             return
         }
 
-        reply(message, "📍 Getting location...")
+        reply(message, "📍 Получаю геолокацию...")
 
         try {
             val location = getCurrentLocation()
 
             if (location == null) {
-                reply(message, "❌ Could not get location. Make sure GPS is enabled and try again.")
+                reply(message, "❌ Не удалось получить геолокацию. Проверьте GPS и повторите.")
                 return
             }
 
@@ -69,7 +69,7 @@ class LocationHandler(
 
         } catch (e: Exception) {
             Timber.e(e, "Error getting location")
-            reply(message, "❌ Error getting location: ${e.message}")
+            reply(message, "❌ Ошибка геолокации: ${e.message}")
         }
     }
 
@@ -109,35 +109,35 @@ class LocationHandler(
 
     private fun buildLocationMessage(location: Location): String {
         return buildString {
-            append("<b>📍 Current Location</b>\n\n")
+            append("<b>📍 Текущая геолокация</b>\n\n")
 
-            append("<b>Coordinates:</b>\n")
-            append("Lat: ${String.format(Locale.US, "%.6f", location.latitude)}\n")
-            append("Lon: ${String.format(Locale.US, "%.6f", location.longitude)}\n\n")
+            append("<b>Координаты:</b>\n")
+            append("Широта: ${String.format(Locale.US, "%.6f", location.latitude)}\n")
+            append("Долгота: ${String.format(Locale.US, "%.6f", location.longitude)}\n\n")
 
             if (location.hasAccuracy()) {
-                append("<b>Accuracy:</b> ${location.accuracy.toInt()} m\n")
+                append("<b>Точность:</b> ${location.accuracy.toInt()} м\n")
             }
 
             if (location.hasAltitude()) {
-                append("<b>Altitude:</b> ${location.altitude.toInt()} m\n")
+                append("<b>Высота:</b> ${location.altitude.toInt()} м\n")
             }
 
             if (location.hasSpeed()) {
                 val speedKmh = location.speed * 3.6
-                append("<b>Speed:</b> ${String.format(Locale.US, "%.1f", speedKmh)} km/h\n")
+                append("<b>Скорость:</b> ${String.format(Locale.US, "%.1f", speedKmh)} км/ч\n")
             }
 
             if (location.hasBearing()) {
-                append("<b>Bearing:</b> ${location.bearing.toInt()}°\n")
+                append("<b>Направление:</b> ${location.bearing.toInt()}°\n")
             }
 
-            append("<b>Time:</b> ${dateFormat.format(Date(location.time))}\n\n")
+            append("<b>Время:</b> ${dateFormat.format(Date(location.time))}\n\n")
 
             // Try to get address
             val address = getAddressFromLocation(location)
             if (address != null) {
-                append("<b>Address:</b>\n$address\n\n")
+                append("<b>Адрес:</b>\n$address\n\n")
             }
 
             // Google Maps link

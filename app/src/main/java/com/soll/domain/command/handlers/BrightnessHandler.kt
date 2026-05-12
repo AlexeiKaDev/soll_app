@@ -14,14 +14,14 @@ class BrightnessHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "brightness"
-    override val description = "Set brightness: /brightness [0-100|auto]"
+    override val description = "Настроить яркость: /brightness [0-100|авто|ручной]"
 
     override suspend fun execute(message: Message, args: String?) {
         if (!canWriteSettings()) {
             reply(
                 message,
-                "❌ WRITE_SETTINGS permission not granted.\n\n" +
-                "Please grant this permission in the app settings screen."
+                "❌ Нет разрешения WRITE_SETTINGS.\n\n" +
+                "Выдайте его в настройках приложения."
             )
             return
         }
@@ -30,14 +30,14 @@ class BrightnessHandler(
 
         when {
             arg.isNullOrEmpty() -> showCurrentBrightness(message)
-            arg == "auto" -> setAutoBrightness(message, true)
-            arg == "manual" -> setAutoBrightness(message, false)
+            arg == "auto" || arg == "авто" -> setAutoBrightness(message, true)
+            arg == "manual" || arg == "ручной" -> setAutoBrightness(message, false)
             else -> {
                 val level = arg.toIntOrNull()
                 if (level != null && level in 0..100) {
                     setBrightness(message, level)
                 } else {
-                    reply(message, "Usage: /brightness [0-100|auto|manual]\n\nExamples:\n/brightness 50\n/brightness auto")
+                    reply(message, "Использование: /brightness [0-100|авто|ручной]\n\nПримеры:\n/brightness 50\n/brightness авто")
                 }
             }
         }
@@ -64,18 +64,18 @@ class BrightnessHandler(
             val brightnessPercent = (brightness * 100 / 255)
 
             val text = buildString {
-                append("<b>🔆 Brightness</b>\n\n")
-                append("Mode: ${if (isAuto) "Auto" else "Manual"}\n")
-                append("Level: $brightnessPercent%\n")
-                append("\nUsage:\n")
-                append("/brightness 50 - Set to 50%\n")
-                append("/brightness auto - Enable auto\n")
-                append("/brightness manual - Disable auto")
+                append("<b>🔆 Яркость</b>\n\n")
+                append("Режим: ${if (isAuto) "авто" else "ручной"}\n")
+                append("Уровень: $brightnessPercent%\n")
+                append("\nИспользование:\n")
+                append("/brightness 50 - поставить 50%\n")
+                append("/brightness авто - включить автояркость\n")
+                append("/brightness ручной - выключить автояркость")
             }
 
             reply(message, text)
         } catch (e: Exception) {
-            reply(message, "❌ Error reading brightness: ${e.message}")
+            reply(message, "❌ Не удалось прочитать яркость: ${e.message}")
         }
     }
 
@@ -97,9 +97,9 @@ class BrightnessHandler(
                 brightnessValue
             )
 
-            reply(message, "✅ Brightness set to $percent%")
+            reply(message, "✅ Яркость установлена: $percent%")
         } catch (e: Exception) {
-            reply(message, "❌ Error setting brightness: ${e.message}")
+            reply(message, "❌ Не удалось изменить яркость: ${e.message}")
         }
     }
 
@@ -115,9 +115,9 @@ class BrightnessHandler(
                 }
             )
 
-            reply(message, "✅ Auto-brightness ${if (enabled) "enabled" else "disabled"}")
+            reply(message, "✅ Автояркость ${if (enabled) "включена" else "выключена"}")
         } catch (e: Exception) {
-            reply(message, "❌ Error setting auto-brightness: ${e.message}")
+            reply(message, "❌ Не удалось изменить автояркость: ${e.message}")
         }
     }
 }

@@ -36,8 +36,8 @@ class OnnxBookEngineFactory @Inject constructor() {
     }
 
     /**
-     * RU-first selection for constrained Android devices:
-     * 1) MOSS as practical baseline, 2) Chatterbox INT4 only when user allows heavy model.
+     * RU-first selection for constrained Android devices.
+     * Note: Chatterbox now lives in a dedicated runtime and is not part of ONNX External execution.
      */
     fun pickRussianOptimizedModel(profile: OnnxDeviceProfile, allowHeavy: Boolean = false): OnnxTtsModel? {
         val limitMb = if (allowHeavy) 2000 else 900

@@ -159,7 +159,7 @@ class UtrobinTtsEngine @Inject constructor(
                 ?: return@withContext failedPrepare("Не найден pack Utrobin в локальной папке tts")
             val dir = File(pack.rootDir)
             val modelFile = File(dir, "model.onnx")
-            val tokensFile = File(dir, "tokens.txt")
+            val vocabularyFile = findVocabularyFile(dir)
             if (!modelFile.exists()) {
                 return@withContext failedPrepare(
                     message = "В pack Utrobin нет model.onnx",
@@ -172,17 +172,18 @@ class UtrobinTtsEngine @Inject constructor(
                     path = modelFile.absolutePath,
                 )
             }
-            if (!tokensFile.exists()) {
+            if (vocabularyFile == null) {
                 return@withContext failedPrepare(
-                    message = "В pack Utrobin нет tokens.txt. Нужен экспортированный словарь токенов.",
+                    message = "В pack Utrobin нет tokens.txt/vocab.json/tokenizer.json.",
                     path = dir.absolutePath,
                 )
             }
-            token2id = UtrobinCharTokenizer.loadTokenMap(tokensFile)
+            Timber.d("Utrobin: using vocabulary file %s", vocabularyFile.absolutePath)
+            token2id = UtrobinCharTokenizer.loadTokenMap(vocabularyFile)
             if (token2id.isEmpty() || !token2id.containsKey(' ')) {
                 return@withContext failedPrepare(
-                    message = "tokens.txt не распознан: нет корректного id для пробела",
-                    path = tokensFile.absolutePath,
+                    message = "${vocabularyFile.name} не распознан: нет корректного id для пробела",
+                    path = vocabularyFile.absolutePath,
                 )
             }
             maxTokenId = token2id.values.maxOrNull() ?: 42
@@ -207,9 +208,18 @@ class UtrobinTtsEngine @Inject constructor(
             TtsPrepareResult(
                 success = false,
                 engineType = TtsEngineType.UTROBIN,
-                message = e.message ?: "Failed to init UtrobinTTS",
+                message = e.message ?: "Не удалось запустить Utrobin TTS",
             )
         }
+    }
+
+    private fun findVocabularyFile(root: File): File? {
+        val candidates = listOf(
+            File(root, "tokens.txt"),
+            File(root, "vocab.json"),
+            File(root, "tokenizer.json"),
+        )
+        return candidates.firstOrNull { it.exists() && it.isFile }
     }
 
     private fun logSessionIoSummary() {
@@ -259,7 +269,7 @@ class UtrobinTtsEngine @Inject constructor(
             .replace(Regex("""\bт\.\s*д\.""", RegexOption.IGNORE_CASE), "так далее")
             .replace(Regex("""\bт\.\s*п\.""", RegexOption.IGNORE_CASE), "тому подобное")
             .replace(Regex("""\s*[—–]\s*"""), " - ")
-        val lower = prepared.lowercase(Locale("ru", "RU"))
+        val lower = prepared.lowercase(Locale.forLanguageTag("ru-RU"))
         val sb = StringBuilder(lower.length)
         for (ch in lower) {
             when {
@@ -709,7 +719,7 @@ class UtrobinTtsEngine @Inject constructor(
         }
     }
 
-    private fun playAudio(data: FloatArray) {
+    private suspend fun playAudio(data: FloatArray) {
         val shorts = ShortArray(data.size) { i ->
             (data[i] * Short.MAX_VALUE).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
         }
@@ -725,19 +735,22 @@ class UtrobinTtsEngine @Inject constructor(
             .setBufferSizeInBytes(shorts.size * 2)
             .setTransferMode(AudioTrack.MODE_STATIC).build()
         audioTrack = track
-        track.write(shorts, 0, shorts.size)
-        track.play()
-        val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
-        var elapsed = 0L
-        while (elapsed < totalMs && !isPaused && (playbackJob?.isActive != false)) {
-            val step = minOf(20L, totalMs - elapsed)
-            Thread.sleep(step)
-            elapsed += step
-        }
         try {
-            track.stop()
-            track.release()
-        } catch (_: Exception) {
+            track.write(shorts, 0, shorts.size)
+            track.play()
+            val totalMs = (shorts.size * 1000L / sampleRate).coerceAtLeast(1L)
+            var elapsed = 0L
+            while (elapsed < totalMs && !isPaused && (playbackJob?.isActive != false)) {
+                val step = minOf(20L, totalMs - elapsed)
+                delay(step)
+                elapsed += step
+            }
+        } finally {
+            runCatching {
+                track.stop()
+                track.release()
+            }
+            if (audioTrack == track) audioTrack = null
         }
     }
 

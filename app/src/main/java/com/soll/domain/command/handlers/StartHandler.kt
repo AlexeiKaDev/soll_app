@@ -11,43 +11,44 @@ class StartHandler(
 ) : CommandHandler(context, telegramRepository) {
 
     override val command = "start"
-    override val description = "Show welcome message and available commands"
+    override val description = "Показать приветствие и доступные команды"
 
     override suspend fun execute(message: Message, args: String?) {
-        val userName = message.from?.firstName ?: "User"
+        val userName = message.from?.firstName ?: "пользователь"
 
         val text = """
-            |<b>Welcome to Soll, $userName!</b>
+            |<b>Soll на связи, $userName.</b>
             |
-            |This bot runs on an Android device and allows you to remotely control and monitor it.
+            |Бот работает на Android-устройстве и позволяет удаленно смотреть состояние и управлять разрешенными функциями.
             |
-            |<b>System:</b>
-            |/ping - Check if bot is alive
-            |/status - Device status (battery, memory, network)
-            |/info - Device information
-            |/storage - Storage information
+            |<b>Система:</b>
+            |/ping - проверить ответ бота
+            |/status - статус устройства
+            |/info - информация об устройстве
+            |/storage - хранилище
             |
-            |<b>Files:</b>
-            |/files [path] - Browse files
-            |/download &lt;path&gt; - Download file
+            |<b>Файлы:</b>
+            |/files [path] - список файлов
+            |/download &lt;path&gt; - отправить файл
             |
-            |<b>SMS &amp; Calls:</b>
-            |/sms - Read SMS messages
-            |/sms_send - Send SMS
-            |/calls - View call log
-            |/call - Make a call
-            |/contacts - List contacts
+            |<b>SMS и звонки:</b>
+            |/sms - прочитать SMS
+            |/sms_send - отправить SMS
+            |/calls - журнал звонков
+            |/call - позвонить
+            |/contacts - контакты
             |
-            |<b>Media:</b>
-            |/location - Get GPS location
-            |/photo - Take photo
-            |/record - Record audio
+            |<b>Медиа:</b>
+            |/location - получить GPS-геолокацию
+            |/photo - сделать фото
+            |/record - записать аудио
             |
-            |<b>Device Control:</b>
+            |<b>Устройство:</b>
             |/notify, /vibrate, /flashlight, /volume
             |/brightness, /alarm, /bluetooth, /wifi
             |
-            |/help - Show all commands
+            |/help - все команды
+            |Рискованные команды требуют <code>--confirm</code> в конце.
         """.trimMargin()
 
         reply(message, text)

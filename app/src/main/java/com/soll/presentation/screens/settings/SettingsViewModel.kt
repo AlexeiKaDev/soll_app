@@ -17,6 +17,7 @@ import com.soll.domain.assistant.RiskTier
 import com.soll.domain.assistant.isRisky
 import com.soll.domain.deviceqa.DeviceQaCheck
 import com.soll.domain.deviceqa.DeviceQaCheckId
+import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollTaskBoard
 import com.soll.ui.theme.SollThemeVariant
@@ -469,31 +470,20 @@ class SettingsViewModel @Inject constructor(
                 )
             }
 
-            val healthResult = sollRepository.getHealth()
-            if (healthResult.isFailure) {
-                val error = healthResult.exceptionOrNull()
-                _uiState.update {
-                    it.copy(
-                        isSyncingSoll = false,
-                        sollHealthStatus = "Недоступен",
-                        sollHealthMessage = error?.message ?: "Не удалось подключиться к серверу Soll",
-                        sollSyncSummary = "Синхронизация не выполнена.",
-                    )
-                }
-                return@launch
-            }
-
-            val health = healthResult.getOrThrow()
-            sollRepository.getTaskBoard().fold(
-                onSuccess = { board ->
+            sollRepository.getAndroidSyncStatus().fold(
+                onSuccess = { status ->
                     _uiState.update {
                         it.copy(
                             isSyncingSoll = false,
-                            sollHealthStatus = health.statusText(),
-                            sollHealthMessage = health.statusMessage(),
-                            sollSyncSummary = board.syncSummary(),
-                            message = "Синхронизация Soll выполнена",
-                            isError = false,
+                            sollHealthStatus = status.health.statusText(),
+                            sollHealthMessage = status.health.statusMessage(status),
+                            sollSyncSummary = status.syncSummary(),
+                            message = if (status.fromCache) {
+                                "Сервер недоступен. Показан последний кэш Soll."
+                            } else {
+                                "Синхронизация Soll выполнена"
+                            },
+                            isError = status.fromCache,
                         )
                     }
                 },
@@ -501,9 +491,9 @@ class SettingsViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isSyncingSoll = false,
-                            sollHealthStatus = health.statusText(),
-                            sollHealthMessage = health.statusMessage(),
-                            sollSyncSummary = "Сервер доступен, но задачи получить не удалось: ${error.message ?: "ошибка"}",
+                            sollHealthStatus = "Недоступен",
+                            sollHealthMessage = error.message ?: "Не удалось подключиться к серверу Soll",
+                            sollSyncSummary = "Синхронизация не выполнена.",
                             isError = true,
                         )
                     }
@@ -668,10 +658,19 @@ class SettingsViewModel @Inject constructor(
             else -> status
         }
 
-    private fun SollHealth.statusMessage(): String = buildString {
+    private fun SollHealth.statusMessage(syncStatus: SollAndroidSyncStatus? = null): String = buildString {
+        if (syncStatus?.fromCache == true) {
+            append("Кэш. ")
+        }
         append("Хранилище: ${if (vaultAccessible) "доступно" else "недоступно"}")
         append(", планировщик: ${if (schedulerRunning) "запущен" else "остановлен"}")
         append(", задач планировщика: $jobsCount")
+        syncStatus?.briefing?.filename?.takeIf { it.isNotBlank() }?.let { filename ->
+            append(", брифинг: $filename")
+        }
+        if (!syncStatus?.warnings.isNullOrEmpty()) {
+            append(". ${syncStatus?.warnings?.joinToString("; ")}")
+        }
     }
 
     private fun SollTaskBoard.syncSummary(): String = buildString {
@@ -680,6 +679,13 @@ class SettingsViewModel @Inject constructor(
             append(" Ближайшая задача: ${task.title}")
         }
     }
+
+    private fun SollAndroidSyncStatus.syncSummary(): String =
+        tasks.syncSummary() + if (fromCache) {
+            " Данные из локального кэша."
+        } else {
+            ""
+        }
 
     private fun maskToken(token: String): String {
         if (token.length < 10) return token

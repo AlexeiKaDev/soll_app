@@ -152,6 +152,7 @@ fun TaskBoardScreen(
                             isActionRunning = uiState.actionTaskId == task.id,
                             isEvidenceRunning = uiState.evidenceTaskId == task.id,
                             hasPendingEvidence = task.id in uiState.pendingEvidenceTaskIds,
+                            hasPendingTaskAction = task.id in uiState.pendingTaskActionIds,
                             onToggleDetails = {
                                 expandedTaskId = if (expandedTaskId == task.id) null else task.id
                             },
@@ -196,6 +197,9 @@ private fun TaskSummary(uiState: TaskBoardUiState) {
         if (uiState.pendingEvidenceCount > 0) {
             PassiveChip(text = "В очереди: ${uiState.pendingEvidenceCount}", icon = Icons.Default.AttachFile)
         }
+        if (uiState.pendingTaskActionCount > 0) {
+            PassiveChip(text = "Действия: ${uiState.pendingTaskActionCount}", icon = Icons.Default.Schedule)
+        }
     }
 }
 
@@ -206,6 +210,7 @@ private fun TaskCard(
     isActionRunning: Boolean,
     isEvidenceRunning: Boolean,
     hasPendingEvidence: Boolean,
+    hasPendingTaskAction: Boolean,
     onToggleDetails: () -> Unit,
     onAttachEvidence: () -> Unit,
     onMoveToToday: () -> Unit,
@@ -266,6 +271,9 @@ private fun TaskCard(
                 if (hasPendingEvidence) {
                     PassiveChip(text = "Вложение в очереди")
                 }
+                if (hasPendingTaskAction) {
+                    PassiveChip(text = "Действие в очереди")
+                }
             }
 
             if (task.sourceRef.isNotBlank()) {
@@ -278,7 +286,7 @@ private fun TaskCard(
 
             TaskActions(
                 status = task.status,
-                isActionRunning = isActionRunning,
+                isActionRunning = isActionRunning || hasPendingTaskAction,
                 onMoveToToday = onMoveToToday,
                 onStart = onStart,
                 onDone = onDone,

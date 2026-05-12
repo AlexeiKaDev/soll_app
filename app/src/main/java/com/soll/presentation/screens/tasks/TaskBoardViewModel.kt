@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 import org.json.JSONObject
+import java.io.IOException
+import retrofit2.HttpException
 
 data class TaskBoardUiState(
     val today: List<SollTask> = emptyList(),
@@ -30,12 +33,16 @@ data class TaskBoardUiState(
     val isError: Boolean = false,
     val isShowingCache: Boolean = false,
     val pendingEvidenceTaskIds: Set<String> = emptySet(),
+    val pendingTaskActionIds: Set<String> = emptySet(),
 ) {
     val openCount: Int
         get() = today.size + inbox.size + stale.size
 
     val pendingEvidenceCount: Int
         get() = pendingEvidenceTaskIds.size
+
+    val pendingTaskActionCount: Int
+        get() = pendingTaskActionIds.size
 }
 
 @HiltViewModel
@@ -58,13 +65,14 @@ class TaskBoardViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, message = null, isError = false) }
             sollGateway.getTaskBoard().fold(
                 onSuccess = { board ->
-                    taskCacheRepository.replaceWith(board)
+                    val pendingStatuses = syncQueueRepository.getPendingTaskActionStatuses()
+                    val adjustedBoard = taskCacheRepository.replaceWith(board, pendingStatuses)
                     _uiState.update {
                         it.copy(
-                            today = board.today,
-                            inbox = board.inbox,
-                            stale = board.stale,
-                            doneRecent = board.doneRecent,
+                            today = adjustedBoard.today,
+                            inbox = adjustedBoard.inbox,
+                            stale = adjustedBoard.stale,
+                            doneRecent = adjustedBoard.doneRecent,
                             isLoading = false,
                             message = null,
                             isError = false,
@@ -73,7 +81,8 @@ class TaskBoardViewModel @Inject constructor(
                     }
                 },
                 onFailure = { error ->
-                    val cachedBoard = taskCacheRepository.getCachedBoard()
+                    val pendingStatuses = syncQueueRepository.getPendingTaskActionStatuses()
+                    val cachedBoard = taskCacheRepository.getCachedBoard(pendingStatuses)
                     if (cachedBoard.openCount > 0 || cachedBoard.doneRecent.isNotEmpty()) {
                         _uiState.update {
                             it.copy(
@@ -103,31 +112,57 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun moveToToday(task: SollTask) {
-        runTaskAction(task, "Задача перенесена на сегодня") {
+        runTaskAction(
+            task = task,
+            successMessage = "Задача перенесена на сегодня",
+            queueAction = SollSyncQueueRepository.TASK_ACTION_MOVE_TO_TODAY,
+            optimisticStatus = "today",
+        ) {
             sollGateway.moveTaskToToday(task.id)
         }
     }
 
     fun startTask(task: SollTask) {
-        runTaskAction(task, "Задача взята в работу") {
+        runTaskAction(
+            task = task,
+            successMessage = "Задача взята в работу",
+            queueAction = SollSyncQueueRepository.TASK_ACTION_SET_STATUS,
+            optimisticStatus = "in_progress",
+            targetStatus = "in_progress",
+        ) {
             sollGateway.setTaskStatus(task.id, "in_progress")
         }
     }
 
     fun completeTask(task: SollTask) {
-        runTaskAction(task, "Задача закрыта") {
+        runTaskAction(
+            task = task,
+            successMessage = "Задача закрыта",
+            queueAction = SollSyncQueueRepository.TASK_ACTION_COMPLETE,
+            optimisticStatus = "done",
+        ) {
             sollGateway.completeTask(task.id)
         }
     }
 
     fun deferTask(task: SollTask) {
-        runTaskAction(task, "Задача отложена") {
+        runTaskAction(
+            task = task,
+            successMessage = "Задача отложена",
+            queueAction = SollSyncQueueRepository.TASK_ACTION_DEFER,
+            optimisticStatus = "deferred",
+        ) {
             sollGateway.deferTask(task.id)
         }
     }
 
     fun rejectTask(task: SollTask) {
-        runTaskAction(task, "Задача отклонена") {
+        runTaskAction(
+            task = task,
+            successMessage = "Задача отклонена",
+            queueAction = SollSyncQueueRepository.TASK_ACTION_REJECT,
+            optimisticStatus = "rejected",
+        ) {
             sollGateway.rejectTask(task.id)
         }
     }
@@ -211,6 +246,9 @@ class TaskBoardViewModel @Inject constructor(
     private fun runTaskAction(
         task: SollTask,
         successMessage: String,
+        queueAction: String,
+        optimisticStatus: String,
+        targetStatus: String? = null,
         action: suspend () -> Result<SollTask>,
     ) {
         viewModelScope.launch {
@@ -227,8 +265,64 @@ class TaskBoardViewModel @Inject constructor(
                     refresh()
                 },
                 onFailure = { error ->
-                    refreshAfterTaskConflict(error.message ?: "Не удалось изменить задачу")
+                    if (error.isRetryableTaskActionFailure()) {
+                        queueOfflineTaskAction(
+                            task = task,
+                            queueAction = queueAction,
+                            targetStatus = targetStatus,
+                            optimisticStatus = optimisticStatus,
+                            reason = error.message,
+                            successMessage = successMessage,
+                        )
+                    } else {
+                        refreshAfterTaskConflict(error.message ?: "Не удалось изменить задачу")
+                    }
                 }
+            )
+        }
+    }
+
+    private suspend fun queueOfflineTaskAction(
+        task: SollTask,
+        queueAction: String,
+        targetStatus: String?,
+        optimisticStatus: String,
+        reason: String?,
+        successMessage: String,
+    ) {
+        val queued = try {
+            syncQueueRepository.enqueueTaskAction(
+                taskId = task.id,
+                taskTitle = task.title,
+                action = queueAction,
+                targetStatus = targetStatus,
+                reason = reason,
+            )
+            val pendingStatuses = syncQueueRepository.getPendingTaskActionStatuses()
+            taskCacheRepository.applyOptimisticTaskStatus(
+                task = task,
+                status = optimisticStatus,
+                pendingStatuses = pendingStatuses,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            refreshAfterTaskConflict("Не удалось поставить действие в очередь: ${error.message ?: "ошибка"}")
+            return
+        }
+
+        val board = queued
+        _uiState.update {
+            it.copy(
+                today = board.today,
+                inbox = board.inbox,
+                stale = board.stale,
+                doneRecent = board.doneRecent,
+                isLoading = false,
+                actionTaskId = null,
+                message = "$successMessage. Сервер недоступен, действие поставлено в очередь.",
+                isError = false,
+                isShowingCache = true,
             )
         }
     }
@@ -236,11 +330,22 @@ class TaskBoardViewModel @Inject constructor(
     private fun observePendingTaskEvidence() {
         viewModelScope.launch {
             syncQueueRepository.observeRecentItems(limit = 100).collectLatest { items ->
-                val taskIds = items
+                val evidenceTaskIds = items
                     .filter { it.status in OPEN_SYNC_STATUSES }
+                    .filter { it.kind in EVIDENCE_SYNC_KINDS }
                     .mapNotNull { it.taskIdOrNull() }
                     .toSet()
-                _uiState.update { it.copy(pendingEvidenceTaskIds = taskIds) }
+                val taskActionIds = items
+                    .filter { it.status in OPEN_SYNC_STATUSES }
+                    .filter { it.kind == SyncQueueEntity.KIND_TASK_ACTION }
+                    .mapNotNull { it.taskIdOrNull() }
+                    .toSet()
+                _uiState.update {
+                    it.copy(
+                        pendingEvidenceTaskIds = evidenceTaskIds,
+                        pendingTaskActionIds = taskActionIds,
+                    )
+                }
             }
         }
     }
@@ -248,13 +353,14 @@ class TaskBoardViewModel @Inject constructor(
     private suspend fun refreshAfterTaskConflict(reason: String) {
         sollGateway.getTaskBoard().fold(
             onSuccess = { board ->
-                taskCacheRepository.replaceWith(board)
+                val pendingStatuses = syncQueueRepository.getPendingTaskActionStatuses()
+                val adjustedBoard = taskCacheRepository.replaceWith(board, pendingStatuses)
                 _uiState.update {
                     it.copy(
-                        today = board.today,
-                        inbox = board.inbox,
-                        stale = board.stale,
-                        doneRecent = board.doneRecent,
+                        today = adjustedBoard.today,
+                        inbox = adjustedBoard.inbox,
+                        stale = adjustedBoard.stale,
+                        doneRecent = adjustedBoard.doneRecent,
                         isLoading = false,
                         actionTaskId = null,
                         message = "$reason. Доска обновлена с сервера.",
@@ -264,7 +370,8 @@ class TaskBoardViewModel @Inject constructor(
                 }
             },
             onFailure = {
-                val cachedBoard = taskCacheRepository.getCachedBoard()
+                val pendingStatuses = syncQueueRepository.getPendingTaskActionStatuses()
+                val cachedBoard = taskCacheRepository.getCachedBoard(pendingStatuses)
                 _uiState.update {
                     it.copy(
                         today = cachedBoard.today,
@@ -308,11 +415,21 @@ class TaskBoardViewModel @Inject constructor(
             payload.optString("task_id").takeIf { it.isNotBlank() }
         }.getOrNull()
 
+    private fun Throwable.isRetryableTaskActionFailure(): Boolean {
+        if (this is IOException) return true
+        val httpError = this as? HttpException ?: return false
+        return httpError.code() == 408 || httpError.code() == 429 || httpError.code() >= 500
+    }
+
     private companion object {
         val OPEN_SYNC_STATUSES = setOf(
             SyncQueueEntity.STATUS_PENDING,
             SyncQueueEntity.STATUS_RUNNING,
             SyncQueueEntity.STATUS_FAILED,
+        )
+        val EVIDENCE_SYNC_KINDS = setOf(
+            SyncQueueEntity.KIND_RAW_NOTE,
+            SyncQueueEntity.KIND_RAW_FILE,
         )
     }
 }

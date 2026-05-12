@@ -17,6 +17,10 @@ object AquikDeviceProfile {
     const val COMMAND_ADD_SCHEDULE = "addSchedule"
     const val COMMAND_UPDATE_SCHEDULE = "updateSchedule"
     const val COMMAND_DELETE_SCHEDULE = "deleteSchedule"
+    const val COMMAND_CALIBRATE_SENSOR = "calibrateSensor"
+    const val COMMAND_GET_AUTOMATION = "getAutomationRules"
+    const val COMMAND_UPSERT_AUTOMATION = "upsertAutomationRule"
+    const val COMMAND_DELETE_AUTOMATION = "deleteAutomationRule"
     const val COMMAND_SCAN_I2C = "scanI2C"
 
     val profile = DeviceProfile(
@@ -41,6 +45,10 @@ object AquikDeviceProfile {
             COMMAND_ADD_SCHEDULE,
             COMMAND_UPDATE_SCHEDULE,
             COMMAND_DELETE_SCHEDULE,
+            COMMAND_CALIBRATE_SENSOR,
+            COMMAND_GET_AUTOMATION,
+            COMMAND_UPSERT_AUTOMATION,
+            COMMAND_DELETE_AUTOMATION,
             COMMAND_SCAN_I2C,
         ),
     )

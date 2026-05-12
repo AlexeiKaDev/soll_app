@@ -20,13 +20,21 @@ import com.soll.domain.device.DeviceLedType
 import com.soll.domain.device.DevicePumpType
 import com.soll.domain.device.DeviceProfile
 import com.soll.domain.device.DeviceTelemetry
+import com.soll.domain.device.GadgetAutomationDraft
+import com.soll.domain.device.GadgetAutomationRule
+import com.soll.domain.device.GadgetAutomationSummary
+import com.soll.domain.device.GadgetCalibrationDraft
 import com.soll.domain.device.GadgetConfigSummary
 import com.soll.domain.device.GadgetCloudEvent
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.device.GadgetDiagnosticSummary
+import com.soll.domain.device.GadgetEditorPayloads
 import com.soll.domain.device.GadgetPayloadParser
 import com.soll.domain.device.GadgetRouteStatus
+import com.soll.domain.device.GadgetScheduleDraft
+import com.soll.domain.device.GadgetScheduleItem
 import com.soll.domain.device.GadgetScheduleSummary
+import com.soll.domain.device.GadgetSettingsDraft
 import com.soll.domain.device.KnownDevice
 import com.soll.domain.device.DeviceEndpoint
 import com.soll.domain.assistant.CapabilityRegistry
@@ -61,8 +69,30 @@ data class DevicesUiState(
     val configText: String = "",
     val configSummary: GadgetConfigSummary = GadgetConfigSummary(),
     val scheduleSummary: GadgetScheduleSummary = GadgetScheduleSummary(),
+    val automationSummary: GadgetAutomationSummary = GadgetAutomationSummary(),
     val diagnosticSummary: GadgetDiagnosticSummary = GadgetDiagnosticSummary(),
     val actuatorText: String = "",
+    val settingsDeviceNameInput: String = "",
+    val settingsTimezoneInput: String = "",
+    val settingsSensorIntervalInput: String = "",
+    val settingsDisplayBrightness: Float = 0f,
+    val settingsAutoMode: Boolean = false,
+    val calibrationSensorInput: String = "ph",
+    val calibrationOffsetInput: String = "",
+    val calibrationReferenceInput: String = "",
+    val scheduleIdInput: String = "",
+    val scheduleNameInput: String = "",
+    val scheduleTypeInput: String = "light",
+    val scheduleTimeInput: String = "08:00",
+    val scheduleActionInput: String = "on",
+    val scheduleEnabled: Boolean = true,
+    val automationIdInput: String = "",
+    val automationNameInput: String = "",
+    val automationSensorInput: String = "temperature",
+    val automationOperatorInput: String = ">",
+    val automationThresholdInput: String = "",
+    val automationActionInput: String = "",
+    val automationEnabled: Boolean = true,
     val airPumpEnabled: Boolean = false,
     val waterPumpEnabled: Boolean = false,
     val fanEnabled: Boolean = false,
@@ -181,6 +211,95 @@ class DevicesViewModel @Inject constructor(
                 message = null,
             )
         }
+    }
+
+    fun updateSettingsDeviceName(value: String) {
+        _uiState.update { it.copy(settingsDeviceNameInput = value, message = null) }
+    }
+
+    fun updateSettingsTimezone(value: String) {
+        _uiState.update { it.copy(settingsTimezoneInput = value, message = null) }
+    }
+
+    fun updateSettingsSensorInterval(value: String) {
+        _uiState.update {
+            it.copy(
+                settingsSensorIntervalInput = value.filter { char -> char.isDigit() }.take(7),
+                message = null,
+            )
+        }
+    }
+
+    fun updateSettingsDisplayBrightness(value: Float) {
+        _uiState.update { it.copy(settingsDisplayBrightness = value.coerceIn(0f, 255f), message = null) }
+    }
+
+    fun updateSettingsAutoMode(enabled: Boolean) {
+        _uiState.update { it.copy(settingsAutoMode = enabled, message = null) }
+    }
+
+    fun updateCalibrationSensor(value: String) {
+        _uiState.update { it.copy(calibrationSensorInput = value.trim(), message = null) }
+    }
+
+    fun updateCalibrationOffset(value: String) {
+        _uiState.update { it.copy(calibrationOffsetInput = value.filterSignedDecimal(), message = null) }
+    }
+
+    fun updateCalibrationReference(value: String) {
+        _uiState.update { it.copy(calibrationReferenceInput = value.filterSignedDecimal(), message = null) }
+    }
+
+    fun updateScheduleId(value: String) {
+        _uiState.update { it.copy(scheduleIdInput = value.trim(), message = null) }
+    }
+
+    fun updateScheduleName(value: String) {
+        _uiState.update { it.copy(scheduleNameInput = value, message = null) }
+    }
+
+    fun updateScheduleType(value: String) {
+        _uiState.update { it.copy(scheduleTypeInput = value.trim(), message = null) }
+    }
+
+    fun updateScheduleTime(value: String) {
+        _uiState.update { it.copy(scheduleTimeInput = value.take(5), message = null) }
+    }
+
+    fun updateScheduleAction(value: String) {
+        _uiState.update { it.copy(scheduleActionInput = value.trim(), message = null) }
+    }
+
+    fun updateScheduleEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(scheduleEnabled = enabled, message = null) }
+    }
+
+    fun updateAutomationId(value: String) {
+        _uiState.update { it.copy(automationIdInput = value.trim(), message = null) }
+    }
+
+    fun updateAutomationName(value: String) {
+        _uiState.update { it.copy(automationNameInput = value, message = null) }
+    }
+
+    fun updateAutomationSensor(value: String) {
+        _uiState.update { it.copy(automationSensorInput = value.trim(), message = null) }
+    }
+
+    fun updateAutomationOperator(value: String) {
+        _uiState.update { it.copy(automationOperatorInput = value.trim().take(2), message = null) }
+    }
+
+    fun updateAutomationThreshold(value: String) {
+        _uiState.update { it.copy(automationThresholdInput = value.filterSignedDecimal(), message = null) }
+    }
+
+    fun updateAutomationAction(value: String) {
+        _uiState.update { it.copy(automationActionInput = value.trim(), message = null) }
+    }
+
+    fun updateAutomationEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(automationEnabled = enabled, message = null) }
     }
 
     fun selectDevice(device: KnownDevice) {
@@ -540,10 +659,16 @@ class DevicesViewModel @Inject constructor(
             summary = "Конфигурация гаджета обновлена",
             command = { connector.getConfig() },
             onSuccess = { response ->
+                val draft = GadgetPayloadParser.settingsDraft(response)
                 _uiState.update {
                     it.copy(
                         configText = GadgetPayloadParser.prettyJson(response.dataJson),
                         configSummary = GadgetPayloadParser.config(response),
+                        settingsDeviceNameInput = draft.deviceName,
+                        settingsTimezoneInput = draft.timezone,
+                        settingsSensorIntervalInput = draft.sensorIntervalMs?.toString().orEmpty(),
+                        settingsDisplayBrightness = draft.displayBrightness?.toFloat() ?: it.settingsDisplayBrightness,
+                        settingsAutoMode = draft.autoMode,
                     )
                 }
             },
@@ -562,6 +687,17 @@ class DevicesViewModel @Inject constructor(
         )
     }
 
+    fun refreshAutomation() {
+        runEditorCommand(
+            commandName = AquikDeviceProfile.COMMAND_GET_AUTOMATION,
+            paramsJson = "{}",
+            summary = "Автоматизации гаджета обновлены",
+            onSuccess = { response ->
+                _uiState.update { it.copy(automationSummary = GadgetPayloadParser.automation(response)) }
+            },
+        )
+    }
+
     fun scanI2c() {
         runDeviceCommand(
             summary = "Диагностика I2C обновлена",
@@ -569,6 +705,173 @@ class DevicesViewModel @Inject constructor(
             onSuccess = { response ->
                 _uiState.update {
                     it.copy(diagnosticSummary = GadgetPayloadParser.diagnostics(response))
+                }
+            },
+        )
+    }
+
+    fun applySettings() {
+        val state = _uiState.value
+        val payload = buildPayloadOrShowError {
+            GadgetEditorPayloads.settings(
+                GadgetSettingsDraft(
+                    deviceName = state.settingsDeviceNameInput,
+                    timezone = state.settingsTimezoneInput,
+                    sensorIntervalMs = state.settingsSensorIntervalInput.toIntOrNull(),
+                    displayBrightness = state.settingsDisplayBrightness.toInt(),
+                    autoMode = state.settingsAutoMode,
+                )
+            )
+        } ?: return
+        runEditorCommand(
+            commandName = AquikDeviceProfile.COMMAND_SET_SETTINGS,
+            paramsJson = payload,
+            summary = "Настройки Aquik сохранены",
+            onSuccess = { response ->
+                _uiState.update {
+                    it.copy(
+                        configText = GadgetPayloadParser.prettyJson(response.dataJson),
+                        configSummary = GadgetPayloadParser.config(response),
+                    )
+                }
+            },
+        )
+    }
+
+    fun applyCalibration() {
+        val state = _uiState.value
+        val payload = buildPayloadOrShowError {
+            GadgetEditorPayloads.calibration(
+                GadgetCalibrationDraft(
+                    sensorKey = state.calibrationSensorInput,
+                    offset = state.calibrationOffsetInput.toDoubleOrNull(),
+                    referenceValue = state.calibrationReferenceInput.toDoubleOrNull(),
+                )
+            )
+        } ?: return
+        runEditorCommand(
+            commandName = AquikDeviceProfile.COMMAND_CALIBRATE_SENSOR,
+            paramsJson = payload,
+            summary = "Калибровка датчика отправлена",
+            onSuccess = { response ->
+                _uiState.update { it.copy(configText = GadgetPayloadParser.prettyJson(response.dataJson)) }
+            },
+        )
+    }
+
+    fun editSchedule(item: GadgetScheduleItem) {
+        _uiState.update {
+            it.copy(
+                scheduleIdInput = item.id,
+                scheduleNameInput = item.name,
+                scheduleTypeInput = item.type,
+                scheduleTimeInput = item.time,
+                scheduleActionInput = item.action,
+                scheduleEnabled = item.enabled,
+                message = null,
+            )
+        }
+    }
+
+    fun saveSchedule() {
+        val state = _uiState.value
+        val draft = GadgetScheduleDraft(
+            id = state.scheduleIdInput,
+            name = state.scheduleNameInput,
+            type = state.scheduleTypeInput,
+            time = state.scheduleTimeInput,
+            action = state.scheduleActionInput,
+            enabled = state.scheduleEnabled,
+        )
+        val payload = buildPayloadOrShowError { GadgetEditorPayloads.schedule(draft) } ?: return
+        val commandName = if (state.scheduleIdInput.isBlank()) {
+            AquikDeviceProfile.COMMAND_ADD_SCHEDULE
+        } else {
+            AquikDeviceProfile.COMMAND_UPDATE_SCHEDULE
+        }
+        runEditorCommand(
+            commandName = commandName,
+            paramsJson = payload,
+            summary = "Расписание Aquik сохранено",
+            onSuccess = { response ->
+                _uiState.update { it.copy(scheduleSummary = GadgetPayloadParser.schedules(response)) }
+            },
+        )
+    }
+
+    fun deleteSchedule() {
+        val payload = buildPayloadOrShowError {
+            GadgetEditorPayloads.deleteSchedule(_uiState.value.scheduleIdInput)
+        } ?: return
+        runEditorCommand(
+            commandName = AquikDeviceProfile.COMMAND_DELETE_SCHEDULE,
+            paramsJson = payload,
+            summary = "Расписание Aquik удалено",
+            onSuccess = { response ->
+                _uiState.update {
+                    it.copy(
+                        scheduleIdInput = "",
+                        scheduleSummary = GadgetPayloadParser.schedules(response),
+                    )
+                }
+            },
+        )
+    }
+
+    fun editAutomation(rule: GadgetAutomationRule) {
+        _uiState.update {
+            it.copy(
+                automationIdInput = rule.id,
+                automationNameInput = rule.name,
+                automationSensorInput = rule.sensorKey,
+                automationOperatorInput = rule.operator,
+                automationThresholdInput = rule.threshold,
+                automationActionInput = rule.action,
+                automationEnabled = rule.enabled,
+                message = null,
+            )
+        }
+    }
+
+    fun saveAutomation() {
+        val state = _uiState.value
+        val payload = buildPayloadOrShowError {
+            GadgetEditorPayloads.automation(
+                GadgetAutomationDraft(
+                    id = state.automationIdInput,
+                    name = state.automationNameInput,
+                    sensorKey = state.automationSensorInput,
+                    operator = state.automationOperatorInput,
+                    threshold = state.automationThresholdInput.toDoubleOrNull(),
+                    action = state.automationActionInput,
+                    enabled = state.automationEnabled,
+                )
+            )
+        } ?: return
+        runEditorCommand(
+            commandName = AquikDeviceProfile.COMMAND_UPSERT_AUTOMATION,
+            paramsJson = payload,
+            summary = "Автоматизация Aquik сохранена",
+            onSuccess = { response ->
+                _uiState.update { it.copy(automationSummary = GadgetPayloadParser.automation(response)) }
+            },
+        )
+    }
+
+    fun deleteAutomation() {
+        val payload = buildPayloadOrShowError {
+            GadgetEditorPayloads.deleteAutomation(_uiState.value.automationIdInput)
+        } ?: return
+        runEditorCommand(
+            commandName = AquikDeviceProfile.COMMAND_DELETE_AUTOMATION,
+            paramsJson = payload,
+            summary = "Автоматизация Aquik удалена",
+            onSuccess = { response ->
+                _uiState.update {
+                    it.copy(
+                        automationIdInput = "",
+                        automationSummary = GadgetPayloadParser.automation(response),
+                    )
                 }
             },
         )
@@ -677,6 +980,42 @@ class DevicesViewModel @Inject constructor(
         }
     }
 
+    private fun runEditorCommand(
+        commandName: String,
+        paramsJson: String,
+        summary: String,
+        onSuccess: (DeviceCommandResponse) -> Unit,
+    ) {
+        val profile = currentProfile()
+        if (!profile.supports(commandName)) {
+            _uiState.update {
+                it.copy(
+                    message = "Профиль ${profile.name} не поддерживает команду $commandName",
+                    isError = true,
+                )
+            }
+            return
+        }
+        runDeviceCommand(
+            summary = summary,
+            command = { connector.executeCommand(commandName, paramsJson) },
+            onSuccess = onSuccess,
+        )
+    }
+
+    private fun buildPayloadOrShowError(block: () -> String): String? =
+        try {
+            block()
+        } catch (error: IllegalArgumentException) {
+            _uiState.update {
+                it.copy(
+                    message = error.message ?: "Проверьте параметры редактора",
+                    isError = true,
+                )
+            }
+            null
+        }
+
     private fun runDeviceCommand(
         summary: String,
         command: suspend () -> Result<DeviceCommandResponse>,
@@ -779,13 +1118,18 @@ class DevicesViewModel @Inject constructor(
         )
     }
 
+    private fun currentProfile(): DeviceProfile {
+        val state = _uiState.value
+        return state.profiles.firstOrNull { it.id == state.selectedProfileId }
+            ?: BuiltInDeviceProfiles.byId(state.selectedProfileId)
+            ?: AquikDeviceProfile.profile
+    }
+
     private fun buildConfigOrShowError(): DeviceConnectionConfig? {
         val state = _uiState.value
         val host = state.hostInput.trim()
         val port = state.portInput.toIntOrNull()?.coerceIn(1, 65535)
-        val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId }
-            ?: BuiltInDeviceProfiles.byId(state.selectedProfileId)
-            ?: AquikDeviceProfile.profile
+        val profile = currentProfile()
         val endpoint = DeviceEndpoint.normalize(
             host = host,
             port = port ?: 0,
@@ -865,6 +1209,25 @@ class DevicesViewModel @Inject constructor(
 }
 
 private fun Boolean.onOffText(): String = if (this) "включен" else "выключен"
+
+private fun DeviceProfile.supports(command: String): Boolean =
+    capabilities.contains(command)
+
+private fun String.filterSignedDecimal(): String {
+    val builder = StringBuilder()
+    var hasDecimal = false
+    forEachIndexed { index, char ->
+        when {
+            char.isDigit() -> builder.append(char)
+            char == '-' && index == 0 -> builder.append(char)
+            (char == '.' || char == ',') && !hasDecimal -> {
+                builder.append('.')
+                hasDecimal = true
+            }
+        }
+    }
+    return builder.toString()
+}
 
 private fun List<GadgetCloudSnapshot>.routeStatus(): GadgetRouteStatus = when {
     isEmpty() -> GadgetRouteStatus.STALE

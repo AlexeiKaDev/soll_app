@@ -86,6 +86,24 @@ object GadgetPayloadParser {
         )
     }
 
+    fun settingsDraft(response: DeviceCommandResponse): GadgetSettingsDraft {
+        val root = response.dataJson.parseObjectOrEmpty()
+        val config = root.optJSONObject("config")
+            ?: root.optJSONObject("settings")
+            ?: root.optJSONObject("info")
+            ?: root
+        return GadgetSettingsDraft(
+            deviceName = config.optString("deviceName").ifBlank { config.optString("name") },
+            timezone = config.optString("timezone"),
+            sensorIntervalMs = config.optIntValueOrNull("sensorInterval")
+                ?: config.optIntValueOrNull("updateInterval"),
+            displayBrightness = config.optIntOrNull("displayBrightness"),
+            autoMode = config.optBooleanOrNull("autoMode")
+                ?: config.optBooleanOrNull("automation")
+                ?: false,
+        )
+    }
+
     fun schedules(response: DeviceCommandResponse): GadgetScheduleSummary {
         val payload = response.dataJson.parseJsonOrNull()
         val array = when (payload) {
@@ -114,6 +132,47 @@ object GadgetPayloadParser {
             }
         }
         return GadgetScheduleSummary(
+            items = items,
+            rawJson = response.dataJson.prettyJson(),
+        )
+    }
+
+    fun automation(response: DeviceCommandResponse): GadgetAutomationSummary {
+        val payload = response.dataJson.parseJsonOrNull()
+        val array = when (payload) {
+            is JSONArray -> payload
+            is JSONObject -> payload.optJSONArray("automation")
+                ?: payload.optJSONArray("automations")
+                ?: payload.optJSONArray("rules")
+                ?: JSONArray()
+            else -> JSONArray()
+        }
+        val items = (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.let { rule ->
+                val condition = rule.optJSONObject("condition") ?: JSONObject()
+                val actionObject = rule.optJSONObject("action")
+                val threshold = rule.opt("threshold")
+                    ?: condition.opt("value")
+                    ?: condition.opt("threshold")
+                GadgetAutomationRule(
+                    id = rule.optString("id", (index + 1).toString()),
+                    name = rule.optString("name").ifBlank { "Автоматизация ${index + 1}" },
+                    enabled = rule.optBoolean("enabled", true),
+                    sensorKey = rule.optString("sensor")
+                        .ifBlank { condition.optString("sensor") }
+                        .ifBlank { "датчик не задан" },
+                    operator = rule.optString("operator")
+                        .ifBlank { condition.optString("operator") }
+                        .ifBlank { ">" },
+                    threshold = threshold.formatConfigValue("threshold"),
+                    action = rule.optString("action")
+                        .ifBlank { actionObject?.optString("type").orEmpty() }
+                        .ifBlank { actionObject?.optString("target").orEmpty() }
+                        .ifBlank { "действие не задано" },
+                )
+            }
+        }
+        return GadgetAutomationSummary(
             items = items,
             rawJson = response.dataJson.prettyJson(),
         )
@@ -264,6 +323,9 @@ private fun JSONObject.optBooleanOrNull(name: String): Boolean? =
 
 private fun JSONObject.optIntOrNull(name: String): Int? =
     if (has(name) && !isNull(name)) optInt(name).coerceIn(0, 255) else null
+
+private fun JSONObject.optIntValueOrNull(name: String): Int? =
+    if (has(name) && !isNull(name)) optInt(name) else null
 
 private fun String.parseJsonOrNull(): Any? =
     runCatching {

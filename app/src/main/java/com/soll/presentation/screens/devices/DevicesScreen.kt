@@ -66,6 +66,8 @@ import com.soll.domain.device.DeviceProfile
 import com.soll.domain.device.DeviceProvisioningPlan
 import com.soll.domain.device.DeviceSensorValue
 import com.soll.domain.device.DeviceSensorStatus
+import com.soll.domain.device.GadgetAutomationRule
+import com.soll.domain.device.GadgetAutomationSummary
 import com.soll.domain.device.GadgetConfigSummary
 import com.soll.domain.device.GadgetCloudEvent
 import com.soll.domain.device.GadgetCloudSnapshot
@@ -285,13 +287,40 @@ fun DevicesScreen(
             }
 
             GadgetServiceCard(
-                configSummary = uiState.configSummary,
-                scheduleSummary = uiState.scheduleSummary,
-                diagnosticSummary = uiState.diagnosticSummary,
-                isBusy = uiState.isBusy,
+                uiState = uiState,
                 onRefreshConfig = viewModel::refreshConfig,
                 onRefreshSchedules = viewModel::refreshSchedules,
+                onRefreshAutomation = viewModel::refreshAutomation,
                 onScanI2c = viewModel::scanI2c,
+                onUpdateSettingsDeviceName = viewModel::updateSettingsDeviceName,
+                onUpdateSettingsTimezone = viewModel::updateSettingsTimezone,
+                onUpdateSettingsSensorInterval = viewModel::updateSettingsSensorInterval,
+                onUpdateSettingsDisplayBrightness = viewModel::updateSettingsDisplayBrightness,
+                onUpdateSettingsAutoMode = viewModel::updateSettingsAutoMode,
+                onApplySettings = viewModel::applySettings,
+                onUpdateCalibrationSensor = viewModel::updateCalibrationSensor,
+                onUpdateCalibrationOffset = viewModel::updateCalibrationOffset,
+                onUpdateCalibrationReference = viewModel::updateCalibrationReference,
+                onApplyCalibration = viewModel::applyCalibration,
+                onUpdateScheduleId = viewModel::updateScheduleId,
+                onUpdateScheduleName = viewModel::updateScheduleName,
+                onUpdateScheduleType = viewModel::updateScheduleType,
+                onUpdateScheduleTime = viewModel::updateScheduleTime,
+                onUpdateScheduleAction = viewModel::updateScheduleAction,
+                onUpdateScheduleEnabled = viewModel::updateScheduleEnabled,
+                onSaveSchedule = viewModel::saveSchedule,
+                onDeleteSchedule = viewModel::deleteSchedule,
+                onEditSchedule = viewModel::editSchedule,
+                onUpdateAutomationId = viewModel::updateAutomationId,
+                onUpdateAutomationName = viewModel::updateAutomationName,
+                onUpdateAutomationSensor = viewModel::updateAutomationSensor,
+                onUpdateAutomationOperator = viewModel::updateAutomationOperator,
+                onUpdateAutomationThreshold = viewModel::updateAutomationThreshold,
+                onUpdateAutomationAction = viewModel::updateAutomationAction,
+                onUpdateAutomationEnabled = viewModel::updateAutomationEnabled,
+                onSaveAutomation = viewModel::saveAutomation,
+                onDeleteAutomation = viewModel::deleteAutomation,
+                onEditAutomation = viewModel::editAutomation,
             )
 
             GadgetServerCard(
@@ -834,13 +863,40 @@ private fun ServerEventRow(event: GadgetCloudEvent) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GadgetServiceCard(
-    configSummary: GadgetConfigSummary,
-    scheduleSummary: GadgetScheduleSummary,
-    diagnosticSummary: GadgetDiagnosticSummary,
-    isBusy: Boolean,
+    uiState: DevicesUiState,
     onRefreshConfig: () -> Unit,
     onRefreshSchedules: () -> Unit,
+    onRefreshAutomation: () -> Unit,
     onScanI2c: () -> Unit,
+    onUpdateSettingsDeviceName: (String) -> Unit,
+    onUpdateSettingsTimezone: (String) -> Unit,
+    onUpdateSettingsSensorInterval: (String) -> Unit,
+    onUpdateSettingsDisplayBrightness: (Float) -> Unit,
+    onUpdateSettingsAutoMode: (Boolean) -> Unit,
+    onApplySettings: () -> Unit,
+    onUpdateCalibrationSensor: (String) -> Unit,
+    onUpdateCalibrationOffset: (String) -> Unit,
+    onUpdateCalibrationReference: (String) -> Unit,
+    onApplyCalibration: () -> Unit,
+    onUpdateScheduleId: (String) -> Unit,
+    onUpdateScheduleName: (String) -> Unit,
+    onUpdateScheduleType: (String) -> Unit,
+    onUpdateScheduleTime: (String) -> Unit,
+    onUpdateScheduleAction: (String) -> Unit,
+    onUpdateScheduleEnabled: (Boolean) -> Unit,
+    onSaveSchedule: () -> Unit,
+    onDeleteSchedule: () -> Unit,
+    onEditSchedule: (GadgetScheduleItem) -> Unit,
+    onUpdateAutomationId: (String) -> Unit,
+    onUpdateAutomationName: (String) -> Unit,
+    onUpdateAutomationSensor: (String) -> Unit,
+    onUpdateAutomationOperator: (String) -> Unit,
+    onUpdateAutomationThreshold: (String) -> Unit,
+    onUpdateAutomationAction: (String) -> Unit,
+    onUpdateAutomationEnabled: (Boolean) -> Unit,
+    onSaveAutomation: () -> Unit,
+    onDeleteAutomation: () -> Unit,
+    onEditAutomation: (GadgetAutomationRule) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -869,7 +925,7 @@ private fun GadgetServiceCard(
             ) {
                 OutlinedButton(
                     onClick = onRefreshConfig,
-                    enabled = !isBusy,
+                    enabled = !uiState.isBusy,
                 ) {
                     Icon(Icons.Default.Settings, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -877,15 +933,23 @@ private fun GadgetServiceCard(
                 }
                 OutlinedButton(
                     onClick = onRefreshSchedules,
-                    enabled = !isBusy,
+                    enabled = !uiState.isBusy,
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Расписания")
                 }
                 OutlinedButton(
+                    onClick = onRefreshAutomation,
+                    enabled = !uiState.isBusy,
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Автоматика")
+                }
+                OutlinedButton(
                     onClick = onScanI2c,
-                    enabled = !isBusy,
+                    enabled = !uiState.isBusy,
                 ) {
                     Icon(Icons.Default.Sensors, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -893,25 +957,358 @@ private fun GadgetServiceCard(
                 }
             }
 
-            if (configSummary.items.isNotEmpty()) {
-                SummaryBlock(title = "Конфигурация", items = configSummary.items)
+            GadgetSettingsEditor(
+                uiState = uiState,
+                onUpdateDeviceName = onUpdateSettingsDeviceName,
+                onUpdateTimezone = onUpdateSettingsTimezone,
+                onUpdateSensorInterval = onUpdateSettingsSensorInterval,
+                onUpdateDisplayBrightness = onUpdateSettingsDisplayBrightness,
+                onUpdateAutoMode = onUpdateSettingsAutoMode,
+                onApply = onApplySettings,
+            )
+            GadgetCalibrationEditor(
+                uiState = uiState,
+                onUpdateSensor = onUpdateCalibrationSensor,
+                onUpdateOffset = onUpdateCalibrationOffset,
+                onUpdateReference = onUpdateCalibrationReference,
+                onApply = onApplyCalibration,
+            )
+            GadgetScheduleEditor(
+                uiState = uiState,
+                onUpdateId = onUpdateScheduleId,
+                onUpdateName = onUpdateScheduleName,
+                onUpdateType = onUpdateScheduleType,
+                onUpdateTime = onUpdateScheduleTime,
+                onUpdateAction = onUpdateScheduleAction,
+                onUpdateEnabled = onUpdateScheduleEnabled,
+                onSave = onSaveSchedule,
+                onDelete = onDeleteSchedule,
+            )
+            GadgetAutomationEditor(
+                uiState = uiState,
+                onUpdateId = onUpdateAutomationId,
+                onUpdateName = onUpdateAutomationName,
+                onUpdateSensor = onUpdateAutomationSensor,
+                onUpdateOperator = onUpdateAutomationOperator,
+                onUpdateThreshold = onUpdateAutomationThreshold,
+                onUpdateAction = onUpdateAutomationAction,
+                onUpdateEnabled = onUpdateAutomationEnabled,
+                onSave = onSaveAutomation,
+                onDelete = onDeleteAutomation,
+            )
+
+            if (uiState.configSummary.items.isNotEmpty()) {
+                SummaryBlock(title = "Конфигурация", items = uiState.configSummary.items)
             }
-            if (scheduleSummary.items.isNotEmpty()) {
-                ScheduleBlock(scheduleSummary.items)
+            if (uiState.scheduleSummary.items.isNotEmpty()) {
+                ScheduleBlock(uiState.scheduleSummary.items, onEditSchedule)
             }
-            if (diagnosticSummary.items.isNotEmpty()) {
-                SummaryBlock(title = "Диагностика", items = diagnosticSummary.items)
+            if (uiState.automationSummary.items.isNotEmpty()) {
+                AutomationBlock(uiState.automationSummary.items, onEditAutomation)
+            }
+            if (uiState.diagnosticSummary.items.isNotEmpty()) {
+                SummaryBlock(title = "Диагностика", items = uiState.diagnosticSummary.items)
             }
             if (
-                configSummary.items.isEmpty() &&
-                scheduleSummary.items.isEmpty() &&
-                diagnosticSummary.items.isEmpty()
+                uiState.configSummary.items.isEmpty() &&
+                uiState.scheduleSummary.items.isEmpty() &&
+                uiState.automationSummary.items.isEmpty() &&
+                uiState.diagnosticSummary.items.isEmpty()
             ) {
                 Text(
                     text = "Подключи гаджет и запроси нужный раздел.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GadgetSettingsEditor(
+    uiState: DevicesUiState,
+    onUpdateDeviceName: (String) -> Unit,
+    onUpdateTimezone: (String) -> Unit,
+    onUpdateSensorInterval: (String) -> Unit,
+    onUpdateDisplayBrightness: (Float) -> Unit,
+    onUpdateAutoMode: (Boolean) -> Unit,
+    onApply: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Настройки",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        OutlinedTextField(
+            value = uiState.settingsDeviceNameInput,
+            onValueChange = onUpdateDeviceName,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Имя гаджета") },
+            singleLine = true,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.settingsTimezoneInput,
+                onValueChange = onUpdateTimezone,
+                modifier = Modifier.weight(1f),
+                label = { Text("Часовой пояс") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.settingsSensorIntervalInput,
+                onValueChange = onUpdateSensorInterval,
+                modifier = Modifier.weight(1f),
+                label = { Text("Датчики, мс") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+            )
+        }
+        Text(
+            text = "Яркость дисплея: ${uiState.settingsDisplayBrightness.toInt()}/255",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = uiState.settingsDisplayBrightness,
+            onValueChange = onUpdateDisplayBrightness,
+            valueRange = 0f..255f,
+            steps = 254,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Авто-режим", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = uiState.settingsAutoMode, onCheckedChange = onUpdateAutoMode)
+        }
+        Button(
+            onClick = onApply,
+            enabled = !uiState.isBusy,
+        ) {
+            Icon(Icons.Default.Settings, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Сохранить настройки")
+        }
+    }
+}
+
+@Composable
+private fun GadgetCalibrationEditor(
+    uiState: DevicesUiState,
+    onUpdateSensor: (String) -> Unit,
+    onUpdateOffset: (String) -> Unit,
+    onUpdateReference: (String) -> Unit,
+    onApply: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Калибровка датчика",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.calibrationSensorInput,
+                onValueChange = onUpdateSensor,
+                modifier = Modifier.weight(1f),
+                label = { Text("Датчик") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.calibrationOffsetInput,
+                onValueChange = onUpdateOffset,
+                modifier = Modifier.weight(1f),
+                label = { Text("Смещение") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+            )
+        }
+        OutlinedTextField(
+            value = uiState.calibrationReferenceInput,
+            onValueChange = onUpdateReference,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Эталонное значение") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+        )
+        OutlinedButton(
+            onClick = onApply,
+            enabled = !uiState.isBusy,
+        ) {
+            Icon(Icons.Default.Sensors, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Отправить калибровку")
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GadgetScheduleEditor(
+    uiState: DevicesUiState,
+    onUpdateId: (String) -> Unit,
+    onUpdateName: (String) -> Unit,
+    onUpdateType: (String) -> Unit,
+    onUpdateTime: (String) -> Unit,
+    onUpdateAction: (String) -> Unit,
+    onUpdateEnabled: (Boolean) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Редактор расписания",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.scheduleIdInput,
+                onValueChange = onUpdateId,
+                modifier = Modifier.weight(0.8f),
+                label = { Text("ID") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.scheduleTimeInput,
+                onValueChange = onUpdateTime,
+                modifier = Modifier.weight(1f),
+                label = { Text("Время") },
+                singleLine = true,
+            )
+        }
+        OutlinedTextField(
+            value = uiState.scheduleNameInput,
+            onValueChange = onUpdateName,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Название") },
+            singleLine = true,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.scheduleTypeInput,
+                onValueChange = onUpdateType,
+                modifier = Modifier.weight(1f),
+                label = { Text("Тип") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.scheduleActionInput,
+                onValueChange = onUpdateAction,
+                modifier = Modifier.weight(1f),
+                label = { Text("Действие") },
+                singleLine = true,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Активно", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = uiState.scheduleEnabled, onCheckedChange = onUpdateEnabled)
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(onClick = onSave, enabled = !uiState.isBusy) {
+                Text("Сохранить расписание")
+            }
+            OutlinedButton(onClick = onDelete, enabled = !uiState.isBusy && uiState.scheduleIdInput.isNotBlank()) {
+                Text("Удалить")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GadgetAutomationEditor(
+    uiState: DevicesUiState,
+    onUpdateId: (String) -> Unit,
+    onUpdateName: (String) -> Unit,
+    onUpdateSensor: (String) -> Unit,
+    onUpdateOperator: (String) -> Unit,
+    onUpdateThreshold: (String) -> Unit,
+    onUpdateAction: (String) -> Unit,
+    onUpdateEnabled: (Boolean) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Редактор автоматизации",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.automationIdInput,
+                onValueChange = onUpdateId,
+                modifier = Modifier.weight(0.8f),
+                label = { Text("ID") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.automationNameInput,
+                onValueChange = onUpdateName,
+                modifier = Modifier.weight(1.2f),
+                label = { Text("Название") },
+                singleLine = true,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = uiState.automationSensorInput,
+                onValueChange = onUpdateSensor,
+                modifier = Modifier.weight(1f),
+                label = { Text("Датчик") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.automationOperatorInput,
+                onValueChange = onUpdateOperator,
+                modifier = Modifier.weight(0.6f),
+                label = { Text("Условие") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = uiState.automationThresholdInput,
+                onValueChange = onUpdateThreshold,
+                modifier = Modifier.weight(0.9f),
+                label = { Text("Порог") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+            )
+        }
+        OutlinedTextField(
+            value = uiState.automationActionInput,
+            onValueChange = onUpdateAction,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Действие") },
+            singleLine = true,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Активна", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = uiState.automationEnabled, onCheckedChange = onUpdateEnabled)
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(onClick = onSave, enabled = !uiState.isBusy) {
+                Text("Сохранить автоматизацию")
+            }
+            OutlinedButton(onClick = onDelete, enabled = !uiState.isBusy && uiState.automationIdInput.isNotBlank()) {
+                Text("Удалить")
             }
         }
     }
@@ -962,7 +1359,10 @@ private fun KeyValueRow(item: GadgetKeyValue) {
 }
 
 @Composable
-private fun ScheduleBlock(items: List<GadgetScheduleItem>) {
+private fun ScheduleBlock(
+    items: List<GadgetScheduleItem>,
+    onEdit: (GadgetScheduleItem) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "Расписания",
@@ -970,13 +1370,16 @@ private fun ScheduleBlock(items: List<GadgetScheduleItem>) {
             fontWeight = FontWeight.SemiBold,
         )
         items.forEach { item ->
-            ScheduleRow(item)
+            ScheduleRow(item, onEdit)
         }
     }
 }
 
 @Composable
-private fun ScheduleRow(item: GadgetScheduleItem) {
+private fun ScheduleRow(
+    item: GadgetScheduleItem,
+    onEdit: (GadgetScheduleItem) -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
@@ -1003,14 +1406,90 @@ private fun ScheduleRow(item: GadgetScheduleItem) {
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
-            PassiveChip(
-                text = if (item.enabled) "вкл" else "выкл",
-                containerColor = if (item.enabled) {
-                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                },
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                PassiveChip(
+                    text = if (item.enabled) "вкл" else "выкл",
+                    containerColor = if (item.enabled) {
+                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    },
+                )
+                OutlinedButton(onClick = { onEdit(item) }) {
+                    Text("Править")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutomationBlock(
+    items: List<GadgetAutomationRule>,
+    onEdit: (GadgetAutomationRule) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Автоматизации",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        items.forEach { item ->
+            AutomationRow(item, onEdit)
+        }
+    }
+}
+
+@Composable
+private fun AutomationRow(
+    item: GadgetAutomationRule,
+    onEdit: (GadgetAutomationRule) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = "${item.sensorKey} ${item.operator} ${item.threshold} -> ${item.action}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                PassiveChip(
+                    text = if (item.enabled) "вкл" else "выкл",
+                    containerColor = if (item.enabled) {
+                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    },
+                )
+                OutlinedButton(onClick = { onEdit(item) }) {
+                    Text("Править")
+                }
+            }
         }
     }
 }

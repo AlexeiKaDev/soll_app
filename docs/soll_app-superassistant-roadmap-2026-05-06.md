@@ -705,7 +705,7 @@ Implementation tasks:
 - [x] Port the first Android-side Aquik model slice: profile metadata, aquarium/greenhouse use cases, known sensors/actuators and telemetry statuses.
 - [x] Refactor gadget JSON parsing out of ViewModel into domain parsers before adding more Aquik Android features.
 - [x] Add service read panel for config, schedules and I2C diagnostics through the profile command layer.
-- [ ] Port Aquik settings, sensor calibration, schedules and automation editor into `Гаджеты` without making a second Android app.
+- [x] Port Aquik settings, sensor calibration, schedules and automation editor into `Гаджеты` without making a second Android app.
 
 Progress 2026-05-08:
 
@@ -744,6 +744,13 @@ Progress 2026-05-12 service/refactor update:
 - Devices ViewModel now delegates payload parsing to the domain layer; UI receives already-normalized summaries.
 - Added `Гаджеты -> Сервис и автоматика` read panel with config, schedules and I2C scan actions. This is the base for Aquik settings/calibration/automation over the special protocol, without ESP-side UI.
 - Added protocol/transport framing in the gadget catalog: Wi-Fi LAN/WebSocket, Wi-Fi AP/bootstrap, BLE/GATT and Bluetooth SPP where hardware supports it.
+
+Progress 2026-05-12 editor update:
+
+- `Гаджеты -> Сервис и автоматика` now has Android-side editors for Aquik settings, sensor calibration, schedules and automation rules.
+- The editor uses the headless Soll/Aquik command protocol: `setSettings`, `calibrateSensor`, `addSchedule`, `updateSchedule`, `deleteSchedule`, `getAutomationRules`, `upsertAutomationRule` and `deleteAutomationRule`.
+- Schedule and automation lists can load existing entries into the editor; settings reads prefill device name, timezone, sensor interval, display brightness and auto mode.
+- Added domain payload builders and parser tests so editor JSON remains nested and top-level compatible with firmware variants.
 
 Progress 2026-05-12 Soll server route:
 

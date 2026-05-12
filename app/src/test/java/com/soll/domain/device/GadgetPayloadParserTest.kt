@@ -64,6 +64,22 @@ class GadgetPayloadParserTest {
     }
 
     @Test
+    fun `settings draft parser restores editable aquik fields`() {
+        val response = response(
+            command = "getSettings",
+            dataJson = """{"settings":{"deviceName":"Aquik","timezone":"Europe/Chisinau","sensorInterval":2000,"displayBrightness":120,"autoMode":true}}""",
+        )
+
+        val draft = GadgetPayloadParser.settingsDraft(response)
+
+        assertEquals("Aquik", draft.deviceName)
+        assertEquals("Europe/Chisinau", draft.timezone)
+        assertEquals(2000, draft.sensorIntervalMs)
+        assertEquals(120, draft.displayBrightness)
+        assertEquals(true, draft.autoMode)
+    }
+
+    @Test
     fun `schedule parser reads aquik schedules`() {
         val response = response(
             command = "getSchedules",
@@ -75,6 +91,21 @@ class GadgetPayloadParserTest {
         assertEquals(1, summary.items.size)
         assertEquals("Свет утром", summary.items.first().name)
         assertEquals("08:00", summary.items.first().time)
+    }
+
+    @Test
+    fun `automation parser reads aquik rules`() {
+        val response = response(
+            command = "getAutomationRules",
+            dataJson = """{"rules":[{"id":"hot","name":"Охлаждение","enabled":true,"condition":{"sensor":"waterTemp","operator":">","value":28},"action":"fan:on"}]}""",
+        )
+
+        val summary = GadgetPayloadParser.automation(response)
+
+        assertEquals(1, summary.items.size)
+        assertEquals("Охлаждение", summary.items.first().name)
+        assertEquals("waterTemp", summary.items.first().sensorKey)
+        assertEquals("fan:on", summary.items.first().action)
     }
 
     @Test

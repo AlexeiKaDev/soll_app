@@ -291,6 +291,21 @@ data class GadgetScheduleSummary(
     val rawJson: String = "",
 )
 
+data class GadgetAutomationRule(
+    val id: String,
+    val name: String,
+    val enabled: Boolean,
+    val sensorKey: String,
+    val operator: String,
+    val threshold: String,
+    val action: String,
+)
+
+data class GadgetAutomationSummary(
+    val items: List<GadgetAutomationRule> = emptyList(),
+    val rawJson: String = "",
+)
+
 data class GadgetDiagnosticSummary(
     val items: List<GadgetKeyValue> = emptyList(),
     val rawJson: String = "",

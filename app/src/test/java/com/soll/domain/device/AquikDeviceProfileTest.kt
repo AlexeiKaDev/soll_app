@@ -17,6 +17,8 @@ class AquikDeviceProfileTest {
         assertTrue(profile.capabilities.contains("getSystemInfo"))
         assertTrue(profile.capabilities.contains("getSettings"))
         assertTrue(profile.capabilities.contains("getSchedules"))
+        assertTrue(profile.capabilities.contains("calibrateSensor"))
+        assertTrue(profile.capabilities.contains("upsertAutomationRule"))
     }
 
     @Test

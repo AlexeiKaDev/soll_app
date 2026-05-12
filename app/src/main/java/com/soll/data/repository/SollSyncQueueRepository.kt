@@ -111,6 +111,45 @@ class SollSyncQueueRepository @Inject constructor(
         enqueueRetryWorker()
     }
 
+    suspend fun enqueueTaskAction(
+        taskId: String,
+        taskTitle: String,
+        action: String,
+        targetStatus: String?,
+        reason: String?,
+    ) {
+        val cleanTaskId = taskId.trim()
+        require(cleanTaskId.isNotBlank()) { "ID задачи не задан" }
+        require(action in TASK_ACTIONS) { "Неизвестное действие задачи: $action" }
+
+        val now = System.currentTimeMillis()
+        val payload = JSONObject()
+            .put("task_id", cleanTaskId)
+            .put("task_title", taskTitle)
+            .put("action", action)
+        targetStatus?.takeIf { it.isNotBlank() }?.let { payload.put("target_status", it) }
+
+        syncQueueDao.insert(
+            SyncQueueEntity(
+                id = UUID.randomUUID().toString(),
+                kind = SyncQueueEntity.KIND_TASK_ACTION,
+                status = SyncQueueEntity.STATUS_PENDING,
+                payloadJson = payload.toString(),
+                attempts = 0,
+                lastError = reason,
+                createdAt = now,
+                updatedAt = now,
+                nextAttemptAt = 0L,
+            )
+        )
+        enqueueRetryWorker()
+    }
+
+    suspend fun getPendingTaskActionStatuses(): Map<String, String> =
+        syncQueueDao.getOpenItemsByKind(SyncQueueEntity.KIND_TASK_ACTION)
+            .mapNotNull { it.taskActionStatusOrNull() }
+            .toMap()
+
     fun enqueueRetryWorker(initialDelayMs: Long = 0L) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -189,7 +228,24 @@ class SollSyncQueueRepository @Inject constructor(
                 }
             }
 
+            SyncQueueEntity.KIND_TASK_ACTION -> retryTaskAction(payload)
+
             else -> Result.failure(IllegalStateException("Неизвестный тип очереди: ${item.kind}"))
+        }
+    }
+
+    private suspend fun retryTaskAction(payload: JSONObject): Result<Unit> {
+        val taskId = payload.getString("task_id")
+        return when (val action = payload.getString("action")) {
+            TASK_ACTION_MOVE_TO_TODAY -> sollGateway.moveTaskToToday(taskId).map { Unit }
+            TASK_ACTION_SET_STATUS -> sollGateway.setTaskStatus(
+                taskId = taskId,
+                status = payload.getString("target_status"),
+            ).map { Unit }
+            TASK_ACTION_COMPLETE -> sollGateway.completeTask(taskId).map { Unit }
+            TASK_ACTION_DEFER -> sollGateway.deferTask(taskId).map { Unit }
+            TASK_ACTION_REJECT -> sollGateway.rejectTask(taskId).map { Unit }
+            else -> Result.failure(IllegalStateException("Неизвестное действие задачи: $action"))
         }
     }
 
@@ -256,6 +312,26 @@ class SollSyncQueueRepository @Inject constructor(
         return (0 until length()).mapNotNull { index -> optString(index).takeIf { it.isNotBlank() } }
     }
 
+    private fun SyncQueueEntity.taskActionStatusOrNull(): Pair<String, String>? =
+        runCatching {
+            val payload = JSONObject(payloadJson)
+            val taskId = payload.optString("task_id").takeIf { it.isNotBlank() } ?: return@runCatching null
+            val action = payload.optString("action")
+            val status = taskActionTargetStatus(action, payload.optString("target_status"))
+                ?: return@runCatching null
+            taskId to status
+        }.getOrNull()
+
+    private fun taskActionTargetStatus(action: String, targetStatus: String?): String? =
+        when (action) {
+            TASK_ACTION_MOVE_TO_TODAY -> "today"
+            TASK_ACTION_SET_STATUS -> targetStatus?.takeIf { it.isNotBlank() }
+            TASK_ACTION_COMPLETE -> "done"
+            TASK_ACTION_DEFER -> "deferred"
+            TASK_ACTION_REJECT -> "rejected"
+            else -> null
+        }
+
     private fun String.sanitizeFilename(): String =
         replace(Regex("""[\\/:*?"<>|]+"""), "_").ifBlank { "upload.bin" }
 
@@ -264,12 +340,26 @@ class SollSyncQueueRepository @Inject constructor(
         return if (index >= 0 && !isNull(index)) getString(index) else null
     }
 
-    private companion object {
-        const val BASE_RETRY_DELAY_MS = 60_000L
-        const val MAX_RETRY_DELAY_MS = 30 * 60_000L
-        const val COMPLETED_RETENTION_MS = 7 * 24 * 60 * 60_000L
-        const val UNIQUE_WORK_NAME = "soll_sync_queue"
-        const val WORK_TAG = "soll_sync_queue"
+    companion object {
+        const val TASK_ACTION_MOVE_TO_TODAY = "MOVE_TO_TODAY"
+        const val TASK_ACTION_SET_STATUS = "SET_STATUS"
+        const val TASK_ACTION_COMPLETE = "COMPLETE"
+        const val TASK_ACTION_DEFER = "DEFER"
+        const val TASK_ACTION_REJECT = "REJECT"
+
+        private val TASK_ACTIONS = setOf(
+            TASK_ACTION_MOVE_TO_TODAY,
+            TASK_ACTION_SET_STATUS,
+            TASK_ACTION_COMPLETE,
+            TASK_ACTION_DEFER,
+            TASK_ACTION_REJECT,
+        )
+
+        private const val BASE_RETRY_DELAY_MS = 60_000L
+        private const val MAX_RETRY_DELAY_MS = 30 * 60_000L
+        private const val COMPLETED_RETENTION_MS = 7 * 24 * 60 * 60_000L
+        private const val UNIQUE_WORK_NAME = "soll_sync_queue"
+        private const val WORK_TAG = "soll_sync_queue"
     }
 }
 

@@ -5,6 +5,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.squareup.moshi.Moshi
+import com.soll.data.api.AndroidSyncStatusResponse
 import com.soll.data.api.AssistantAskRequest
 import com.soll.data.api.AssistantAskResponse
 import com.soll.data.api.BookActionResponse
@@ -33,6 +34,8 @@ import com.soll.data.api.RawFileResponse
 import com.soll.data.api.RawUploadResponse
 import com.soll.data.api.SollApiService
 import com.soll.data.api.SollBookStatusResponse
+import com.soll.data.api.SollBriefingResponse
+import com.soll.data.api.SollDeviceResponse
 import com.soll.data.api.SollHealthResponse
 import com.soll.data.api.SollTaskBoardResponse
 import com.soll.data.api.SollTaskResponse
@@ -45,6 +48,7 @@ import com.soll.domain.device.GadgetCloudHistory
 import com.soll.domain.device.GadgetCloudHistoryPoint
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollBookActionResult
 import com.soll.domain.soll.SollBookAlternative
 import com.soll.domain.soll.SollBookBatchDownload
@@ -59,6 +63,8 @@ import com.soll.domain.soll.SollBookResult
 import com.soll.domain.soll.SollBookSelection
 import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
+import com.soll.domain.soll.SollBriefing
+import com.soll.domain.soll.SollDevice
 import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollRawNote
 import com.soll.domain.soll.SollRawUpload
@@ -87,12 +93,28 @@ class SollRepository @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val moshi: Moshi,
 ) : SollGateway {
+    private val androidSyncStatusJsonAdapter by lazy {
+        moshi.adapter(AndroidSyncStatusResponse::class.java)
+    }
+
     override suspend fun getHealth(): Result<SollHealth> = runSuspendCatching {
         service().getHealth(authorizationHeader()).toDomain()
     }
 
     override suspend fun getTaskBoard(): Result<SollTaskBoard> = runSuspendCatching {
         service().getTaskBoard(authorizationHeader()).toDomain()
+    }
+
+    override suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus> {
+        val liveResult = runSuspendCatching {
+            val response = service().getAndroidSyncStatus(authorizationHeader())
+            cacheAndroidSyncStatus(response)
+            response.toDomain()
+        }
+        if (liveResult.isSuccess) return liveResult
+
+        val cached = cachedAndroidSyncStatusOrNull(liveResult.exceptionOrNull())
+        return cached?.let { Result.success(it) } ?: liveResult
     }
 
     override suspend fun createRawNote(
@@ -277,12 +299,74 @@ class SollRepository @Inject constructor(
         return token.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
     }
 
+    private fun cacheAndroidSyncStatus(response: AndroidSyncStatusResponse) {
+        try {
+            context.getSharedPreferences(SOLL_CACHE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_ANDROID_SYNC_STATUS_JSON, androidSyncStatusJsonAdapter.toJson(response))
+                .putLong(KEY_ANDROID_SYNC_STATUS_CACHED_AT, System.currentTimeMillis())
+                .apply()
+        } catch (_: Exception) {
+            // Cache failures must not break live server responses.
+        }
+    }
+
+    private fun cachedAndroidSyncStatusOrNull(error: Throwable?): SollAndroidSyncStatus? {
+        return try {
+            val prefs = context.getSharedPreferences(SOLL_CACHE_PREFS, Context.MODE_PRIVATE)
+            val json = prefs.getString(KEY_ANDROID_SYNC_STATUS_JSON, null) ?: return null
+            val response = androidSyncStatusJsonAdapter.fromJson(json) ?: return null
+            val warning = "Сервер недоступен, показан локальный кэш: ${error?.message ?: "ошибка подключения"}"
+            response.toDomain(
+                fromCache = true,
+                cachedAtMillis = prefs.getLong(KEY_ANDROID_SYNC_STATUS_CACHED_AT, 0L).takeIf { it > 0L },
+                extraWarnings = listOf(warning),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun SollHealthResponse.toDomain(): SollHealth =
         SollHealth(
             status = status,
             schedulerRunning = schedulerRunning,
             vaultAccessible = vaultAccessible,
             jobsCount = jobsCount,
+            checkedAt = checkedAt,
+        )
+
+    private fun AndroidSyncStatusResponse.toDomain(
+        fromCache: Boolean = false,
+        cachedAtMillis: Long? = null,
+        extraWarnings: List<String> = emptyList(),
+    ): SollAndroidSyncStatus =
+        SollAndroidSyncStatus(
+            serverTime = serverTime,
+            health = health.toDomain(),
+            tasks = tasks.toDomain(),
+            device = device?.toDomain(),
+            briefing = briefing?.toDomain(),
+            warnings = (warnings + extraWarnings).distinct(),
+            fromCache = fromCache,
+            cachedAtMillis = cachedAtMillis,
+        )
+
+    private fun SollDeviceResponse.toDomain(): SollDevice =
+        SollDevice(
+            id = id,
+            name = name,
+            enabled = enabled,
+            scopes = scopes,
+            lastSeenAt = lastSeenAt,
+        )
+
+    private fun SollBriefingResponse.toDomain(): SollBriefing =
+        SollBriefing(
+            filename = filename,
+            path = path,
+            content = content,
+            createdAt = createdAt,
         )
 
     private fun SollTaskBoardResponse.toDomain(): SollTaskBoard =
@@ -557,6 +641,10 @@ private data class RawUploadMetadata(
     val size: Long?,
     val mimeType: String?,
 )
+
+private const val SOLL_CACHE_PREFS = "soll_server_cache"
+private const val KEY_ANDROID_SYNC_STATUS_JSON = "android_sync_status_json"
+private const val KEY_ANDROID_SYNC_STATUS_CACHED_AT = "android_sync_status_cached_at"
 
 fun normalizeSollBaseUrl(rawUrl: String): String {
     val trimmed = rawUrl.trim()

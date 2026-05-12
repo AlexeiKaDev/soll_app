@@ -19,6 +19,9 @@ interface SyncQueueDao {
     @Query("SELECT * FROM sync_queue WHERE status IN ('PENDING', 'FAILED') AND next_attempt_at <= :now ORDER BY created_at ASC LIMIT :limit")
     suspend fun getReadyItems(now: Long, limit: Int): List<SyncQueueEntity>
 
+    @Query("SELECT * FROM sync_queue WHERE kind = :kind AND status IN ('PENDING', 'FAILED', 'RUNNING') ORDER BY created_at ASC")
+    suspend fun getOpenItemsByKind(kind: String): List<SyncQueueEntity>
+
     @Query("SELECT * FROM sync_queue ORDER BY updated_at DESC LIMIT :limit")
     fun observeRecentItems(limit: Int): Flow<List<SyncQueueEntity>>
 

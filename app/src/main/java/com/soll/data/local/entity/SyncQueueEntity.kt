@@ -47,6 +47,7 @@ data class SyncQueueEntity(
     companion object {
         const val KIND_RAW_NOTE = "RAW_NOTE"
         const val KIND_RAW_FILE = "RAW_FILE"
+        const val KIND_TASK_ACTION = "TASK_ACTION"
 
         const val STATUS_PENDING = "PENDING"
         const val STATUS_RUNNING = "RUNNING"

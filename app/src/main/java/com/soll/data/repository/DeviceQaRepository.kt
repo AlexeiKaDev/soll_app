@@ -85,6 +85,9 @@ class DeviceQaRepository @Inject constructor(
             themeVisualCheck(),
             gadgetProtocolSchemaCheck(),
             gadgetServerLocalBindingCheck(),
+            gadgetMeshOutboxWorkerCheck(),
+            gadgetReadOnlyCommandWorkerCheck(),
+            gadgetManualWriteFlowCheck(),
             nfcOwnedTagsCheck(),
             nfcAccessDiagnosticCheck(),
         ).map { check ->
@@ -294,7 +297,7 @@ class DeviceQaRepository @Inject constructor(
             detail = if (settingsRepository.sollServerUrl.isBlank()) {
                 "URL сервера Soll не задан. Без него Android не сможет сверить /api/v1/protocol/schema."
             } else {
-                "Открой Гаджеты -> Сервер Soll и нажми «Контракт», чтобы сверить Android с текущим server discovery schema."
+                "Открой Гаджеты -> Сервер Soll и нажми «Контракт», чтобы сверить Android с текущим protocol/discovery schema и worker contracts."
             },
             status = if (settingsRepository.sollServerUrl.isBlank()) {
                 DeviceQaStatus.WARNING
@@ -302,7 +305,7 @@ class DeviceQaRepository @Inject constructor(
                 DeviceQaStatus.NEEDS_MANUAL_TEST
             },
             manual = true,
-            expectedResult = "Проверка контракта показывает совместимость soll-protocol-v1 и soll-gadget-discovery-v1 без предупреждений.",
+            expectedResult = "Проверка контракта показывает совместимость soll-protocol-v1, soll-gadget-discovery-v1, token_refresh и worker contracts без предупреждений.",
             roadmapRef = "ESP Connector / Device QA: Soll server protocol schema compatibility",
             actionLabel = "Обновить",
         )
@@ -325,6 +328,69 @@ class DeviceQaRepository @Inject constructor(
             manual = true,
             expectedResult = "Нужный server gadget однозначно связан с локальным KnownDevice по exact id или endpoint/local IP; неоднозначные совпадения не используются для команд.",
             roadmapRef = "ESP Connector / Device QA: server-local gadget binding before write-capable commands",
+            actionLabel = "Обновить",
+        )
+
+    private fun gadgetMeshOutboxWorkerCheck(): DeviceQaCheck =
+        DeviceQaCheck(
+            id = DeviceQaCheckId.GADGET_MESH_OUTBOX_WORKER,
+            category = DeviceQaCategory.GADGETS,
+            title = "Mesh/outbox worker",
+            detail = if (settingsRepository.sollServerUrl.isBlank()) {
+                "URL сервера Soll не задан. Нельзя проверить claim/ACK/retry для mesh outbox."
+            } else {
+                "В Гаджеты -> Сервер Soll проверь mesh counters и recent outbox: allowlist payload должен пройти claim -> ACK, unsupported/command payload должен получить failed attempt без исполнения."
+            },
+            status = if (settingsRepository.sollServerUrl.isBlank()) {
+                DeviceQaStatus.WARNING
+            } else {
+                DeviceQaStatus.NEEDS_MANUAL_TEST
+            },
+            manual = true,
+            expectedResult = "Worker claim-ит один outbox item за sync run, ACK-ает только status/brief/note/task payload и отправляет failed attempt для command/unknown без произвольных действий.",
+            roadmapRef = "ESP Connector / Device QA: mesh/outbox worker claim, ACK and retry",
+            actionLabel = "Обновить",
+        )
+
+    private fun gadgetReadOnlyCommandWorkerCheck(): DeviceQaCheck =
+        DeviceQaCheck(
+            id = DeviceQaCheckId.GADGET_READ_ONLY_COMMAND_WORKER,
+            category = DeviceQaCategory.GADGETS,
+            title = "Read-only команды сервера",
+            detail = if (settingsRepository.sollServerUrl.isBlank()) {
+                "URL сервера Soll не задан. Нельзя проверить lifecycle server gadget command."
+            } else {
+                "Для связанного ESP/Aquik отправь read-only команду сервера (`getSensors`, `getActuators` или `getSystemInfo`) и проверь claim -> ack -> result в истории."
+            },
+            status = if (settingsRepository.sollServerUrl.isBlank()) {
+                DeviceQaStatus.WARNING
+            } else {
+                DeviceQaStatus.NEEDS_MANUAL_TEST
+            },
+            manual = true,
+            expectedResult = "Android выполняет только read-only команды через локальный WebSocket, пишет локальный audit event и закрывает server command как done/failed с result payload.",
+            roadmapRef = "ESP Connector / Device QA: read-only gadget command worker",
+            actionLabel = "Обновить",
+        )
+
+    private fun gadgetManualWriteFlowCheck(): DeviceQaCheck =
+        DeviceQaCheck(
+            id = DeviceQaCheckId.GADGET_MANUAL_WRITE_FLOW,
+            category = DeviceQaCategory.GADGETS,
+            title = "Manual write flow",
+            detail = if (settingsRepository.sollServerUrl.isBlank()) {
+                "URL сервера Soll не задан. Manual write flow нельзя проверить без server approvals и command history."
+            } else {
+                "После approval переведи write-команду в `manual_ready`, нажми «Вручную» только для известного локального ESP/Aquik и проверь `manual-result` в server history."
+            },
+            status = if (settingsRepository.sollServerUrl.isBlank()) {
+                DeviceQaStatus.WARNING
+            } else {
+                DeviceQaStatus.NEEDS_MANUAL_TEST
+            },
+            manual = true,
+            expectedResult = "`manual_ready` write-команда не исполняется фоном, требует явного UI-подтверждения, имеет однозначный local binding и закрывается на сервере как done/failed через manual-result.",
+            roadmapRef = "ESP Connector / Device QA: explicit manual write execution on real ESP/Aquik",
             actionLabel = "Обновить",
         )
 

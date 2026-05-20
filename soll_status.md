@@ -1,9 +1,13 @@
 # soll_app Status
 
-Last updated: 2026-05-20 11:54 Europe/Chisinau
+Last updated: 2026-05-20 12:55 Europe/Chisinau
 
 ## Current Changes
 
+- Device QA roadmap follow-up is implemented:
+  - Settings -> Device QA now has explicit gadget checks for mesh/outbox worker, read-only server command worker, and manual write flow.
+  - Existing Soll contract QA now expects protocol/discovery schema, token_refresh, and worker contracts.
+  - These checks are manual evidence gates for the real ESP/Aquik hardware smoke instead of hidden assumptions in the UI.
 - Roadmap protocol work from Soll is implemented in `soll_app`:
   - Android parses Soll protocol bootstrap/worker contracts and keeps background sync on device-token flow.
   - `GadgetServerSyncWorker` executes only read-only server gadget commands (`getSystemInfo/getInfo/getConfig/getSettings/getSensors/getActuators`) and posts ACK/result back to Soll.
@@ -22,6 +26,8 @@ Last updated: 2026-05-20 11:54 Europe/Chisinau
 
 ## Verification Notes
 
+- 2026-05-20 Device QA targeted Gradle check passed:
+  - `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.project.ProjectStabilizationGuardTest --tests com.soll.domain.deviceqa.DeviceQaModelsTest --tests com.soll.domain.deviceqa.DeviceQaReportFormatterTest`
 - 2026-05-20 targeted Gradle check passed:
   - `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.data.repository.SyncReliabilityTest --tests com.soll.domain.soll.SollProtocolSchemaTest --tests com.soll.project.ProjectStabilizationGuardTest`
 - Syntax check passed via in-memory `compile(...)` for the patched script.

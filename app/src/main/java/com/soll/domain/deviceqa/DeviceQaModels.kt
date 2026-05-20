@@ -25,6 +25,9 @@ enum class DeviceQaCheckId(val storageKey: String) {
     THEME_VISUAL_PASS("theme_visual_pass"),
     GADGET_PROTOCOL_SCHEMA("gadget_protocol_schema"),
     GADGET_SERVER_LOCAL_BINDING("gadget_server_local_binding"),
+    GADGET_MESH_OUTBOX_WORKER("gadget_mesh_outbox_worker"),
+    GADGET_READ_ONLY_COMMAND_WORKER("gadget_read_only_command_worker"),
+    GADGET_MANUAL_WRITE_FLOW("gadget_manual_write_flow"),
     NFC_OWNED_TAGS("nfc_owned_tags"),
     NFC_ACCESS_FOB_DIAGNOSTIC("nfc_access_fob_diagnostic");
 

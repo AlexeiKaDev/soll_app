@@ -1193,6 +1193,7 @@ Progress 2026-05-12:
 - Added read-only server command worker: WorkManager claims one command, ACKs it, resolves server gadget to local KnownDevice, executes only read-only profile commands through a short-lived WebSocket connector, posts result, and records a local audit event.
 - Added explicit manual write flow: `manual_ready` commands show a guarded `Вручную` button, execute only after UI confirmation and local binding resolution, then post `manual-result` back to Soll as `done` or `failed`. Background sync does not claim or execute write commands.
 - Added mesh/outbox worker v0 in the existing sync path: it claims one outbox item per run, ACKs allowlisted JSON payloads and sends failed attempt for unknown/command payloads without arbitrary execution.
+- Expanded Settings -> Device QA for the protocol/hardware path: separate manual checks now cover Soll contract worker schemas, server-local binding, mesh/outbox claim/ACK/retry, read-only command worker result reporting, and explicit manual write execution on a real ESP/Aquik target.
 
 ### Phase 7: Scanner V1
 

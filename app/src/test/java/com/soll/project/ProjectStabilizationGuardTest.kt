@@ -172,6 +172,9 @@ class ProjectStabilizationGuardTest {
             "THEME_VISUAL_PASS",
             "GADGET_PROTOCOL_SCHEMA",
             "GADGET_SERVER_LOCAL_BINDING",
+            "GADGET_MESH_OUTBOX_WORKER",
+            "GADGET_READ_ONLY_COMMAND_WORKER",
+            "GADGET_MANUAL_WRITE_FLOW",
             "NFC_OWNED_TAGS",
             "NFC_ACCESS_FOB_DIAGNOSTIC",
         ).forEach { id ->

@@ -170,6 +170,8 @@ class ProjectStabilizationGuardTest {
             "WIDGET_LAUNCHER_COLD",
             "WIDGET_MEDIA_CONTROLS",
             "THEME_VISUAL_PASS",
+            "GADGET_PROTOCOL_SCHEMA",
+            "GADGET_SERVER_LOCAL_BINDING",
             "NFC_OWNED_TAGS",
             "NFC_ACCESS_FOB_DIAGNOSTIC",
         ).forEach { id ->

@@ -6,6 +6,7 @@ enum class DeviceQaCategory(val title: String) {
     MUSIC("Музыка"),
     WIDGETS("Виджеты"),
     THEME("Тема"),
+    GADGETS("Гаджеты"),
     NFC("NFC"),
 }
 
@@ -22,6 +23,8 @@ enum class DeviceQaCheckId(val storageKey: String) {
     WIDGET_LAUNCHER_COLD("widget_launcher_cold"),
     WIDGET_MEDIA_CONTROLS("widget_media_controls"),
     THEME_VISUAL_PASS("theme_visual_pass"),
+    GADGET_PROTOCOL_SCHEMA("gadget_protocol_schema"),
+    GADGET_SERVER_LOCAL_BINDING("gadget_server_local_binding"),
     NFC_OWNED_TAGS("nfc_owned_tags"),
     NFC_ACCESS_FOB_DIAGNOSTIC("nfc_access_fob_diagnostic");
 

@@ -22,6 +22,8 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+DEFAULT_AI_MODEL_ROOT = Path(r"D:\AI\Models")
+
 
 @dataclass
 class AsrAuditRow:
@@ -105,6 +107,39 @@ def load_asr_cache(path: Path, force: bool) -> dict[str, str]:
 
 def safe_model_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "model"
+
+
+def shared_ai_model_root() -> Path:
+    raw_roots = os.environ.get("SOLL_AI_MODEL_ROOTS") or os.environ.get("AI_MODEL_ROOTS") or str(DEFAULT_AI_MODEL_ROOT)
+    for part in re.split(r"[;\n]+", raw_roots):
+        value = part.strip().strip("\"'")
+        if value:
+            return Path(value)
+    return DEFAULT_AI_MODEL_ROOT
+
+
+def whisper_download_root() -> Path:
+    return shared_ai_model_root() / "audio" / "whisper"
+
+
+def resolve_whisper_model(model_name: str) -> tuple[str, Path]:
+    download_root = whisper_download_root()
+    name = model_name.strip() or "base"
+    candidates: list[Path] = []
+    if Path(name).is_absolute() or any(separator in name for separator in ("/", "\\")):
+        candidates.append(Path(name))
+
+    normalized = name.removeprefix("Systran/").removeprefix("Systran\\")
+    aliases = [normalized]
+    if not normalized.startswith("faster-whisper-"):
+        aliases.append(f"faster-whisper-{normalized}")
+    candidates.extend(download_root / alias for alias in aliases)
+
+    for candidate in candidates:
+        if (candidate / "model.bin").exists() and (candidate / "config.json").exists():
+            return str(candidate), download_root
+
+    return name, download_root
 
 
 def append_asr_cache(path: Path, segment_id: str, text: str) -> None:
@@ -405,7 +440,14 @@ def main() -> int:
         except ImportError as exc:
             raise SystemExit("faster-whisper is not installed") from exc
 
-        model = WhisperModel(args.model, device=device, compute_type=compute_type)
+        model_ref, download_root = resolve_whisper_model(args.model)
+        download_root.mkdir(parents=True, exist_ok=True)
+        model = WhisperModel(
+            model_ref,
+            device=device,
+            compute_type=compute_type,
+            download_root=str(download_root),
+        )
         for index, (segment_id, _text) in enumerate(missing, start=1):
             wav_path = wav_dir / f"{segment_id}.wav"
             segments, _info = model.transcribe(

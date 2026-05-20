@@ -944,6 +944,8 @@ private fun DeviceQaSection(
                                     DeviceQaCheckId.WIDGET_LAUNCHER_COLD,
                                     DeviceQaCheckId.WIDGET_MEDIA_CONTROLS,
                                     DeviceQaCheckId.THEME_VISUAL_PASS,
+                                    DeviceQaCheckId.GADGET_PROTOCOL_SCHEMA,
+                                    DeviceQaCheckId.GADGET_SERVER_LOCAL_BINDING,
                                     DeviceQaCheckId.MUSIC_AUDIO_FOCUS -> onRefresh()
                                     DeviceQaCheckId.NFC_OWNED_TAGS,
                                     DeviceQaCheckId.NFC_ACCESS_FOB_DIAGNOSTIC -> onOpenNfc()

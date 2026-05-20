@@ -29,6 +29,12 @@ class DeviceRepository @Inject constructor(
     fun observeKnownDevices(): Flow<List<KnownDevice>> =
         deviceDao.observeKnownDevices().map { devices -> devices.map { it.toDomain() } }
 
+    suspend fun getKnownDevices(): List<KnownDevice> =
+        deviceDao.getKnownDevices().map { it.toDomain() }
+
+    suspend fun getKnownDevice(deviceId: String): KnownDevice? =
+        deviceDao.getKnownDevice(deviceId.trim())?.toDomain()
+
     fun observeEvents(deviceId: String): Flow<List<DeviceEvent>> =
         deviceDao.observeEvents(deviceId).map { events -> events.map { it.toDomain() } }
 
@@ -38,14 +44,18 @@ class DeviceRepository @Inject constructor(
         }
     }
 
-    suspend fun upsertManualDevice(config: DeviceConnectionConfig, status: DeviceConnectionStatus): KnownDevice {
+    suspend fun upsertManualDevice(
+        config: DeviceConnectionConfig,
+        status: DeviceConnectionStatus,
+        nameOverride: String? = null,
+    ): KnownDevice {
         val now = System.currentTimeMillis()
         val endpoint = config.endpoint()
         val existing = deviceDao.getKnownDevice(config.deviceId)?.toDomain()
         val device = KnownDevice(
             id = config.deviceId,
             profileId = config.profile.id,
-            name = existing?.name ?: "${config.profile.name} ${endpoint.host}",
+            name = nameOverride?.takeIf { it.isNotBlank() } ?: existing?.name ?: "${config.profile.name} ${endpoint.host}",
             host = endpoint.storageHost(),
             port = endpoint.port,
             path = endpoint.path,
@@ -135,6 +145,11 @@ private fun GadgetCloudSnapshot.toPayloadJson(): String =
         .put("name", name)
         .put("profileId", profileId)
         .put("enabled", enabled)
+        .put("firmwareVersion", firmwareVersion)
+        .put("localIp", localIp)
+        .put("uptimeMs", uptimeMs)
+        .put("capabilities", capabilities)
+        .put("heartbeatPayload", JSONObject(heartbeatPayload))
         .put("lastHeartbeatAt", lastHeartbeatAt)
         .put("lastTelemetryAt", lastTelemetryAt)
         .put("latestTelemetry", JSONObject(latestTelemetry))

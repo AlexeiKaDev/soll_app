@@ -63,6 +63,10 @@ class SettingsRepository @Inject constructor(
         private const val KEY_CAPABILITY_ENABLED_PREFIX = "capability_enabled_"
         private const val KEY_SOLL_SERVER_URL = "soll_server_url"
         private const val KEY_SOLL_ACCESS_TOKEN = "soll_access_token"
+        private const val KEY_SOLL_DEVICE_ID = "soll_device_id"
+        private const val KEY_SOLL_DEVICE_PAIRING_SECRET = "soll_device_pairing_secret"
+        private const val KEY_SOLL_DEVICE_ACCESS_TOKEN = "soll_device_access_token"
+        private const val KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT = "soll_device_token_expires_at"
         private const val KEY_SOLL_SYNC_INTERVAL_MINUTES = "soll_sync_interval_minutes"
         private const val KEY_SOLL_WIFI_ONLY_UPLOAD = "soll_wifi_only_upload"
         private const val KEY_VOICE_REQUIRES_UNLOCKED_DEVICE = "voice_requires_unlocked_device"
@@ -318,6 +322,22 @@ class SettingsRepository @Inject constructor(
     var sollAccessToken: String
         get() = sharedPreferences.getString(KEY_SOLL_ACCESS_TOKEN, "") ?: ""
         set(value) = sharedPreferences.edit().putString(KEY_SOLL_ACCESS_TOKEN, value.trim()).apply()
+
+    var sollDeviceId: String
+        get() = sharedPreferences.getString(KEY_SOLL_DEVICE_ID, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_DEVICE_ID, value.trim()).apply()
+
+    var sollDevicePairingSecret: String
+        get() = sharedPreferences.getString(KEY_SOLL_DEVICE_PAIRING_SECRET, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_DEVICE_PAIRING_SECRET, value.trim()).apply()
+
+    var sollDeviceAccessToken: String
+        get() = sharedPreferences.getString(KEY_SOLL_DEVICE_ACCESS_TOKEN, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_DEVICE_ACCESS_TOKEN, value.trim()).apply()
+
+    var sollDeviceTokenExpiresAt: String
+        get() = sharedPreferences.getString(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT, value.trim()).apply()
 
     var sollSyncIntervalMinutes: Int
         get() = sharedPreferences.getInt(KEY_SOLL_SYNC_INTERVAL_MINUTES, 60).coerceIn(5, 1440)

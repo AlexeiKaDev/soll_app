@@ -29,6 +29,21 @@ interface SollApiService {
         @Header("Authorization") authorization: String? = null,
     ): AndroidSyncStatusResponse
 
+    @POST("api/v1/devices/{device_id}/challenge")
+    suspend fun createDeviceChallenge(
+        @Path("device_id") deviceId: String,
+    ): DeviceChallengeResponse
+
+    @POST("api/v1/devices/token")
+    suspend fun issueDeviceToken(
+        @Body request: DeviceTokenRequest,
+    ): DeviceTokenResponse
+
+    @POST("api/v1/devices/token/refresh")
+    suspend fun refreshDeviceToken(
+        @Header("Authorization") authorization: String? = null,
+    ): DeviceTokenResponse
+
     @GET("api/v1/briefing/latest")
     suspend fun getLatestBriefing(
         @Header("Authorization") authorization: String? = null,
@@ -128,6 +143,47 @@ interface SollApiService {
         @Body request: AssistantAskRequest,
     ): AssistantAskResponse
 
+    @GET("api/v1/protocol/schema")
+    suspend fun getProtocolSchema(
+        @Header("Authorization") authorization: String? = null,
+    ): SollProtocolSchemaResponse
+
+    @GET("api/v1/mesh/status")
+    suspend fun getMeshStatus(
+        @Header("Authorization") authorization: String? = null,
+    ): MeshStatusResponse
+
+    @GET("api/v1/mesh/outbox")
+    suspend fun getMeshOutbox(
+        @Header("Authorization") authorization: String? = null,
+        @Query("limit") limit: Int = 20,
+    ): MeshOutboxListResponse
+
+    @GET("api/v1/mesh/outbox/next")
+    suspend fun claimNextMeshOutbox(
+        @Header("Authorization") authorization: String? = null,
+        @Query("to_peer") toPeer: String? = null,
+    ): MeshOutboxClaimResponse
+
+    @POST("api/v1/mesh/outbox/{outbound_id}/ack")
+    suspend fun ackMeshOutbox(
+        @Header("Authorization") authorization: String? = null,
+        @Path("outbound_id") outboundId: String,
+    ): MeshOutboxItemResponse
+
+    @POST("api/v1/mesh/outbox/{outbound_id}/attempt")
+    suspend fun markMeshOutboxAttempt(
+        @Header("Authorization") authorization: String? = null,
+        @Path("outbound_id") outboundId: String,
+        @Body request: MeshOutboxAttemptRequest,
+    ): MeshOutboxItemResponse
+
+    @POST("api/v1/mesh/outbox/{outbound_id}/retry")
+    suspend fun retryMeshOutbox(
+        @Header("Authorization") authorization: String? = null,
+        @Path("outbound_id") outboundId: String,
+    ): MeshOutboxItemResponse
+
     @GET("api/v1/gadgets")
     suspend fun getGadgets(
         @Header("Authorization") authorization: String? = null,
@@ -156,11 +212,49 @@ interface SollApiService {
         @Query("limit") limit: Int = 50,
     ): List<GadgetEventResponse>
 
+    @GET("api/v1/gadgets/{gadget_id}/commands")
+    suspend fun getGadgetCommands(
+        @Header("Authorization") authorization: String? = null,
+        @Path("gadget_id") gadgetId: String,
+        @Query("limit") limit: Int = 20,
+    ): List<GadgetCommandResponse>
+
     @POST("api/v1/gadgets/{gadget_id}/commands")
     suspend fun createGadgetCommand(
         @Header("Authorization") authorization: String? = null,
         @Path("gadget_id") gadgetId: String,
         @Body request: GadgetCommandCreateRequest,
+    ): GadgetCommandResponse
+
+    @POST("api/v1/gadgets/{gadget_id}/commands/claim")
+    suspend fun claimGadgetCommand(
+        @Header("Authorization") authorization: String? = null,
+        @Path("gadget_id") gadgetId: String,
+        @Body request: GadgetCommandClaimRequest,
+    ): GadgetCommandResponse?
+
+    @POST("api/v1/gadgets/{gadget_id}/commands/{command_id}/ack")
+    suspend fun ackGadgetCommand(
+        @Header("Authorization") authorization: String? = null,
+        @Path("gadget_id") gadgetId: String,
+        @Path("command_id") commandId: String,
+        @Body request: GadgetCommandAckRequest,
+    ): GadgetCommandResponse
+
+    @POST("api/v1/gadgets/{gadget_id}/commands/{command_id}/result")
+    suspend fun postGadgetCommandResult(
+        @Header("Authorization") authorization: String? = null,
+        @Path("gadget_id") gadgetId: String,
+        @Path("command_id") commandId: String,
+        @Body request: GadgetCommandResultRequest,
+    ): GadgetCommandResponse
+
+    @POST("api/v1/gadgets/{gadget_id}/commands/{command_id}/manual-result")
+    suspend fun postManualGadgetCommandResult(
+        @Header("Authorization") authorization: String? = null,
+        @Path("gadget_id") gadgetId: String,
+        @Path("command_id") commandId: String,
+        @Body request: GadgetCommandResultRequest,
     ): GadgetCommandResponse
 }
 
@@ -189,6 +283,7 @@ data class AndroidSyncStatusResponse(
     val tasks: SollTaskBoardResponse = SollTaskBoardResponse(),
     val device: SollDeviceResponse? = null,
     val briefing: SollBriefingResponse? = null,
+    val protocol: AndroidProtocolBootstrapResponse? = null,
     val warnings: List<String> = emptyList(),
 )
 
@@ -199,6 +294,75 @@ data class SollDeviceResponse(
     val scopes: List<String> = emptyList(),
     @Json(name = "last_seen_at")
     val lastSeenAt: String? = null,
+)
+
+data class DeviceChallengeResponse(
+    @Json(name = "device_id")
+    val deviceId: String = "",
+    @Json(name = "challenge_id")
+    val challengeId: String = "",
+    val challenge: String = "",
+    @Json(name = "expires_at")
+    val expiresAt: String = "",
+)
+
+data class DeviceTokenRequest(
+    @Json(name = "device_id")
+    val deviceId: String,
+    @Json(name = "challenge_id")
+    val challengeId: String,
+    val nonce: String,
+    val signature: String,
+)
+
+data class DeviceTokenResponse(
+    @Json(name = "access_token")
+    val accessToken: String = "",
+    @Json(name = "token_type")
+    val tokenType: String = "",
+    @Json(name = "expires_at")
+    val expiresAt: String = "",
+    @Json(name = "expires_in")
+    val expiresIn: Int = 0,
+)
+
+data class AndroidProtocolBootstrapResponse(
+    val version: String = "",
+    val auth: SollProtocolAuthResponse = SollProtocolAuthResponse(),
+    val transport: SollProtocolTransportResponse = SollProtocolTransportResponse(),
+    @Json(name = "worker_contracts")
+    val workerContracts: Map<String, SollProtocolWorkerContractResponse> = emptyMap(),
+)
+
+data class SollProtocolAuthResponse(
+    val pairing: String = "",
+    val challenge: String = "",
+    val token: String = "",
+    @Json(name = "token_refresh")
+    val tokenRefresh: String = "",
+    @Json(name = "token_type")
+    val tokenType: String = "",
+    @Json(name = "refresh_rule")
+    val refreshRule: String = "",
+)
+
+data class SollProtocolTransportResponse(
+    @Json(name = "recommended_auth")
+    val recommendedAuth: String = "",
+    val poll: List<String> = emptyList(),
+    val push: List<String> = emptyList(),
+)
+
+data class SollProtocolWorkerContractResponse(
+    val owner: String = "",
+    val auth: String = "",
+    @Json(name = "required_scopes")
+    val requiredScopes: List<String> = emptyList(),
+    @Json(name = "lease_seconds_default")
+    val leaseSecondsDefault: Int = 0,
+    @Json(name = "poll_interval_seconds")
+    val pollIntervalSeconds: Int = 0,
+    val lifecycle: List<String> = emptyList(),
 )
 
 data class SollBriefingResponse(
@@ -454,12 +618,117 @@ data class AssistantAskResponse(
     val wikiUpdatesApplied: List<String> = emptyList(),
 )
 
+data class SollProtocolSchemaResponse(
+    val version: String = "",
+    val auth: SollProtocolAuthResponse = SollProtocolAuthResponse(),
+    val scopes: Map<String, List<String>> = emptyMap(),
+    val transports: Map<String, SollProtocolTransportResponse> = emptyMap(),
+    @Json(name = "worker_contracts")
+    val workerContracts: Map<String, SollProtocolWorkerContractResponse> = emptyMap(),
+    @Json(name = "gadget_discovery")
+    val gadgetDiscovery: GadgetDiscoverySchemaResponse? = null,
+)
+
+data class MeshStatusResponse(
+    val enabled: Boolean = false,
+    @Json(name = "simulated_mode")
+    val simulatedMode: Boolean = false,
+    @Json(name = "meshtastic_available")
+    val meshtasticAvailable: Boolean = false,
+    @Json(name = "max_payload_bytes")
+    val maxPayloadBytes: Int = 0,
+    @Json(name = "queued_outbox_count")
+    val queuedOutboxCount: Int = 0,
+    @Json(name = "sent_outbox_count")
+    val sentOutboxCount: Int = 0,
+    @Json(name = "acked_outbox_count")
+    val ackedOutboxCount: Int = 0,
+    @Json(name = "failed_outbox_count")
+    val failedOutboxCount: Int = 0,
+)
+
+data class MeshOutboxListResponse(
+    val outbox: List<MeshOutboxItemResponse> = emptyList(),
+)
+
+data class MeshOutboxClaimResponse(
+    val outbox: MeshOutboxItemResponse? = null,
+)
+
+data class MeshOutboxAttemptRequest(
+    val success: Boolean,
+    val error: String? = null,
+)
+
+data class MeshOutboxItemResponse(
+    @Json(name = "outbound_id")
+    val outboundId: String = "",
+    @Json(name = "to_peer")
+    val toPeer: String = "",
+    val text: String = "",
+    val status: String = "",
+    @Json(name = "retry_count")
+    val retryCount: Int = 0,
+    @Json(name = "max_retries")
+    val maxRetries: Int = 0,
+    @Json(name = "last_error")
+    val lastError: String? = null,
+    @Json(name = "created_at")
+    val createdAt: String = "",
+    @Json(name = "last_attempt_at")
+    val lastAttemptAt: String? = null,
+    @Json(name = "acked_at")
+    val ackedAt: String? = null,
+)
+
+data class GadgetDiscoverySchemaResponse(
+    val version: String = "",
+    @Json(name = "primary_order")
+    val primaryOrder: List<String> = emptyList(),
+    val mdns: GadgetDiscoveryMdnsSchemaResponse = GadgetDiscoveryMdnsSchemaResponse(),
+    val ssdp: GadgetDiscoverySsdpSchemaResponse = GadgetDiscoverySsdpSchemaResponse(),
+    @Json(name = "wifi_ap")
+    val wifiAp: GadgetDiscoveryWifiApSchemaResponse = GadgetDiscoveryWifiApSchemaResponse(),
+    @Json(name = "device_json")
+    val deviceJson: GadgetDiscoveryDeviceJsonSchemaResponse = GadgetDiscoveryDeviceJsonSchemaResponse(),
+)
+
+data class GadgetDiscoveryMdnsSchemaResponse(
+    @Json(name = "service_types")
+    val serviceTypes: List<String> = emptyList(),
+)
+
+data class GadgetDiscoverySsdpSchemaResponse(
+    val headers: Map<String, String> = emptyMap(),
+)
+
+data class GadgetDiscoveryWifiApSchemaResponse(
+    @Json(name = "ssid_prefixes")
+    val ssidPrefixes: List<String> = emptyList(),
+    @Json(name = "default_setup_host")
+    val defaultSetupHost: String = "",
+)
+
+data class GadgetDiscoveryDeviceJsonSchemaResponse(
+    val endpoint: String = "",
+    val recommended: List<String> = emptyList(),
+)
+
 data class GadgetSnapshotResponse(
     val id: String,
     val name: String = "",
     @Json(name = "profile_id")
     val profileId: String = "",
     val enabled: Boolean = true,
+    @Json(name = "firmware_version")
+    val firmwareVersion: String = "",
+    @Json(name = "local_ip")
+    val localIp: String? = null,
+    @Json(name = "uptime_ms")
+    val uptimeMs: Long? = null,
+    val capabilities: List<String> = emptyList(),
+    @Json(name = "heartbeat_payload")
+    val heartbeatPayload: Map<String, Any?> = emptyMap(),
     @Json(name = "last_heartbeat_at")
     val lastHeartbeatAt: String? = null,
     @Json(name = "last_telemetry_at")
@@ -507,13 +776,43 @@ data class GadgetCommandCreateRequest(
     val ttlSeconds: Int = 60,
 )
 
+data class GadgetCommandClaimRequest(
+    @Json(name = "worker_id")
+    val workerId: String = "",
+    @Json(name = "lease_seconds")
+    val leaseSeconds: Int = 60,
+)
+
+data class GadgetCommandAckRequest(
+    @Json(name = "worker_id")
+    val workerId: String = "",
+)
+
+data class GadgetCommandResultRequest(
+    val success: Boolean,
+    val payload: Map<String, Any?> = emptyMap(),
+    val error: String = "",
+    @Json(name = "worker_id")
+    val workerId: String = "",
+)
+
 data class GadgetCommandResponse(
     val id: String = "",
     @Json(name = "gadget_id")
     val gadgetId: String = "",
     val command: String = "",
+    val params: Map<String, Any?> = emptyMap(),
     val status: String = "",
     val reason: String = "",
+    val result: Map<String, Any?> = emptyMap(),
+    @Json(name = "risk_level")
+    val riskLevel: String = "read_only",
+    @Json(name = "approval_id")
+    val approvalId: String = "",
     @Json(name = "created_at")
     val createdAt: String = "",
+    @Json(name = "expires_at")
+    val expiresAt: String? = null,
+    @Json(name = "completed_at")
+    val completedAt: String? = null,
 )

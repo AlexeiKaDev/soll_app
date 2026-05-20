@@ -5,6 +5,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.squareup.moshi.Moshi
+import com.soll.data.api.AndroidProtocolBootstrapResponse
 import com.soll.data.api.AndroidSyncStatusResponse
 import com.soll.data.api.AssistantAskRequest
 import com.soll.data.api.AssistantAskResponse
@@ -26,10 +27,20 @@ import com.soll.data.api.BookSelectRequest
 import com.soll.data.api.BookSelectResponse
 import com.soll.data.api.BookStatusSessionResponse
 import com.soll.data.api.CreateRawFileRequest
+import com.soll.data.api.DeviceTokenRequest
+import com.soll.data.api.GadgetCommandAckRequest
+import com.soll.data.api.GadgetDiscoverySchemaResponse
+import com.soll.data.api.GadgetCommandClaimRequest
+import com.soll.data.api.GadgetCommandCreateRequest
+import com.soll.data.api.GadgetCommandResponse
+import com.soll.data.api.GadgetCommandResultRequest
 import com.soll.data.api.GadgetEventResponse
 import com.soll.data.api.GadgetHistoryPointResponse
 import com.soll.data.api.GadgetHistoryResponse
 import com.soll.data.api.GadgetSnapshotResponse
+import com.soll.data.api.MeshOutboxAttemptRequest
+import com.soll.data.api.MeshOutboxItemResponse
+import com.soll.data.api.MeshStatusResponse
 import com.soll.data.api.RawFileResponse
 import com.soll.data.api.RawUploadResponse
 import com.soll.data.api.SollApiService
@@ -37,12 +48,17 @@ import com.soll.data.api.SollBookStatusResponse
 import com.soll.data.api.SollBriefingResponse
 import com.soll.data.api.SollDeviceResponse
 import com.soll.data.api.SollHealthResponse
+import com.soll.data.api.SollProtocolSchemaResponse
+import com.soll.data.api.SollProtocolAuthResponse
+import com.soll.data.api.SollProtocolTransportResponse
+import com.soll.data.api.SollProtocolWorkerContractResponse
 import com.soll.data.api.SollTaskBoardResponse
 import com.soll.data.api.SollTaskResponse
 import com.soll.domain.metacoordinator.MetaCoordinatorFallback
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
 import com.soll.domain.metacoordinator.MetaCoordinatorServerBridge
+import com.soll.domain.device.GadgetCloudCommand
 import com.soll.domain.device.GadgetCloudEvent
 import com.soll.domain.device.GadgetCloudHistory
 import com.soll.domain.device.GadgetCloudHistoryPoint
@@ -65,15 +81,26 @@ import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
 import com.soll.domain.soll.SollBriefing
 import com.soll.domain.soll.SollDevice
+import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
+import com.soll.domain.soll.SollGadgetDiscoverySchema
+import com.soll.domain.soll.SollMeshOutboxItem
+import com.soll.domain.soll.SollMeshStatus
+import com.soll.domain.soll.SollProtocolAuth
+import com.soll.domain.soll.SollProtocolBootstrap
+import com.soll.domain.soll.SollProtocolSchema
+import com.soll.domain.soll.SollProtocolTransport
+import com.soll.domain.soll.SollProtocolWorkerContract
 import com.soll.domain.soll.SollRawNote
 import com.soll.domain.soll.SollRawUpload
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
+import com.soll.domain.soll.buildSollDeviceTokenSignature
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -98,16 +125,16 @@ class SollRepository @Inject constructor(
     }
 
     override suspend fun getHealth(): Result<SollHealth> = runSuspendCatching {
-        service().getHealth(authorizationHeader()).toDomain()
+        service().getHealth(readAuthorizationHeader()).toDomain()
     }
 
     override suspend fun getTaskBoard(): Result<SollTaskBoard> = runSuspendCatching {
-        service().getTaskBoard(authorizationHeader()).toDomain()
+        service().getTaskBoard(readAuthorizationHeader()).toDomain()
     }
 
     override suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus> {
         val liveResult = runSuspendCatching {
-            val response = service().getAndroidSyncStatus(authorizationHeader())
+            val response = service().getAndroidSyncStatus(readAuthorizationHeader())
             cacheAndroidSyncStatus(response)
             response.toDomain()
         }
@@ -115,6 +142,38 @@ class SollRepository @Inject constructor(
 
         val cached = cachedAndroidSyncStatusOrNull(liveResult.exceptionOrNull())
         return cached?.let { Result.success(it) } ?: liveResult
+    }
+
+    override suspend fun issueDeviceToken(deviceId: String, pairingSecret: String): Result<SollDeviceToken> =
+        runSuspendCatching {
+            val cleanDeviceId = deviceId.trim()
+            val cleanSecret = pairingSecret.trim()
+            require(cleanDeviceId.isNotBlank()) { "Device ID не задан" }
+            require(cleanSecret.isNotBlank()) { "Pairing secret не задан" }
+
+            val challenge = service().createDeviceChallenge(cleanDeviceId)
+            val nonce = UUID.randomUUID().toString().replace("-", "")
+            val signature = buildSollDeviceTokenSignature(
+                pairingSecret = cleanSecret,
+                deviceId = challenge.deviceId,
+                challengeId = challenge.challengeId,
+                challenge = challenge.challenge,
+                nonce = nonce,
+            )
+            service().issueDeviceToken(
+                DeviceTokenRequest(
+                    deviceId = challenge.deviceId,
+                    challengeId = challenge.challengeId,
+                    nonce = nonce,
+                    signature = signature,
+                )
+            ).toDomain()
+        }
+
+    override suspend fun refreshDeviceToken(): Result<SollDeviceToken> = runSuspendCatching {
+        val authorization = deviceAuthorizationHeader()
+        require(authorization != null) { "Device bearer не настроен" }
+        service().refreshDeviceToken(authorization).toDomain()
     }
 
     override suspend fun createRawNote(
@@ -239,16 +298,187 @@ class SollRepository @Inject constructor(
         }
     }
 
+    override suspend fun getProtocolSchema(): Result<SollProtocolSchema> = runSuspendCatching {
+        service().getProtocolSchema(readAuthorizationHeader()).toDomain()
+    }
+
+    override suspend fun getMeshStatus(): Result<SollMeshStatus> = runSuspendCatching {
+        service().getMeshStatus(readAuthorizationHeader()).toDomain()
+    }
+
+    override suspend fun getMeshOutbox(limit: Int): Result<List<SollMeshOutboxItem>> = runSuspendCatching {
+        service().getMeshOutbox(
+            authorization = readAuthorizationHeader(),
+            limit = limit.coerceIn(1, 100),
+        ).outbox.map { it.toDomain() }
+    }
+
+    override suspend fun claimNextMeshOutbox(toPeer: String?): Result<SollMeshOutboxItem?> = runSuspendCatching {
+        service().claimNextMeshOutbox(
+            authorization = readAuthorizationHeader(),
+            toPeer = toPeer?.trim()?.takeIf { it.isNotBlank() },
+        ).outbox?.toDomain()
+    }
+
+    override suspend fun ackMeshOutbox(outboundId: String): Result<SollMeshOutboxItem> = runSuspendCatching {
+        val cleanId = outboundId.trim()
+        require(cleanId.isNotBlank()) { "ID outbox-сообщения не задан" }
+        service().ackMeshOutbox(
+            authorization = readAuthorizationHeader(),
+            outboundId = cleanId,
+        ).toDomain()
+    }
+
+    override suspend fun markMeshOutboxAttempt(
+        outboundId: String,
+        success: Boolean,
+        error: String?,
+    ): Result<SollMeshOutboxItem> = runSuspendCatching {
+        val cleanId = outboundId.trim()
+        require(cleanId.isNotBlank()) { "ID outbox-сообщения не задан" }
+        service().markMeshOutboxAttempt(
+            authorization = readAuthorizationHeader(),
+            outboundId = cleanId,
+            request = MeshOutboxAttemptRequest(
+                success = success,
+                error = error?.trim()?.takeIf { it.isNotBlank() },
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun retryMeshOutbox(outboundId: String): Result<SollMeshOutboxItem> = runSuspendCatching {
+        val cleanId = outboundId.trim()
+        require(cleanId.isNotBlank()) { "ID outbox-сообщения не задан" }
+        service().retryMeshOutbox(
+            authorization = readAuthorizationHeader(),
+            outboundId = cleanId,
+        ).toDomain()
+    }
+
     override suspend fun getGadgetSnapshots(): Result<List<GadgetCloudSnapshot>> = runSuspendCatching {
-        service().getGadgets(authorizationHeader()).map { it.toDomain() }
+        service().getGadgets(readAuthorizationHeader()).map { it.toDomain() }
     }
 
     override suspend fun getGadgetLatest(gadgetId: String): Result<GadgetCloudSnapshot> = runSuspendCatching {
         val cleanId = gadgetId.trim()
         require(cleanId.isNotBlank()) { "ID гаджета не задан" }
         service().getGadgetLatest(
-            authorization = authorizationHeader(),
+            authorization = readAuthorizationHeader(),
             gadgetId = cleanId,
+        ).toDomain()
+    }
+
+    override suspend fun createGadgetCommand(
+        gadgetId: String,
+        command: String,
+        params: Map<String, Any?>,
+        ttlSeconds: Int,
+    ): Result<GadgetCloudCommand> = runSuspendCatching {
+        val cleanId = gadgetId.trim()
+        val cleanCommand = command.trim()
+        require(cleanId.isNotBlank()) { "ID гаджета не задан" }
+        require(cleanCommand.isNotBlank()) { "Команда гаджета не задана" }
+        service().createGadgetCommand(
+            authorization = readAuthorizationHeader(),
+            gadgetId = cleanId,
+            request = GadgetCommandCreateRequest(
+                command = cleanCommand,
+                params = params,
+                ttlSeconds = ttlSeconds.coerceIn(1, 3600),
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun getGadgetCommands(gadgetId: String, limit: Int): Result<List<GadgetCloudCommand>> =
+        runSuspendCatching {
+            val cleanId = gadgetId.trim()
+            require(cleanId.isNotBlank()) { "ID гаджета не задан" }
+            service().getGadgetCommands(
+                authorization = readAuthorizationHeader(),
+                gadgetId = cleanId,
+                limit = limit.coerceIn(1, 200),
+            ).map { it.toDomain() }
+        }
+
+    override suspend fun claimGadgetCommand(
+        gadgetId: String,
+        workerId: String,
+        leaseSeconds: Int,
+    ): Result<GadgetCloudCommand?> = runSuspendCatching {
+        val cleanId = gadgetId.trim()
+        require(cleanId.isNotBlank()) { "ID гаджета не задан" }
+        service().claimGadgetCommand(
+            authorization = readAuthorizationHeader(),
+            gadgetId = cleanId,
+            request = GadgetCommandClaimRequest(
+                workerId = workerId.trim(),
+                leaseSeconds = leaseSeconds.coerceIn(5, 3600),
+            ),
+        )?.toDomain()
+    }
+
+    override suspend fun ackGadgetCommand(
+        gadgetId: String,
+        commandId: String,
+        workerId: String,
+    ): Result<GadgetCloudCommand> = runSuspendCatching {
+        val cleanGadgetId = gadgetId.trim()
+        val cleanCommandId = commandId.trim()
+        require(cleanGadgetId.isNotBlank()) { "ID гаджета не задан" }
+        require(cleanCommandId.isNotBlank()) { "ID команды не задан" }
+        service().ackGadgetCommand(
+            authorization = readAuthorizationHeader(),
+            gadgetId = cleanGadgetId,
+            commandId = cleanCommandId,
+            request = GadgetCommandAckRequest(workerId = workerId.trim()),
+        ).toDomain()
+    }
+
+    override suspend fun postGadgetCommandResult(
+        gadgetId: String,
+        commandId: String,
+        success: Boolean,
+        workerId: String,
+        payload: Map<String, Any?>,
+        error: String,
+    ): Result<GadgetCloudCommand> = runSuspendCatching {
+        val cleanGadgetId = gadgetId.trim()
+        val cleanCommandId = commandId.trim()
+        require(cleanGadgetId.isNotBlank()) { "ID гаджета не задан" }
+        require(cleanCommandId.isNotBlank()) { "ID команды не задан" }
+        service().postGadgetCommandResult(
+            authorization = readAuthorizationHeader(),
+            gadgetId = cleanGadgetId,
+            commandId = cleanCommandId,
+            request = GadgetCommandResultRequest(
+                success = success,
+                payload = payload,
+                error = error.trim(),
+                workerId = workerId.trim(),
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun postManualGadgetCommandResult(
+        gadgetId: String,
+        commandId: String,
+        success: Boolean,
+        payload: Map<String, Any?>,
+        error: String,
+    ): Result<GadgetCloudCommand> = runSuspendCatching {
+        val cleanGadgetId = gadgetId.trim()
+        val cleanCommandId = commandId.trim()
+        require(cleanGadgetId.isNotBlank()) { "ID гаджета не задан" }
+        require(cleanCommandId.isNotBlank()) { "ID команды не задан" }
+        service().postManualGadgetCommandResult(
+            authorization = authorizationHeader(),
+            gadgetId = cleanGadgetId,
+            commandId = cleanCommandId,
+            request = GadgetCommandResultRequest(
+                success = success,
+                payload = payload,
+                error = error.trim(),
+            ),
         ).toDomain()
     }
 
@@ -260,11 +490,11 @@ class SollRepository @Inject constructor(
         limit: Int,
     ): Result<GadgetCloudHistory> = runSuspendCatching {
         val cleanId = gadgetId.trim()
-        require(cleanId.isNotBlank()) { "ID гаджета не задан" }
-        service().getGadgetHistory(
-            authorization = authorizationHeader(),
-            gadgetId = cleanId,
-            metric = metric?.trim()?.takeIf { it.isNotBlank() },
+            require(cleanId.isNotBlank()) { "ID гаджета не задан" }
+            service().getGadgetHistory(
+                authorization = readAuthorizationHeader(),
+                gadgetId = cleanId,
+                metric = metric?.trim()?.takeIf { it.isNotBlank() },
             from = from?.trim()?.takeIf { it.isNotBlank() },
             to = to?.trim()?.takeIf { it.isNotBlank() },
             limit = limit.coerceIn(1, 1000),
@@ -276,7 +506,7 @@ class SollRepository @Inject constructor(
             val cleanId = gadgetId.trim()
             require(cleanId.isNotBlank()) { "ID гаджета не задан" }
             service().getGadgetEvents(
-                authorization = authorizationHeader(),
+                authorization = readAuthorizationHeader(),
                 gadgetId = cleanId,
                 limit = limit.coerceIn(1, 200),
             ).map { it.toDomain(fallbackGadgetId = cleanId) }
@@ -292,6 +522,15 @@ class SollRepository @Inject constructor(
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(SollApiService::class.java)
+    }
+
+    private fun readAuthorizationHeader(): String? {
+        return deviceAuthorizationHeader() ?: authorizationHeader()
+    }
+
+    private fun deviceAuthorizationHeader(): String? {
+        val deviceToken = settingsRepository.sollDeviceAccessToken.trim()
+        return deviceToken.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
     }
 
     private fun authorizationHeader(): String? {
@@ -347,6 +586,7 @@ class SollRepository @Inject constructor(
             tasks = tasks.toDomain(),
             device = device?.toDomain(),
             briefing = briefing?.toDomain(),
+            protocol = protocol?.toDomain(),
             warnings = (warnings + extraWarnings).distinct(),
             fromCache = fromCache,
             cachedAtMillis = cachedAtMillis,
@@ -359,6 +599,14 @@ class SollRepository @Inject constructor(
             enabled = enabled,
             scopes = scopes,
             lastSeenAt = lastSeenAt,
+        )
+
+    private fun com.soll.data.api.DeviceTokenResponse.toDomain(): SollDeviceToken =
+        SollDeviceToken(
+            accessToken = accessToken,
+            tokenType = tokenType,
+            expiresAt = expiresAt,
+            expiresIn = expiresIn,
         )
 
     private fun SollBriefingResponse.toDomain(): SollBriefing =
@@ -513,12 +761,100 @@ class SollRepository @Inject constructor(
             contradictions = contradictions,
         )
 
+    private fun SollProtocolSchemaResponse.toDomain(): SollProtocolSchema =
+        SollProtocolSchema(
+            version = version,
+            auth = auth.toDomain(),
+            gadgetCommandRoutes = scopes["gadget:commands"].orEmpty(),
+            androidTransport = transports["android"]?.toDomain() ?: SollProtocolTransport(),
+            workerContracts = workerContracts.mapValues { (_, contract) -> contract.toDomain() },
+            gadgetDiscovery = gadgetDiscovery?.toDomain(),
+        )
+
+    private fun AndroidProtocolBootstrapResponse.toDomain(): SollProtocolBootstrap =
+        SollProtocolBootstrap(
+            version = version,
+            auth = auth.toDomain(),
+            transport = transport.toDomain(),
+            workerContracts = workerContracts.mapValues { (_, contract) -> contract.toDomain() },
+        )
+
+    private fun SollProtocolAuthResponse.toDomain(): SollProtocolAuth =
+        SollProtocolAuth(
+            pairingEndpoint = pairing,
+            challengeEndpoint = challenge,
+            tokenEndpoint = token,
+            tokenRefreshEndpoint = tokenRefresh,
+            tokenType = tokenType,
+            refreshRule = refreshRule,
+        )
+
+    private fun SollProtocolTransportResponse.toDomain(): SollProtocolTransport =
+        SollProtocolTransport(
+            recommendedAuth = recommendedAuth,
+            poll = poll,
+            push = push,
+        )
+
+    private fun SollProtocolWorkerContractResponse.toDomain(): SollProtocolWorkerContract =
+        SollProtocolWorkerContract(
+            owner = owner,
+            auth = auth,
+            requiredScopes = requiredScopes,
+            leaseSecondsDefault = leaseSecondsDefault,
+            pollIntervalSeconds = pollIntervalSeconds,
+            lifecycle = lifecycle,
+        )
+
+    private fun MeshStatusResponse.toDomain(): SollMeshStatus =
+        SollMeshStatus(
+            enabled = enabled,
+            simulatedMode = simulatedMode,
+            meshtasticAvailable = meshtasticAvailable,
+            maxPayloadBytes = maxPayloadBytes,
+            queuedOutboxCount = queuedOutboxCount,
+            sentOutboxCount = sentOutboxCount,
+            ackedOutboxCount = ackedOutboxCount,
+            failedOutboxCount = failedOutboxCount,
+        )
+
+    private fun MeshOutboxItemResponse.toDomain(): SollMeshOutboxItem =
+        SollMeshOutboxItem(
+            outboundId = outboundId,
+            toPeer = toPeer,
+            text = text,
+            status = status,
+            retryCount = retryCount,
+            maxRetries = maxRetries,
+            lastError = lastError,
+            createdAt = createdAt,
+            lastAttemptAt = lastAttemptAt,
+            ackedAt = ackedAt,
+        )
+
+    private fun GadgetDiscoverySchemaResponse.toDomain(): SollGadgetDiscoverySchema =
+        SollGadgetDiscoverySchema(
+            version = version,
+            primaryOrder = primaryOrder,
+            mdnsServiceTypes = mdns.serviceTypes,
+            ssdpHeaderNames = ssdp.headers.keys.toList(),
+            wifiSsidPrefixes = wifiAp.ssidPrefixes,
+            defaultSetupHost = wifiAp.defaultSetupHost,
+            deviceJsonEndpoint = deviceJson.endpoint,
+            deviceJsonRecommendedFields = deviceJson.recommended,
+        )
+
     private fun GadgetSnapshotResponse.toDomain(): GadgetCloudSnapshot =
         GadgetCloudSnapshot(
             id = id,
             name = name.ifBlank { id },
             profileId = profileId,
             enabled = enabled,
+            firmwareVersion = firmwareVersion,
+            localIp = localIp,
+            uptimeMs = uptimeMs,
+            capabilities = capabilities,
+            heartbeatPayload = heartbeatPayload,
             lastHeartbeatAt = lastHeartbeatAt,
             lastTelemetryAt = lastTelemetryAt,
             latestTelemetry = latestTelemetry,
@@ -536,6 +872,22 @@ class SollRepository @Inject constructor(
             summary = summary,
             payload = payload,
             createdAt = createdAt,
+        )
+
+    private fun GadgetCommandResponse.toDomain(): GadgetCloudCommand =
+        GadgetCloudCommand(
+            id = id,
+            gadgetId = gadgetId,
+            command = command,
+            params = params,
+            status = status,
+            reason = reason,
+            result = result,
+            riskLevel = riskLevel,
+            approvalId = approvalId,
+            createdAt = createdAt,
+            expiresAt = expiresAt,
+            completedAt = completedAt,
         )
 
     private fun GadgetHistoryResponse.toDomain(): GadgetCloudHistory =

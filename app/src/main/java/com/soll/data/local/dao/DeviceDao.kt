@@ -23,6 +23,9 @@ interface DeviceDao {
     @Query("SELECT * FROM known_devices ORDER BY updated_at DESC")
     fun observeKnownDevices(): Flow<List<KnownDeviceEntity>>
 
+    @Query("SELECT * FROM known_devices ORDER BY updated_at DESC")
+    suspend fun getKnownDevices(): List<KnownDeviceEntity>
+
     @Query("SELECT * FROM known_devices WHERE id = :id LIMIT 1")
     suspend fun getKnownDevice(id: String): KnownDeviceEntity?
 

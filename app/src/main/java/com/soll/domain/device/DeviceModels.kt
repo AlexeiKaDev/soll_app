@@ -205,6 +205,11 @@ data class GadgetCloudSnapshot(
     val name: String,
     val profileId: String,
     val enabled: Boolean,
+    val firmwareVersion: String = "",
+    val localIp: String? = null,
+    val uptimeMs: Long? = null,
+    val capabilities: List<String> = emptyList(),
+    val heartbeatPayload: Map<String, Any?> = emptyMap(),
     val lastHeartbeatAt: String?,
     val lastTelemetryAt: String?,
     val latestTelemetry: Map<String, Any?>,
@@ -222,6 +227,24 @@ data class GadgetCloudEvent(
     val payload: Map<String, Any?>,
     val createdAt: String,
 )
+
+data class GadgetCloudCommand(
+    val id: String,
+    val gadgetId: String,
+    val command: String,
+    val params: Map<String, Any?>,
+    val status: String,
+    val reason: String,
+    val result: Map<String, Any?>,
+    val riskLevel: String = "read_only",
+    val approvalId: String = "",
+    val createdAt: String,
+    val expiresAt: String?,
+    val completedAt: String?,
+) {
+    val accepted: Boolean
+        get() = status in setOf("pending", "done", "sent", "approval_required", "manual_ready")
+}
 
 data class GadgetCloudHistoryPoint(
     val metric: String,

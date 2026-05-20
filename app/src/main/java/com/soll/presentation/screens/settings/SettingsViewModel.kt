@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.repository.DeviceQaRepository
+import com.soll.data.repository.GadgetServerSyncScheduler
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollRepository
 import com.soll.data.repository.TelegramRepository
@@ -256,6 +257,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setSollWifiOnlyUpload(enabled: Boolean) {
         settingsRepository.sollWifiOnlyUpload = enabled
+        GadgetServerSyncScheduler.schedule(application, settingsRepository)
         _uiState.update { it.copy(sollWifiOnlyUpload = enabled) }
     }
 
@@ -408,6 +410,7 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.sollAccessToken = state.sollAccessToken
         settingsRepository.sollSyncIntervalMinutes = interval
         settingsRepository.sollWifiOnlyUpload = state.sollWifiOnlyUpload
+        GadgetServerSyncScheduler.schedule(application, settingsRepository)
         _uiState.update {
             val nextState = it.copy(
                 sollSyncIntervalMinutes = interval.toString(),
@@ -680,12 +683,16 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun SollAndroidSyncStatus.syncSummary(): String =
-        tasks.syncSummary() + if (fromCache) {
-            " Данные из локального кэша."
-        } else {
-            ""
-        }
+    private fun SollAndroidSyncStatus.syncSummary(): String {
+        val protocolSummary = protocol?.let { bootstrap ->
+            val workerCount = bootstrap.workerContracts.size
+            val refreshStatus = if (bootstrap.auth.tokenRefreshEndpoint.isNotBlank()) "refresh есть" else "refresh нет"
+            val status = if (bootstrap.compatible) "протокол OK" else "протокол требует проверки"
+            " $status: workers=$workerCount, $refreshStatus."
+        }.orEmpty()
+        val cacheSummary = if (fromCache) " Данные из локального кэша." else ""
+        return tasks.syncSummary() + protocolSummary + cacheSummary
+    }
 
     private fun maskToken(token: String): String {
         if (token.length < 10) return token

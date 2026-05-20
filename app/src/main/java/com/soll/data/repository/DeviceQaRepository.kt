@@ -83,6 +83,8 @@ class DeviceQaRepository @Inject constructor(
             widgetLauncherColdCheck(),
             widgetMediaControlsCheck(),
             themeVisualCheck(),
+            gadgetProtocolSchemaCheck(),
+            gadgetServerLocalBindingCheck(),
             nfcOwnedTagsCheck(),
             nfcAccessDiagnosticCheck(),
         ).map { check ->
@@ -282,6 +284,48 @@ class DeviceQaRepository @Inject constructor(
             manual = true,
             expectedResult = "Во всех трех темах текст контрастный, активные элементы различимы, карточки не сливаются с фоном, длинные подписи не ломают строки.",
             roadmapRef = "Theme / Device QA: palette visual pass",
+        )
+
+    private fun gadgetProtocolSchemaCheck(): DeviceQaCheck =
+        DeviceQaCheck(
+            id = DeviceQaCheckId.GADGET_PROTOCOL_SCHEMA,
+            category = DeviceQaCategory.GADGETS,
+            title = "Контракт сервера",
+            detail = if (settingsRepository.sollServerUrl.isBlank()) {
+                "URL сервера Soll не задан. Без него Android не сможет сверить /api/v1/protocol/schema."
+            } else {
+                "Открой Гаджеты -> Сервер Soll и нажми «Контракт», чтобы сверить Android с текущим server discovery schema."
+            },
+            status = if (settingsRepository.sollServerUrl.isBlank()) {
+                DeviceQaStatus.WARNING
+            } else {
+                DeviceQaStatus.NEEDS_MANUAL_TEST
+            },
+            manual = true,
+            expectedResult = "Проверка контракта показывает совместимость soll-protocol-v1 и soll-gadget-discovery-v1 без предупреждений.",
+            roadmapRef = "ESP Connector / Device QA: Soll server protocol schema compatibility",
+            actionLabel = "Обновить",
+        )
+
+    private fun gadgetServerLocalBindingCheck(): DeviceQaCheck =
+        DeviceQaCheck(
+            id = DeviceQaCheckId.GADGET_SERVER_LOCAL_BINDING,
+            category = DeviceQaCategory.GADGETS,
+            title = "Связь server gadget и телефона",
+            detail = if (settingsRepository.sollServerUrl.isBlank()) {
+                "URL сервера Soll не задан. Binding server gadget -> local KnownDevice нельзя проверить."
+            } else {
+                "В Гаджеты -> Сервер Soll обнови snapshots и проверь, что нужный ESP/Aquik имеет exact id или heartbeat endpoint/local IP, совпадающий с локальным устройством. Ambiguous/no-local binding должен блокировать исполнение команд."
+            },
+            status = if (settingsRepository.sollServerUrl.isBlank()) {
+                DeviceQaStatus.WARNING
+            } else {
+                DeviceQaStatus.NEEDS_MANUAL_TEST
+            },
+            manual = true,
+            expectedResult = "Нужный server gadget однозначно связан с локальным KnownDevice по exact id или endpoint/local IP; неоднозначные совпадения не используются для команд.",
+            roadmapRef = "ESP Connector / Device QA: server-local gadget binding before write-capable commands",
+            actionLabel = "Обновить",
         )
 
     private fun nfcOwnedTagsCheck(): DeviceQaCheck {

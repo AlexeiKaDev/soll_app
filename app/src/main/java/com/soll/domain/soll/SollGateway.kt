@@ -1,6 +1,7 @@
 package com.soll.domain.soll
 
 import android.net.Uri
+import com.soll.domain.device.GadgetCloudCommand
 import com.soll.domain.device.GadgetCloudEvent
 import com.soll.domain.device.GadgetCloudHistory
 import com.soll.domain.device.GadgetCloudSnapshot
@@ -30,15 +31,47 @@ data class SollDevice(
     val lastSeenAt: String?,
 )
 
+data class SollDeviceToken(
+    val accessToken: String,
+    val tokenType: String,
+    val expiresAt: String,
+    val expiresIn: Int,
+)
+
 data class SollAndroidSyncStatus(
     val serverTime: String,
     val health: SollHealth,
     val tasks: SollTaskBoard,
     val device: SollDevice?,
     val briefing: SollBriefing?,
+    val protocol: SollProtocolBootstrap?,
     val warnings: List<String>,
     val fromCache: Boolean = false,
     val cachedAtMillis: Long? = null,
+)
+
+data class SollMeshStatus(
+    val enabled: Boolean,
+    val simulatedMode: Boolean,
+    val meshtasticAvailable: Boolean,
+    val maxPayloadBytes: Int,
+    val queuedOutboxCount: Int,
+    val sentOutboxCount: Int,
+    val ackedOutboxCount: Int,
+    val failedOutboxCount: Int,
+)
+
+data class SollMeshOutboxItem(
+    val outboundId: String,
+    val toPeer: String,
+    val text: String,
+    val status: String,
+    val retryCount: Int,
+    val maxRetries: Int,
+    val lastError: String?,
+    val createdAt: String,
+    val lastAttemptAt: String?,
+    val ackedAt: String?,
 )
 
 data class SollTaskBoard(
@@ -203,6 +236,8 @@ interface SollGateway {
     suspend fun getHealth(): Result<SollHealth>
     suspend fun getTaskBoard(): Result<SollTaskBoard>
     suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus>
+    suspend fun issueDeviceToken(deviceId: String, pairingSecret: String): Result<SollDeviceToken>
+    suspend fun refreshDeviceToken(): Result<SollDeviceToken>
     suspend fun createRawNote(
         title: String,
         content: String,
@@ -228,8 +263,57 @@ interface SollGateway {
     suspend fun processDownloadedBook(filePath: String? = null): Result<SollBookProcessResult>
     suspend fun cancelBookSession(): Result<SollBookActionResult>
     suspend fun askMetaCoordinator(request: MetaCoordinatorRequest): Result<MetaCoordinatorResponse>
+    suspend fun getProtocolSchema(): Result<SollProtocolSchema>
+    suspend fun getMeshStatus(): Result<SollMeshStatus>
+    suspend fun getMeshOutbox(limit: Int = 20): Result<List<SollMeshOutboxItem>>
+    suspend fun claimNextMeshOutbox(toPeer: String? = null): Result<SollMeshOutboxItem?>
+    suspend fun ackMeshOutbox(outboundId: String): Result<SollMeshOutboxItem>
+    suspend fun markMeshOutboxAttempt(
+        outboundId: String,
+        success: Boolean,
+        error: String? = null,
+    ): Result<SollMeshOutboxItem>
+    suspend fun retryMeshOutbox(outboundId: String): Result<SollMeshOutboxItem>
     suspend fun getGadgetSnapshots(): Result<List<GadgetCloudSnapshot>>
     suspend fun getGadgetLatest(gadgetId: String): Result<GadgetCloudSnapshot>
+    suspend fun createGadgetCommand(
+        gadgetId: String,
+        command: String,
+        params: Map<String, Any?> = emptyMap(),
+        ttlSeconds: Int = 60,
+    ): Result<GadgetCloudCommand>
+
+    suspend fun getGadgetCommands(gadgetId: String, limit: Int = 20): Result<List<GadgetCloudCommand>>
+
+    suspend fun claimGadgetCommand(
+        gadgetId: String,
+        workerId: String,
+        leaseSeconds: Int = 60,
+    ): Result<GadgetCloudCommand?>
+
+    suspend fun ackGadgetCommand(
+        gadgetId: String,
+        commandId: String,
+        workerId: String,
+    ): Result<GadgetCloudCommand>
+
+    suspend fun postGadgetCommandResult(
+        gadgetId: String,
+        commandId: String,
+        success: Boolean,
+        workerId: String,
+        payload: Map<String, Any?> = emptyMap(),
+        error: String = "",
+    ): Result<GadgetCloudCommand>
+
+    suspend fun postManualGadgetCommandResult(
+        gadgetId: String,
+        commandId: String,
+        success: Boolean,
+        payload: Map<String, Any?> = emptyMap(),
+        error: String = "",
+    ): Result<GadgetCloudCommand>
+
     suspend fun getGadgetHistory(
         gadgetId: String,
         metric: String? = null,

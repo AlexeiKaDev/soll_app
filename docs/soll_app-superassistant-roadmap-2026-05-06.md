@@ -1177,6 +1177,23 @@ Exit criteria:
 
 - Phone can connect to test ESP/WebSocket mock and show sensor data.
 
+Progress 2026-05-12:
+
+- Redesigned `Гаджеты` around the device-first flow: saved device list, explicit discovery/add screen, then per-device detail.
+- Archived the previous all-in-one service editor as an internal source component and split its useful parts into per-device tabs: sensors, control, parameters, schedules, automation, diagnostics and events.
+- Added first reliable discovery slice for Soll/Aquik devices: mDNS/NSD, SSDP, manual host/IP, QR/code import and Wi-Fi AP scan/provisioning entry point. BLE and SmartConfig stay prepared but not exposed as primary working flows until firmware/GATT validation.
+- Aligned discovery with the local Aquik Android/firmware sources: support `AQUIK-*` SSDP headers, `aquik://setup?...` QR payloads, `ws_port/http_port` mDNS TXT records and `/device.json` enrichment from explicit HTTP endpoints.
+- Synced the Android discovery constants with the Soll server contract `soll-gadget-discovery-v1`; protocol changes that affect Android must be reflected in `soll_app` and the Soll project together.
+- Added parsing tests for `device.json`, QR pairing payloads and SSDP headers.
+- Added Android-side `/api/v1/protocol/schema` compatibility check for Soll server discovery contract, with Russian UI status in `Гаджеты -> Сервер Soll` and unit coverage for schema mismatch warnings.
+- Added Device QA row for Soll server protocol schema compatibility, so phone/server verification is tracked in Settings -> Device QA.
+- [ ] Device QA: verify `Гаджеты -> Сервер Soll -> Контракт` against the target Soll server from the target phone.
+- Added Android -> Soll server command relay for selected server gadgets: Android can enqueue safe read commands (`getSensors`, `getActuators`, `getSystemInfo`) through `POST /api/v1/gadgets/{device_id}/commands`, and the protocol compatibility check now validates command routes too.
+- Added command history/status loop for server gadgets: Soll exposes `GET /api/v1/gadgets/{device_id}/commands`, Android loads recent command states after selection/refresh/send, and `Гаджеты -> Сервер Soll` shows Russian command history.
+- Added read-only server command worker: WorkManager claims one command, ACKs it, resolves server gadget to local KnownDevice, executes only read-only profile commands through a short-lived WebSocket connector, posts result, and records a local audit event.
+- Added explicit manual write flow: `manual_ready` commands show a guarded `Вручную` button, execute only after UI confirmation and local binding resolution, then post `manual-result` back to Soll as `done` or `failed`. Background sync does not claim or execute write commands.
+- Added mesh/outbox worker v0 in the existing sync path: it claims one outbox item per run, ACKs allowlisted JSON payloads and sends failed attempt for unknown/command payloads without arbitrary execution.
+
 ### Phase 7: Scanner V1
 
 Goal: generic QR/EAN capture.

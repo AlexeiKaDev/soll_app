@@ -126,13 +126,21 @@ class ScannerViewModel @Inject constructor(
         }
     }
 
-    fun setCameraEnabled(enabled: Boolean) {
-        if (enabled && !ensureScannerCapability()) return
+    fun setCameraEnabled(
+        enabled: Boolean,
+        requireScannerCapability: Boolean = true,
+        cameraStatus: String? = null,
+    ) {
+        if (enabled && requireScannerCapability && !ensureScannerCapability()) return
         confirmationGate.reset()
         _uiState.update {
             it.copy(
                 cameraEnabled = enabled,
-                cameraStatus = if (enabled) "Наведи камеру на код. Нужно 2 совпадения подряд." else null,
+                cameraStatus = if (enabled) {
+                    cameraStatus ?: "Наведи камеру на код. Нужно 2 совпадения подряд."
+                } else {
+                    null
+                },
             )
         }
     }
@@ -149,8 +157,8 @@ class ScannerViewModel @Inject constructor(
         }
     }
 
-    fun handleCameraBarcode(rawValue: String, format: String) {
-        if (!ensureScannerCapability()) {
+    fun handleCameraBarcode(rawValue: String, format: String, pairingOnly: Boolean = false) {
+        if (!pairingOnly && !ensureScannerCapability()) {
             setCameraEnabled(false)
             return
         }
@@ -171,6 +179,16 @@ class ScannerViewModel @Inject constructor(
             val pairingPayload = SollPairingPayloadParser.parse(result.value)
             if (pairingPayload != null) {
                 applySollPairingPayload(pairingPayload, reason = "scanner_qr_pairing")
+                return@launch
+            }
+            if (pairingOnly) {
+                _uiState.update {
+                    it.copy(
+                        cameraStatus = "Это не QR pairing Soll",
+                        message = "Наведи камеру на QR из Desktop",
+                        isError = true,
+                    )
+                }
                 return@launch
             }
 

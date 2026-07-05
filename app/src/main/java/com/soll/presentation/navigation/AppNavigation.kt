@@ -206,6 +206,7 @@ fun AppNavigation(
                 ScannerScreen(
                     onBack = { navController.popBackStack() },
                     autoStartCamera = true,
+                    pairingMode = true,
                 )
             }
             composable(Routes.ACTIVITY_HISTORY) {

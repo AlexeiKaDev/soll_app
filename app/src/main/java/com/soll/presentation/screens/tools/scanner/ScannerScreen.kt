@@ -83,11 +83,14 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import timber.log.Timber
 
+private const val PAIRING_CAMERA_PROMPT = "Наведи камеру на QR pairing в Desktop"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScannerScreen(
     onBack: () -> Unit,
     autoStartCamera: Boolean = false,
+    pairingMode: Boolean = false,
     viewModel: ScannerViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -103,18 +106,26 @@ fun ScannerScreen(
     ) { granted ->
         hasCameraPermission = granted
         if (granted) {
-            viewModel.setCameraEnabled(true)
+            viewModel.setCameraEnabled(
+                enabled = true,
+                requireScannerCapability = !pairingMode,
+                cameraStatus = if (pairingMode) PAIRING_CAMERA_PROMPT else null,
+            )
         } else {
             viewModel.showCameraPermissionDenied()
         }
     }
     var autoStartRequested by remember { mutableStateOf(false) }
 
-    LaunchedEffect(autoStartCamera, hasCameraPermission, uiState.cameraEnabled) {
+    LaunchedEffect(autoStartCamera, pairingMode, hasCameraPermission, uiState.cameraEnabled) {
         if (!autoStartCamera || autoStartRequested || uiState.cameraEnabled) return@LaunchedEffect
         autoStartRequested = true
         if (hasCameraPermission) {
-            viewModel.setCameraEnabled(true)
+            viewModel.setCameraEnabled(
+                enabled = true,
+                requireScannerCapability = !pairingMode,
+                cameraStatus = if (pairingMode) PAIRING_CAMERA_PROMPT else null,
+            )
         } else {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -123,21 +134,23 @@ fun ScannerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Сканер") },
+                title = { Text(if (pairingMode) "QR pairing" else "Сканер") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::toggleSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Настройки сканера")
-                    }
-                    IconButton(onClick = viewModel::selectAll, enabled = uiState.items.isNotEmpty()) {
-                        Icon(Icons.Default.Checklist, contentDescription = "Выбрать все")
-                    }
-                    IconButton(onClick = viewModel::clearSelection, enabled = uiState.selectedIds.isNotEmpty()) {
-                        Icon(Icons.Default.Clear, contentDescription = "Снять выбор")
+                    if (!pairingMode) {
+                        IconButton(onClick = viewModel::toggleSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Настройки сканера")
+                        }
+                        IconButton(onClick = viewModel::selectAll, enabled = uiState.items.isNotEmpty()) {
+                            Icon(Icons.Default.Checklist, contentDescription = "Выбрать все")
+                        }
+                        IconButton(onClick = viewModel::clearSelection, enabled = uiState.selectedIds.isNotEmpty()) {
+                            Icon(Icons.Default.Clear, contentDescription = "Снять выбор")
+                        }
                     }
                 },
             )
@@ -161,6 +174,29 @@ fun ScannerScreen(
                 )
             }
 
+            if (pairingMode) {
+                PairingCameraPanel(
+                    cameraEnabled = uiState.cameraEnabled,
+                    cameraStatus = uiState.cameraStatus,
+                    hasCameraPermission = hasCameraPermission,
+                    onEnableCamera = {
+                        if (hasCameraPermission) {
+                            viewModel.setCameraEnabled(
+                                enabled = true,
+                                requireScannerCapability = false,
+                                cameraStatus = PAIRING_CAMERA_PROMPT,
+                            )
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                    onBarcodeDetected = { rawValue, format ->
+                        viewModel.handleCameraBarcode(rawValue, format, pairingOnly = true)
+                    },
+                )
+                return@Column
+            }
+
             if (uiState.showSettings) {
                 ScannerSettingsPanel(
                     settings = uiState.settings,
@@ -182,7 +218,7 @@ fun ScannerScreen(
                     }
                 },
                 onDisableCamera = { viewModel.setCameraEnabled(false) },
-                onBarcodeDetected = viewModel::handleCameraBarcode,
+                onBarcodeDetected = { rawValue, format -> viewModel.handleCameraBarcode(rawValue, format) },
             )
 
             Card(
@@ -290,6 +326,77 @@ fun ScannerScreen(
                         selected = item.id in uiState.selectedIds,
                         onToggle = { viewModel.toggleSelected(item.id) },
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PairingCameraPanel(
+    cameraEnabled: Boolean,
+    cameraStatus: String?,
+    hasCameraPermission: Boolean,
+    onEnableCamera: () -> Unit,
+    onBarcodeDetected: (rawValue: String, format: String) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxSize(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Сканировать QR",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = cameraStatus ?: PAIRING_CAMERA_PROMPT,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            if (cameraEnabled && hasCameraPermission) {
+                CameraBarcodePreview(
+                    onBarcodeDetected = onBarcodeDetected,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (hasCameraPermission) {
+                Button(onClick = onEnableCamera, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Открыть камеру")
+                }
+            } else {
+                Text(
+                    text = "Для сканирования нужно разрешение камеры.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onEnableCamera, modifier = Modifier.fillMaxWidth()) {
+                    Text("Разрешить камеру")
                 }
             }
         }
@@ -488,6 +595,9 @@ private fun CameraScanCard(
 @Composable
 private fun CameraBarcodePreview(
     onBarcodeDetected: (rawValue: String, format: String) -> Unit,
+    modifier: Modifier = Modifier
+        .fillMaxWidth()
+        .height(260.dp),
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -558,9 +668,7 @@ private fun CameraBarcodePreview(
 
     AndroidView(
         factory = { previewView },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(260.dp),
+        modifier = modifier,
     )
 }
 

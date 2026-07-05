@@ -118,31 +118,31 @@ interface SollApiService {
         @Header("Authorization") authorization: String? = null,
         @Path("task_id") taskId: String,
         @Path("status") status: String,
-    ): SollTaskResponse
+    ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/today")
     suspend fun moveTaskToToday(
         @Header("Authorization") authorization: String? = null,
         @Path("task_id") taskId: String,
-    ): SollTaskResponse
+    ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/done")
     suspend fun completeTask(
         @Header("Authorization") authorization: String? = null,
         @Path("task_id") taskId: String,
-    ): SollTaskResponse
+    ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/defer")
     suspend fun deferTask(
         @Header("Authorization") authorization: String? = null,
         @Path("task_id") taskId: String,
-    ): SollTaskResponse
+    ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/reject")
     suspend fun rejectTask(
         @Header("Authorization") authorization: String? = null,
         @Path("task_id") taskId: String,
-    ): SollTaskResponse
+    ): SollTaskMutationResponse
 
     @GET("api/v1/tasks/graph")
     suspend fun getTaskGraph(
@@ -740,6 +740,70 @@ data class SollTaskResponse(
     @Json(name = "pair_id")
     val pairId: String? = null,
 )
+
+data class SollTaskMutationResponse(
+    val id: String? = null,
+    val title: String? = null,
+    val description: String = "",
+    @Json(name = "source_ref")
+    val sourceRef: String = "",
+    @Json(name = "project_id")
+    val projectId: String? = null,
+    @Json(name = "project_name")
+    val projectName: String? = null,
+    val status: String = "",
+    val priority: String = "",
+    @Json(name = "created_at")
+    val createdAt: String = "",
+    @Json(name = "updated_at")
+    val updatedAt: String = "",
+    @Json(name = "due_date")
+    val dueDate: String? = null,
+    val tags: List<String> = emptyList(),
+    @Json(name = "approval_id")
+    val approvalId: String? = null,
+    @Json(name = "tool_job_id")
+    val toolJobId: String? = null,
+    @Json(name = "execution_state")
+    val executionState: String = "",
+    @Json(name = "outcome_artifacts")
+    val outcomeArtifacts: List<String> = emptyList(),
+    @Json(name = "value_metric")
+    val valueMetric: String = "",
+    val branch: String = "innovation",
+    @Json(name = "pair_id")
+    val pairId: String? = null,
+    val task: SollTaskResponse? = null,
+) {
+    fun taskResponse(): SollTaskResponse {
+        task?.let { return it }
+        val cleanId = id?.trim().orEmpty()
+        val cleanTitle = title?.trim().orEmpty()
+        require(cleanId.isNotBlank()) { "Task response id is required" }
+        require(cleanTitle.isNotBlank()) { "Task response title is required" }
+        return SollTaskResponse(
+            id = cleanId,
+            title = cleanTitle,
+            description = description,
+            sourceRef = sourceRef,
+            projectId = projectId,
+            projectName = projectName,
+            status = status,
+            priority = priority,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            dueDate = dueDate,
+            tags = tags,
+            approvalId = approvalId,
+            toolJobId = toolJobId,
+            executionState = executionState,
+            outcomeArtifacts = outcomeArtifacts,
+            valueMetric = valueMetric,
+            branch = branch,
+            pairId = pairId,
+        )
+    }
+}
 
 data class TaskGraphResponse(
     val nodes: List<TaskGraphNodeResponse> = emptyList(),

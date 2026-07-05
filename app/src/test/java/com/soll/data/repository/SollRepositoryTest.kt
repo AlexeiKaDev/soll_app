@@ -1,5 +1,8 @@
 package com.soll.data.repository
 
+import com.soll.data.api.SollTaskMutationResponse
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -76,5 +79,42 @@ class SollRepositoryTest {
             "mobile-19700101-000000-фото-1.jpg",
             buildRawUploadFilename("Фото 1.JPG", timestampMillis = 0L),
         )
+    }
+
+    @Test
+    fun `task mutation response accepts python root task and monolith task wrapper`() {
+        val adapter = Moshi.Builder()
+            .add(KotlinJsonAdapterFactory())
+            .build()
+            .adapter(SollTaskMutationResponse::class.java)
+
+        val root = adapter.fromJson(
+            """
+            {
+              "id": "task-1",
+              "title": "Start task",
+              "status": "in_progress",
+              "priority": "A"
+            }
+            """.trimIndent(),
+        )!!.taskResponse()
+        val wrapped = adapter.fromJson(
+            """
+            {
+              "success": true,
+              "action": {"action_id": "task-action-1"},
+              "task": {
+                "id": "task-1",
+                "title": "Start task",
+                "status": "in_progress",
+                "priority": "A"
+              }
+            }
+            """.trimIndent(),
+        )!!.taskResponse()
+
+        assertEquals("task-1", root.id)
+        assertEquals("task-1", wrapped.id)
+        assertEquals("in_progress", wrapped.status)
     }
 }

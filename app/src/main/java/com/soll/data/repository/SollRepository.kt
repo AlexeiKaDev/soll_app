@@ -403,23 +403,23 @@ class SollRepository @Inject constructor(
     }
 
     override suspend fun setTaskStatus(taskId: String, status: String): Result<SollTask> = runSuspendCatching {
-        service().setTaskStatus(authorizationHeader(), taskId, status).toDomain()
+        service().setTaskStatus(authorizationHeader(), taskId, status).taskResponse().toDomain()
     }
 
     override suspend fun moveTaskToToday(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().moveTaskToToday(authorizationHeader(), taskId).toDomain()
+        service().moveTaskToToday(authorizationHeader(), taskId).taskResponse().toDomain()
     }
 
     override suspend fun completeTask(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().completeTask(authorizationHeader(), taskId).toDomain()
+        service().completeTask(authorizationHeader(), taskId).taskResponse().toDomain()
     }
 
     override suspend fun deferTask(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().deferTask(authorizationHeader(), taskId).toDomain()
+        service().deferTask(authorizationHeader(), taskId).taskResponse().toDomain()
     }
 
     override suspend fun rejectTask(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().rejectTask(authorizationHeader(), taskId).toDomain()
+        service().rejectTask(authorizationHeader(), taskId).taskResponse().toDomain()
     }
 
     override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> = runSuspendCatching {

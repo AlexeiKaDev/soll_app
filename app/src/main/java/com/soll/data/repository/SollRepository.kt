@@ -148,6 +148,9 @@ import java.util.Date
 import java.util.Locale
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.TimeZone
 import java.util.UUID
 import javax.crypto.Cipher
@@ -202,7 +205,7 @@ class SollRepository @Inject constructor(
         }
 
         val syncStatusResult = runSuspendCatching {
-            val response = service().getAndroidSyncStatus(readAuthorizationHeader())
+            val response = service().getAndroidSyncStatus(ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader())
             cacheAndroidSyncStatus(response)
             response.tasks.toDomain()
         }
@@ -213,7 +216,7 @@ class SollRepository @Inject constructor(
 
     override suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus> {
         val liveResult = runSuspendCatching {
-            val response = service().getAndroidSyncStatus(readAuthorizationHeader())
+            val response = service().getAndroidSyncStatus(ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader())
             cacheAndroidSyncStatus(response)
             response.toDomain()
         }
@@ -345,8 +348,9 @@ class SollRepository @Inject constructor(
     ): Result<SollAndroidPushRegistration> = runSuspendCatching {
         val cleanToken = token.trim()
         require(cleanToken.isNotBlank()) { "Push token не задан" }
+        val authorization = ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader()
         service().registerAndroidPushToken(
-            authorization = readAuthorizationHeader(),
+            authorization = authorization,
             request = AndroidPushTokenRequest(
                 token = cleanToken,
                 provider = provider.trim().ifBlank { "fcm" },
@@ -914,6 +918,38 @@ class SollRepository @Inject constructor(
         return deviceAuthorizationHeader() ?: authorizationHeader()
     }
 
+    private suspend fun ensureDeviceAuthorizationHeader(): String? {
+        val current = deviceAuthorizationHeader()
+        if (current != null && !deviceTokenNeedsRefresh()) {
+            return current
+        }
+
+        val deviceId = settingsRepository.sollDeviceId.trim()
+        val pairingSecret = settingsRepository.sollDevicePairingSecret.trim()
+        if (deviceId.isBlank() || pairingSecret.isBlank()) {
+            return current
+        }
+
+        val refreshed = if (current != null && settingsRepository.sollDeviceTokenExpiresAt.isNotBlank()) {
+            runSuspendCatching {
+                val response = service().refreshDeviceToken(current)
+                persistDeviceToken(response.toDomain())
+                true
+            }.getOrDefault(false)
+        } else {
+            false
+        }
+
+        if (!refreshed) {
+            val token = issueDeviceToken(deviceId, pairingSecret).getOrNull()
+            if (token != null) {
+                persistDeviceToken(token)
+            }
+        }
+
+        return deviceAuthorizationHeader()
+    }
+
     private fun deviceAuthorizationHeader(): String? {
         val deviceToken = settingsRepository.sollDeviceAccessToken.trim()
         return deviceToken.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
@@ -922,6 +958,18 @@ class SollRepository @Inject constructor(
     private fun authorizationHeader(): String? {
         val token = settingsRepository.sollAccessToken.trim()
         return token.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
+    }
+
+    private fun persistDeviceToken(token: SollDeviceToken) {
+        settingsRepository.sollDeviceAccessToken = token.accessToken
+        settingsRepository.sollDeviceTokenExpiresAt = token.expiresAt
+    }
+
+    private fun deviceTokenNeedsRefresh(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val expiresAt = settingsRepository.sollDeviceTokenExpiresAt.trim()
+        if (expiresAt.isBlank()) return true
+        val expiresAtMillis = parseIsoInstantMillis(expiresAt) ?: return true
+        return expiresAtMillis - nowMillis <= DEVICE_TOKEN_REFRESH_SAFETY_MS
     }
 
     private fun encryptedEnvelopeOrNull(
@@ -1705,6 +1753,7 @@ private const val KEY_ANDROID_SYNC_STATUS_CACHED_AT = "android_sync_status_cache
 private const val TASK_BOARD_SECTION_LIMIT = 80
 private const val TASK_BOARD_MIN_SECTION_LIMIT = 20
 private const val TASK_BOARD_MAX_SECTION_LIMIT = 500
+private const val DEVICE_TOKEN_REFRESH_SAFETY_MS = 2 * 60_000L
 private const val SOURCE_TYPE_WEB = "web"
 private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")
 
@@ -1771,6 +1820,19 @@ private fun String.encodedSollPathSegment(fieldName: String): String {
     val clean = trim()
     require(clean.isNotBlank()) { "$fieldName не задан" }
     return Uri.encode(clean)
+}
+
+private fun parseIsoInstantMillis(value: String): Long? {
+    val trimmed = value.trim()
+    return try {
+        Instant.parse(trimmed).toEpochMilli()
+    } catch (_: Exception) {
+        try {
+            LocalDateTime.parse(trimmed).toInstant(ZoneOffset.UTC).toEpochMilli()
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
 
 fun buildRawNoteFilename(

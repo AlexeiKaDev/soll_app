@@ -1,8 +1,16 @@
 # soll_app Status
 
-Last updated: 2026-07-05 13:27 Europe/Chisinau
+Last updated: 2026-07-05 21:09 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-05 Android notification recovery after token expiry:
+  - Root cause found: the Soll server device bearer expires after 15 minutes, while Android server sync defaults to a longer interval. Once it expired, `/api/v1/android/sync-status` and `/api/v1/android/push-token` returned unauthorized, so polling, chat/task fallback, and FCM token registration could all stop.
+  - `SollRepository` now calls `ensureDeviceAuthorizationHeader()` before protected Android sync and push-token registration. It refreshes a still-valid bearer, or reissues one from the saved `deviceId + pairingSecret` when the old bearer is missing/expired.
+  - Token expiry parsing accepts both offset timestamps and server naive ISO timestamps, with a 2-minute refresh safety window.
+  - Guard coverage was extended in `ProjectStabilizationGuardTest` so future notification work keeps protected sync/push behind automatic bearer refresh/reissue and does not use cancellation-swallowing `runCatching`.
+  - Validation passed: Android `compileDebugKotlin`; `ProjectStabilizationGuardTest`; targeted `SollFirebaseMessagingServiceTest` and `SollServerSyncWorkerTest`; Android `assembleDebug`.
+  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`. Phone install/smoke remains blocked because ADB currently lists no devices.
 
 - 2026-07-05 Android roadmap-line to task continuation without phone:
   - Roadmap line cards now have `В задачу`; Android calls `POST /api/v1/roadmap/stages/{stage_id}/lines/{line}/task`, shows per-line progress through `roadmapLineTaskKey`, and refreshes the task board quietly after success.

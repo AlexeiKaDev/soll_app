@@ -356,8 +356,10 @@ class ProjectStabilizationGuardTest {
         assertTrue(screen.contains("maxLines = if (expanded) Int.MAX_VALUE else TASK_DESCRIPTION_COLLAPSED_LINES"))
         assertTrue(screen.contains("text = \"Источник: \${task.sourceRef}\""))
         assertTrue(screen.contains("maxLines = 1"))
-        assertTrue(screen.contains("private val TASK_STATUS_HIDE_MOVE_TO_TODAY = setOf("))
-        assertTrue(screen.contains("status !in TASK_STATUS_HIDE_MOVE_TO_TODAY"))
+        assertTrue(screen.contains("key = { it.taskListKey() }"))
+        assertTrue(screen.contains("val visibility = taskActionVisibility(status = status, taskId = taskId)"))
+        assertTrue(screen.contains("internal fun taskActionVisibility(status: String, taskId: String): TaskActionVisibility"))
+        assertTrue(screen.contains("internal fun SollTask.taskListKey(): String"))
         assertFalse(screen.substringAfter("private fun TaskActions(").substringBefore("@Composable\nprivate fun ErrorMessage").contains("setOf("))
     }
 

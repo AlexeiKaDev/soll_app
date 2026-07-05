@@ -181,7 +181,7 @@ fun TaskBoardScreen(
                                         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp),
                                     ) {
-                                        items(tasks, key = { it.id }, contentType = { "task" }) { task ->
+                                        items(tasks, key = { it.taskListKey() }, contentType = { "task" }) { task ->
                                             TaskCard(
                                                 task = task,
                                                 expanded = expandedTaskId == task.id,
@@ -1132,6 +1132,7 @@ private fun TaskCard(
 
             TaskActions(
                 status = task.status,
+                taskId = task.id,
                 isActionRunning = isActionRunning || hasPendingTaskAction,
                 onMoveToToday = onMoveToToday,
                 onStart = onStart,
@@ -1223,6 +1224,7 @@ private fun DetailRow(label: String, value: String) {
 @Composable
 private fun TaskActions(
     status: String,
+    taskId: String,
     isActionRunning: Boolean,
     onMoveToToday: () -> Unit,
     onStart: () -> Unit,
@@ -1230,6 +1232,7 @@ private fun TaskActions(
     onDefer: () -> Unit,
     onReject: () -> Unit,
 ) {
+    val visibility = taskActionVisibility(status = status, taskId = taskId)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1241,39 +1244,43 @@ private fun TaskActions(
             CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
         }
 
-        if (status !in TASK_STATUS_HIDE_MOVE_TO_TODAY) {
-            OutlinedButton(onClick = onMoveToToday, enabled = !isActionRunning) {
-                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Сегодня")
+        if (!visibility.hasTaskId) {
+            PassiveChip(text = "Нет ID")
+        } else {
+            if (visibility.canMoveToToday) {
+                OutlinedButton(onClick = onMoveToToday, enabled = !isActionRunning) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Сегодня")
+                }
             }
-        }
 
-        if (status !in TASK_STATUS_HIDE_START) {
-            Button(onClick = onStart, enabled = !isActionRunning) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Начать")
+            if (visibility.canStart) {
+                Button(onClick = onStart, enabled = !isActionRunning) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Начать")
+                }
             }
-        }
 
-        if (status !in TASK_STATUS_HIDE_DONE_OR_REJECT) {
-            Button(onClick = onDone, enabled = !isActionRunning) {
-                Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Готово")
+            if (visibility.canComplete) {
+                Button(onClick = onDone, enabled = !isActionRunning) {
+                    Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Готово")
+                }
             }
-        }
 
-        if (status !in TASK_STATUS_HIDE_DEFER) {
-            OutlinedButton(onClick = onDefer, enabled = !isActionRunning) {
-                Text("Отложить")
+            if (visibility.canDefer) {
+                OutlinedButton(onClick = onDefer, enabled = !isActionRunning) {
+                    Text("Отложить")
+                }
             }
-        }
 
-        if (status !in TASK_STATUS_HIDE_DONE_OR_REJECT) {
-            TextButton(onClick = onReject, enabled = !isActionRunning) {
-                Text("Отклонить")
+            if (visibility.canReject) {
+                TextButton(onClick = onReject, enabled = !isActionRunning) {
+                    Text("Отклонить")
+                }
             }
         }
     }
@@ -1386,6 +1393,46 @@ private fun String.statusLabel(): String =
     }
 
 private const val TASK_DESCRIPTION_COLLAPSED_LINES = 4
+
+internal data class TaskActionVisibility(
+    val hasTaskId: Boolean,
+    val canMoveToToday: Boolean,
+    val canStart: Boolean,
+    val canComplete: Boolean,
+    val canDefer: Boolean,
+    val canReject: Boolean,
+)
+
+internal fun taskActionVisibility(status: String, taskId: String): TaskActionVisibility {
+    val normalizedStatus = status.trim().lowercase()
+    val hasTaskId = taskId.trim().isNotBlank()
+    if (!hasTaskId) {
+        return TaskActionVisibility(
+            hasTaskId = false,
+            canMoveToToday = false,
+            canStart = false,
+            canComplete = false,
+            canDefer = false,
+            canReject = false,
+        )
+    }
+    return TaskActionVisibility(
+        hasTaskId = true,
+        canMoveToToday = normalizedStatus !in TASK_STATUS_HIDE_MOVE_TO_TODAY,
+        canStart = normalizedStatus !in TASK_STATUS_HIDE_START,
+        canComplete = normalizedStatus !in TASK_STATUS_HIDE_DONE_OR_REJECT,
+        canDefer = normalizedStatus !in TASK_STATUS_HIDE_DEFER,
+        canReject = normalizedStatus !in TASK_STATUS_HIDE_DONE_OR_REJECT,
+    )
+}
+
+internal fun SollTask.taskListKey(): String =
+    id.trim().ifBlank {
+        listOf(title, sourceRef, status)
+            .joinToString(":")
+            .ifBlank { "task-without-id" }
+    }
+
 private val TASK_STATUS_HIDE_MOVE_TO_TODAY = setOf("today", "in_progress", "done", "rejected")
 private val TASK_STATUS_HIDE_START = setOf("in_progress", "done", "rejected")
 private val TASK_STATUS_HIDE_DONE_OR_REJECT = setOf("done", "rejected")

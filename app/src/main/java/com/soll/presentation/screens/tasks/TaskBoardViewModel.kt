@@ -256,8 +256,8 @@ class TaskBoardViewModel @Inject constructor(
             successMessage = "Задача перенесена на сегодня",
             queueAction = SollSyncQueueRepository.TASK_ACTION_MOVE_TO_TODAY,
             optimisticStatus = "today",
-        ) {
-            sollGateway.moveTaskToToday(task.id)
+        ) { taskId ->
+            sollGateway.moveTaskToToday(taskId)
         }
     }
 
@@ -268,8 +268,8 @@ class TaskBoardViewModel @Inject constructor(
             queueAction = SollSyncQueueRepository.TASK_ACTION_SET_STATUS,
             optimisticStatus = "in_progress",
             targetStatus = "in_progress",
-        ) {
-            sollGateway.setTaskStatus(task.id, "in_progress")
+        ) { taskId ->
+            sollGateway.setTaskStatus(taskId, "in_progress")
         }
     }
 
@@ -279,8 +279,8 @@ class TaskBoardViewModel @Inject constructor(
             successMessage = "Задача закрыта",
             queueAction = SollSyncQueueRepository.TASK_ACTION_COMPLETE,
             optimisticStatus = "done",
-        ) {
-            sollGateway.completeTask(task.id)
+        ) { taskId ->
+            sollGateway.completeTask(taskId)
         }
     }
 
@@ -290,8 +290,8 @@ class TaskBoardViewModel @Inject constructor(
             successMessage = "Задача отложена",
             queueAction = SollSyncQueueRepository.TASK_ACTION_DEFER,
             optimisticStatus = "deferred",
-        ) {
-            sollGateway.deferTask(task.id)
+        ) { taskId ->
+            sollGateway.deferTask(taskId)
         }
     }
 
@@ -301,8 +301,8 @@ class TaskBoardViewModel @Inject constructor(
             successMessage = "Задача отклонена",
             queueAction = SollSyncQueueRepository.TASK_ACTION_REJECT,
             optimisticStatus = "rejected",
-        ) {
-            sollGateway.rejectTask(task.id)
+        ) { taskId ->
+            sollGateway.rejectTask(taskId)
         }
     }
 
@@ -861,11 +861,23 @@ class TaskBoardViewModel @Inject constructor(
         queueAction: String,
         optimisticStatus: String,
         targetStatus: String? = null,
-        action: suspend () -> Result<SollTask>,
+        action: suspend (taskId: String) -> Result<SollTask>,
     ) {
         viewModelScope.launch {
-            _uiState.update { it.copy(actionTaskId = task.id, message = null, isError = false) }
-            action().fold(
+            val cleanTaskId = task.id.trim()
+            if (cleanTaskId.isBlank()) {
+                _uiState.update {
+                    it.copy(
+                        actionTaskId = null,
+                        message = "У задачи нет ID. Обнови список задач с сервера и повтори действие.",
+                        isError = true,
+                    )
+                }
+                return@launch
+            }
+            val actionTask = task.copy(id = cleanTaskId)
+            _uiState.update { it.copy(actionTaskId = cleanTaskId, message = null, isError = false) }
+            action(cleanTaskId).fold(
                 onSuccess = {
                     _uiState.update {
                         it.copy(
@@ -879,7 +891,7 @@ class TaskBoardViewModel @Inject constructor(
                 onFailure = { error ->
                     if (error.isRetryableTaskActionFailure()) {
                         queueOfflineTaskAction(
-                            task = task,
+                            task = actionTask,
                             queueAction = queueAction,
                             targetStatus = targetStatus,
                             optimisticStatus = optimisticStatus,

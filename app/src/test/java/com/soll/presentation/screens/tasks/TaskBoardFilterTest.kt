@@ -53,10 +53,61 @@ class TaskBoardFilterTest {
         assertTrue(done.canLoadMoreTasks)
     }
 
+    @Test
+    fun `task action visibility blocks every button when task id is missing`() {
+        val visibility = taskActionVisibility(status = "blocked", taskId = " ")
+
+        assertFalse(visibility.hasTaskId)
+        assertFalse(visibility.canMoveToToday)
+        assertFalse(visibility.canStart)
+        assertFalse(visibility.canComplete)
+        assertFalse(visibility.canDefer)
+        assertFalse(visibility.canReject)
+        assertEquals("Task without id:test:blocked", task(id = " ", status = "blocked").taskListKey())
+    }
+
+    @Test
+    fun `task action visibility covers all task buttons by status`() {
+        val inbox = taskActionVisibility(status = "inbox", taskId = "task-1")
+        assertTrue(inbox.canMoveToToday)
+        assertTrue(inbox.canStart)
+        assertTrue(inbox.canComplete)
+        assertTrue(inbox.canDefer)
+        assertTrue(inbox.canReject)
+
+        val started = taskActionVisibility(status = "in_progress", taskId = "task-1")
+        assertFalse(started.canMoveToToday)
+        assertFalse(started.canStart)
+        assertTrue(started.canComplete)
+        assertTrue(started.canDefer)
+        assertTrue(started.canReject)
+
+        val deferred = taskActionVisibility(status = "deferred", taskId = "task-1")
+        assertTrue(deferred.canMoveToToday)
+        assertTrue(deferred.canStart)
+        assertTrue(deferred.canComplete)
+        assertFalse(deferred.canDefer)
+        assertTrue(deferred.canReject)
+
+        val done = taskActionVisibility(status = "done", taskId = "task-1")
+        assertFalse(done.canMoveToToday)
+        assertFalse(done.canStart)
+        assertFalse(done.canComplete)
+        assertFalse(done.canDefer)
+        assertFalse(done.canReject)
+
+        val rejected = taskActionVisibility(status = "rejected", taskId = "task-1")
+        assertFalse(rejected.canMoveToToday)
+        assertFalse(rejected.canStart)
+        assertFalse(rejected.canComplete)
+        assertFalse(rejected.canDefer)
+        assertFalse(rejected.canReject)
+    }
+
     private fun task(id: String, status: String): SollTask =
         SollTask(
             id = id,
-            title = "Task $id",
+            title = "Task ${id.ifBlank { "without id" }.trim()}",
             description = "",
             sourceRef = "test",
             projectName = "Soll",

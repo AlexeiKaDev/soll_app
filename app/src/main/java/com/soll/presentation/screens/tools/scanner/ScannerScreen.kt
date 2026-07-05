@@ -194,138 +194,137 @@ fun ScannerScreen(
                         viewModel.handleCameraBarcode(rawValue, format, pairingOnly = true)
                     },
                 )
-                return@Column
-            }
-
-            if (uiState.showSettings) {
-                ScannerSettingsPanel(
-                    settings = uiState.settings,
-                    onSettingsChange = viewModel::updateScannerSettings,
-                )
-            }
-
-            CameraScanCard(
-                cameraEnabled = uiState.cameraEnabled,
-                cameraStatus = uiState.cameraStatus,
-                hasCameraPermission = hasCameraPermission,
-                onEnableCamera = {
-                    if (viewModel.ensureScannerCapability()) {
-                        if (hasCameraPermission) {
-                            viewModel.setCameraEnabled(true)
-                        } else {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    }
-                },
-                onDisableCamera = { viewModel.setCameraEnabled(false) },
-                onBarcodeDetected = { rawValue, format -> viewModel.handleCameraBarcode(rawValue, format) },
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.QrCodeScanner,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Штрихкод",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = uiState.input,
-                        onValueChange = viewModel::updateInput,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("EAN, QR или код") },
+            } else {
+                if (uiState.showSettings) {
+                    ScannerSettingsPanel(
+                        settings = uiState.settings,
+                        onSettingsChange = viewModel::updateScannerSettings,
                     )
+                }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = viewModel::addManualScan,
-                            enabled = uiState.input.isNotBlank(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text("Добавить")
+                CameraScanCard(
+                    cameraEnabled = uiState.cameraEnabled,
+                    cameraStatus = uiState.cameraStatus,
+                    hasCameraPermission = hasCameraPermission,
+                    onEnableCamera = {
+                        if (viewModel.ensureScannerCapability()) {
+                            if (hasCameraPermission) {
+                                viewModel.setCameraEnabled(true)
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
                         }
-                        OutlinedButton(
-                            onClick = viewModel::exportSelected,
-                            enabled = uiState.selectedIds.isNotEmpty() && !uiState.isExporting,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("В raw")
+                    },
+                    onDisableCamera = { viewModel.setCameraEnabled(false) },
+                    onBarcodeDetected = { rawValue, format -> viewModel.handleCameraBarcode(rawValue, format) },
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Штрихкод",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = uiState.input,
+                            onValueChange = viewModel::updateInput,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("EAN, QR или код") },
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = viewModel::addManualScan,
+                                enabled = uiState.input.isNotBlank(),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Добавить")
+                            }
+                            OutlinedButton(
+                                onClick = viewModel::exportSelected,
+                                enabled = uiState.selectedIds.isNotEmpty() && !uiState.isExporting,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("В raw")
+                            }
                         }
                     }
                 }
-            }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AssistChip(onClick = viewModel::selectAll, label = { Text("Сканы: ${uiState.items.size}") })
-                AssistChip(onClick = viewModel::clearSelection, label = { Text("Выбрано: ${uiState.selectedIds.size}") })
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(
-                    onClick = viewModel::toggleTaskPicker,
-                    enabled = uiState.selectedIds.isNotEmpty() && !uiState.isActionRunning,
-                    modifier = Modifier.weight(1f),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Assignment, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("К задаче")
+                    AssistChip(onClick = viewModel::selectAll, label = { Text("Сканы: ${uiState.items.size}") })
+                    AssistChip(onClick = viewModel::clearSelection, label = { Text("Выбрано: ${uiState.selectedIds.size}") })
                 }
-                OutlinedButton(
-                    onClick = viewModel::pairSelectedDevice,
-                    enabled = uiState.selectedIds.isNotEmpty() && !uiState.isActionRunning,
-                    modifier = Modifier.weight(1f),
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Default.Devices, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Гаджет")
+                    OutlinedButton(
+                        onClick = viewModel::toggleTaskPicker,
+                        enabled = uiState.selectedIds.isNotEmpty() && !uiState.isActionRunning,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Assignment, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("К задаче")
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::pairSelectedDevice,
+                        enabled = uiState.selectedIds.isNotEmpty() && !uiState.isActionRunning,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Default.Devices, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Гаджет")
+                    }
                 }
-            }
 
-            if (uiState.showTaskPicker) {
-                TaskPickerPanel(
-                    tasks = uiState.taskCandidates,
-                    isBusy = uiState.isActionRunning,
-                    onAttach = viewModel::attachSelectedToTask,
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(uiState.items, key = { it.id }) { item ->
-                    ScanItemRow(
-                        item = item,
-                        selected = item.id in uiState.selectedIds,
-                        onToggle = { viewModel.toggleSelected(item.id) },
+                if (uiState.showTaskPicker) {
+                    TaskPickerPanel(
+                        tasks = uiState.taskCandidates,
+                        isBusy = uiState.isActionRunning,
+                        onAttach = viewModel::attachSelectedToTask,
                     )
+                }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(uiState.items, key = { it.id }) { item ->
+                        ScanItemRow(
+                            item = item,
+                            selected = item.id in uiState.selectedIds,
+                            onToggle = { viewModel.toggleSelected(item.id) },
+                        )
+                    }
                 }
             }
         }

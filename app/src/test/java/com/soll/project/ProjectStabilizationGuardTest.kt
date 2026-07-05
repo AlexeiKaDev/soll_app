@@ -341,6 +341,7 @@ class ProjectStabilizationGuardTest {
         assertTrue(scannerScreen.contains("pairingMode: Boolean = false"))
         assertTrue(scannerScreen.contains("if (pairingMode) \"QR pairing\" else \"Сканер\""))
         assertTrue(scannerScreen.contains("PairingCameraPanel("))
+        assertFalse(scannerScreen.contains("return@Column"))
         assertTrue(scannerScreen.contains("requireScannerCapability = false"))
         assertTrue(scannerScreen.contains("viewModel.handleCameraBarcode(rawValue, format, pairingOnly = true)"))
         assertTrue(scannerScreen.contains("modifier = Modifier.fillMaxSize()"))

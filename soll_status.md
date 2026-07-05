@@ -1,8 +1,17 @@
 # soll_app Status
 
-Last updated: 2026-07-05 21:34 Europe/Chisinau
+Last updated: 2026-07-05 22:41 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-05 QR pairing from Desktop:
+  - Added `SollPairingPayloadParser` for `soll://pair?...` and JSON pairing codes.
+  - `MainActivity` now handles `soll://pair` deep links, applies server settings through `SettingsRepository.applySollPairingPayload`, opens Settings, and force-runs `AndroidPushTokenRegistrar` with reason `deep_link_pairing`.
+  - Settings now has a simple `QR / pairing code` paste field and `Применить QR` action, using the same parser and force FCM registration path with reason `settings_qr_pairing`.
+  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `196171579`, built at `2026-07-05 22:40 Europe/Chisinau`.
+  - Exported APK in `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` has sha256 `b2e3685671eb43eb47f1895884ff731118c9f0a9c6671a61f4809a9771c1df8c`.
+  - Validation passed: `testDebugUnitTest` for `SollPairingPayloadParserTest`, `AppLaunchTargetsTest`, `ProjectStabilizationGuardTest`; `compileDebugKotlin`; `assembleDebug`.
+  - Phone smoke remains blocked locally because ADB currently lists no devices and server `android_push.token_count=0` until the phone opens the pairing link or applies the code in Settings.
 
 - 2026-07-05 Android notification recovery continuation:
   - Startup FCM registration is now forced, so an existing local `sollPushTokenRegisteredAt` cannot suppress re-registration when the server token store is empty.

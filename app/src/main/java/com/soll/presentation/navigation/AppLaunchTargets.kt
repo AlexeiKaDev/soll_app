@@ -16,6 +16,7 @@ object AppLaunchTargets {
     const val SECTION_MUSIC = "music"
     const val SECTION_NOTES = "notes"
     const val SECTION_PORTABLE_SSD = "portable_ssd"
+    const val SECTION_SETTINGS = "settings"
     const val LOGS_TAB_NOTIFICATIONS = "notifications"
 
     fun fromExtras(section: String?, logsTab: String?): AppLaunchCommand? =
@@ -29,6 +30,7 @@ object AppLaunchTargets {
             SECTION_PORTABLE_SSD -> AppLaunchCommand(section = section)
             SECTION_MUSIC -> AppLaunchCommand(section = SECTION_MUSIC)
             SECTION_BOOK_READER -> AppLaunchCommand(section = SECTION_BOOK_READER)
+            SECTION_SETTINGS -> AppLaunchCommand(section = SECTION_SETTINGS)
             else -> null
         }
 }

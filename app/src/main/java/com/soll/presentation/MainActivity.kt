@@ -10,7 +10,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.soll.data.repository.GadgetServerSyncScheduler
 import com.soll.data.repository.SettingsRepository
+import com.soll.data.repository.SollServerSyncScheduler
+import com.soll.data.service.AndroidPushTokenRegistrar
+import com.soll.domain.soll.SollPairingPayload
+import com.soll.domain.soll.SollPairingPayloadParser
 import com.soll.presentation.navigation.AppLaunchCommand
 import com.soll.presentation.navigation.AppLaunchTargets
 import com.soll.presentation.navigation.AppNavigation
@@ -51,9 +56,28 @@ class MainActivity : ComponentActivity() {
         launchCommand = intent.toLaunchCommand()
     }
 
-    private fun android.content.Intent.toLaunchCommand(): AppLaunchCommand? =
-        AppLaunchTargets.fromExtras(
+    private fun android.content.Intent.toLaunchCommand(): AppLaunchCommand? {
+        dataString
+            ?.let(SollPairingPayloadParser::parse)
+            ?.let { payload ->
+                applySollPairingPayload(payload, reason = "deep_link_pairing")
+                return AppLaunchCommand(section = AppLaunchTargets.SECTION_SETTINGS)
+            }
+
+        return AppLaunchTargets.fromExtras(
             section = getStringExtra(AppLaunchTargets.EXTRA_OPEN_SECTION),
             logsTab = getStringExtra(AppLaunchTargets.EXTRA_OPEN_LOGS_TAB),
         )
+    }
+
+    private fun applySollPairingPayload(payload: SollPairingPayload, reason: String) {
+        settingsRepository.applySollPairingPayload(payload)
+        GadgetServerSyncScheduler.schedule(applicationContext, settingsRepository)
+        SollServerSyncScheduler.schedule(applicationContext, settingsRepository)
+        AndroidPushTokenRegistrar.registerCurrentToken(
+            applicationContext,
+            reason = reason,
+            force = true,
+        )
+    }
 }

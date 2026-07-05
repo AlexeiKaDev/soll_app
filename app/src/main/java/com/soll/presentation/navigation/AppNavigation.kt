@@ -89,6 +89,12 @@ fun AppNavigation(
                     launchSingleTop = true
                 }
             }
+            AppLaunchTargets.SECTION_SETTINGS -> {
+                navController.navigate(AppDestinations.Settings.route) {
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
         }
         onLaunchCommandConsumed()
     }

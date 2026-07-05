@@ -43,6 +43,14 @@ class AppLaunchTargetsTest {
     }
 
     @Test
+    fun `pairing launch extras open settings`() {
+        assertEquals(
+            AppLaunchTargets.SECTION_SETTINGS,
+            AppLaunchTargets.fromExtras(section = AppLaunchTargets.SECTION_SETTINGS, logsTab = null)?.section,
+        )
+    }
+
+    @Test
     fun `archived notes extra is ignored`() {
         assertNull(AppLaunchTargets.fromExtras(section = AppLaunchTargets.SECTION_NOTES, logsTab = null))
     }

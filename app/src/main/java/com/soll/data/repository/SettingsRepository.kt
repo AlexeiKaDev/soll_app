@@ -17,6 +17,7 @@ import com.soll.domain.music.MusicSettings
 import com.soll.domain.notes.NoteSettings
 import com.soll.domain.scanner.ScannerDuplicatePolicy
 import com.soll.domain.scanner.ScannerSettings
+import com.soll.domain.soll.SollPairingPayload
 import com.soll.domain.tts.PiperProsodyPreset
 import com.soll.domain.tts.TtsBookPerformanceProfile
 import kotlinx.coroutines.flow.Flow
@@ -375,6 +376,30 @@ class SettingsRepository @Inject constructor(
     var sollDeviceTokenExpiresAt: String
         get() = sharedPreferences.getString(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT, "") ?: ""
         set(value) = sharedPreferences.edit().putString(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT, value.trim()).apply()
+
+    fun applySollPairingPayload(payload: SollPairingPayload) {
+        val cleanDeviceId = payload.deviceId.trim()
+        val cleanPairingSecret = payload.pairingSecret.trim()
+        val previousDeviceId = sollDeviceId
+        sharedPreferences.edit().apply {
+            putString(KEY_SOLL_SERVER_URL, payload.serverUrl.trim())
+            putString(KEY_SOLL_API_PATH_PREFIX, payload.apiPathPrefix.trim().trim('/'))
+            if (payload.accessToken.isNotBlank()) {
+                putString(KEY_SOLL_ACCESS_TOKEN, payload.accessToken.trim())
+            }
+            if (cleanDeviceId.isNotBlank()) {
+                putString(KEY_SOLL_DEVICE_ID, cleanDeviceId)
+                if (cleanDeviceId != previousDeviceId) {
+                    remove(KEY_SOLL_DEVICE_ACCESS_TOKEN)
+                    remove(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT)
+                }
+            }
+            if (cleanPairingSecret.isNotBlank()) {
+                putString(KEY_SOLL_DEVICE_PAIRING_SECRET, cleanPairingSecret)
+            }
+            putString(KEY_SOLL_PUSH_TOKEN_LAST_ERROR, "")
+        }.apply()
+    }
 
     var sollSyncIntervalMinutes: Int
         get() = sharedPreferences.getInt(KEY_SOLL_SYNC_INTERVAL_MINUTES, 60).coerceIn(5, 1440)

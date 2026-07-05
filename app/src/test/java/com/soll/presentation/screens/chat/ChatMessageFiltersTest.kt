@@ -76,6 +76,47 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `chat refresh can fall back to sync status recent messages`() {
+        val syncMessages = listOf(
+            chatMessage("Other", id = 8, sessionId = "other"),
+            chatMessage("Old", id = 10),
+            chatMessage("New", id = 12),
+        )
+
+        val initial = chatMessagesWithSyncFallback(
+            sessionMessages = emptyList(),
+            syncRecentMessages = syncMessages,
+            sessionId = "soll-main",
+            afterId = null,
+        )
+        val incremental = chatMessagesWithSyncFallback(
+            sessionMessages = emptyList(),
+            syncRecentMessages = syncMessages,
+            sessionId = "soll-main",
+            afterId = 10,
+        )
+
+        assertEquals(listOf(10L, 12L), initial.map { it.id })
+        assertEquals(listOf(12L), incremental.map { it.id })
+    }
+
+    @Test
+    fun `direct chat session messages win over sync status fallback`() {
+        val direct = listOf(chatMessage("Direct", id = 20))
+        val fallback = listOf(chatMessage("Fallback", id = 10))
+
+        assertSame(
+            direct,
+            chatMessagesWithSyncFallback(
+                sessionMessages = direct,
+                syncRecentMessages = fallback,
+                sessionId = "soll-main",
+                afterId = null,
+            ),
+        )
+    }
+
+    @Test
     fun `does not advance chat scroll when refresh returns same messages`() {
         val previous = listOf(
             chatMessage("Первое", id = 10),

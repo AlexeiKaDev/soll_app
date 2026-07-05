@@ -1,5 +1,6 @@
 package com.soll.presentation.screens.devices
 
+import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.device.DeviceProvisioningClient
@@ -9,6 +10,7 @@ import com.soll.data.device.WebSocketDeviceConnector
 import com.soll.data.repository.DeviceRepository
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.resolveLocalDeviceForGadgetCommand
+import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollMeshOutboxItem
 import com.soll.domain.soll.SollMeshStatus
@@ -154,6 +156,7 @@ data class DevicesUiState(
 
 @HiltViewModel
 class DevicesViewModel @Inject constructor(
+    private val application: Application,
     private val deviceRepository: DeviceRepository,
     private val connector: WebSocketDeviceConnector,
     private val provisioningClient: DeviceProvisioningClient,
@@ -840,6 +843,11 @@ class DevicesViewModel @Inject constructor(
                     }
                     checkProtocolSchema(silent = true)
                     refreshMeshWorker(silent = true)
+                    AndroidPushTokenRegistrar.registerCurrentToken(
+                        application,
+                        reason = "device_token_issued",
+                        force = true,
+                    )
                 },
                 onFailure = { error ->
                     _uiState.update {
@@ -893,6 +901,11 @@ class DevicesViewModel @Inject constructor(
                     }
                     checkProtocolSchema(silent = true)
                     refreshMeshWorker(silent = true)
+                    AndroidPushTokenRegistrar.registerCurrentToken(
+                        application,
+                        reason = "device_token_refreshed",
+                        force = true,
+                    )
                 },
                 onFailure = { error ->
                     _uiState.update {

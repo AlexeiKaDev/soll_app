@@ -398,6 +398,11 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.sollWifiOnlyUpload = state.sollWifiOnlyUpload
         GadgetServerSyncScheduler.schedule(application, settingsRepository)
         SollServerSyncScheduler.schedule(application, settingsRepository)
+        AndroidPushTokenRegistrar.registerCurrentToken(
+            application,
+            reason = "settings_saved",
+            force = true,
+        )
         _uiState.update {
             val nextState = it.copy(
                 sollSyncIntervalMinutes = interval.toString(),

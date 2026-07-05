@@ -296,25 +296,13 @@ class SollRepository @Inject constructor(
         val cleanAction = action.trim()
         require(cleanActionId.isNotBlank()) { "ID действия не задан" }
         require(cleanAction.isNotBlank()) { "Тип действия не задан" }
-        val payload = mapOf(
-            "action" to cleanAction,
-            "task_id" to taskId?.trim().orEmpty(),
-            "session_id" to sessionId?.trim().orEmpty(),
-        )
-        val encrypted = encryptedEnvelopeOrNull(
-            content = "",
-            metadata = emptyMap(),
-            aad = "POST /api/v1/chat/actions/$cleanActionId/execute",
-            extra = payload,
-        )
         service().executeChatAction(
             authorization = readAuthorizationHeader(),
-            actionId = cleanActionId,
+            actionId = cleanActionId.encodedSollPathSegment(fieldName = "action_id"),
             request = ChatActionExecuteRequest(
-                action = if (encrypted == null) cleanAction else null,
-                taskId = if (encrypted == null) taskId?.trim()?.takeIf { it.isNotBlank() } else null,
-                sessionId = if (encrypted == null) sessionId?.trim()?.takeIf { it.isNotBlank() } else null,
-                encrypted = encrypted,
+                action = cleanAction,
+                taskId = taskId?.trim()?.takeIf { it.isNotBlank() },
+                sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
             ),
         ).toDomain()
     }
@@ -403,23 +391,41 @@ class SollRepository @Inject constructor(
     }
 
     override suspend fun setTaskStatus(taskId: String, status: String): Result<SollTask> = runSuspendCatching {
-        service().setTaskStatus(authorizationHeader(), taskId, status).taskResponse().toDomain()
+        val cleanStatus = status.trim()
+        require(cleanStatus.isNotBlank()) { "Статус задачи не задан" }
+        service().setTaskStatus(
+            authorizationHeader(),
+            taskId.encodedSollPathSegment(fieldName = "task_id"),
+            cleanStatus,
+        ).taskResponse().toDomain()
     }
 
     override suspend fun moveTaskToToday(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().moveTaskToToday(authorizationHeader(), taskId).taskResponse().toDomain()
+        service().moveTaskToToday(
+            authorizationHeader(),
+            taskId.encodedSollPathSegment(fieldName = "task_id"),
+        ).taskResponse().toDomain()
     }
 
     override suspend fun completeTask(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().completeTask(authorizationHeader(), taskId).taskResponse().toDomain()
+        service().completeTask(
+            authorizationHeader(),
+            taskId.encodedSollPathSegment(fieldName = "task_id"),
+        ).taskResponse().toDomain()
     }
 
     override suspend fun deferTask(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().deferTask(authorizationHeader(), taskId).taskResponse().toDomain()
+        service().deferTask(
+            authorizationHeader(),
+            taskId.encodedSollPathSegment(fieldName = "task_id"),
+        ).taskResponse().toDomain()
     }
 
     override suspend fun rejectTask(taskId: String): Result<SollTask> = runSuspendCatching {
-        service().rejectTask(authorizationHeader(), taskId).taskResponse().toDomain()
+        service().rejectTask(
+            authorizationHeader(),
+            taskId.encodedSollPathSegment(fieldName = "task_id"),
+        ).taskResponse().toDomain()
     }
 
     override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> = runSuspendCatching {
@@ -1759,6 +1765,12 @@ private fun OkHttpClient.withSollApiPrefix(apiPathPrefix: String): OkHttpClient 
             chain.proceed(nextRequest)
         })
         .build()
+}
+
+private fun String.encodedSollPathSegment(fieldName: String): String {
+    val clean = trim()
+    require(clean.isNotBlank()) { "$fieldName не задан" }
+    return Uri.encode(clean)
 }
 
 fun buildRawNoteFilename(

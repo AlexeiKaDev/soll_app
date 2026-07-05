@@ -76,7 +76,7 @@ interface SollApiService {
     @POST("api/v1/chat/actions/{action_id}/execute")
     suspend fun executeChatAction(
         @Header("Authorization") authorization: String? = null,
-        @Path("action_id") actionId: String,
+        @Path(value = "action_id", encoded = true) actionId: String,
         @Body request: ChatActionExecuteRequest,
     ): ChatActionExecuteResponse
 
@@ -116,32 +116,32 @@ interface SollApiService {
     @POST("api/v1/tasks/{task_id}/status/{status}")
     suspend fun setTaskStatus(
         @Header("Authorization") authorization: String? = null,
-        @Path("task_id") taskId: String,
+        @Path(value = "task_id", encoded = true) taskId: String,
         @Path("status") status: String,
     ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/today")
     suspend fun moveTaskToToday(
         @Header("Authorization") authorization: String? = null,
-        @Path("task_id") taskId: String,
+        @Path(value = "task_id", encoded = true) taskId: String,
     ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/done")
     suspend fun completeTask(
         @Header("Authorization") authorization: String? = null,
-        @Path("task_id") taskId: String,
+        @Path(value = "task_id", encoded = true) taskId: String,
     ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/defer")
     suspend fun deferTask(
         @Header("Authorization") authorization: String? = null,
-        @Path("task_id") taskId: String,
+        @Path(value = "task_id", encoded = true) taskId: String,
     ): SollTaskMutationResponse
 
     @POST("api/v1/tasks/{task_id}/reject")
     suspend fun rejectTask(
         @Header("Authorization") authorization: String? = null,
-        @Path("task_id") taskId: String,
+        @Path(value = "task_id", encoded = true) taskId: String,
     ): SollTaskMutationResponse
 
     @GET("api/v1/tasks/graph")

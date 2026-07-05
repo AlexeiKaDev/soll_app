@@ -110,22 +110,43 @@ class ChatViewModel @Inject constructor(
                 val current = _uiState.value
                 val afterId = current.messages.maxOfOrNull { it.id }
                     ?.takeIf { !showLoading && current.sessionId == sessionId && current.messages.isNotEmpty() }
-                val messages = sollGateway.getChatSession(
+                val sessionMessages = sollGateway.getChatSession(
                     sessionId = sessionId,
                     limit = if (afterId == null) CHAT_PAGE_SIZE else null,
                     afterId = afterId,
-                ).getOrElse { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
+                )
+                val messages = sessionMessages.fold(
+                    onSuccess = { fetched ->
+                        chatMessagesWithSyncFallback(
+                            sessionMessages = fetched,
+                            syncRecentMessages = sync.chat.recentMessages,
                             sessionId = sessionId,
-                            pendingActionsCount = sync.chat.pendingActionsCount,
-                            encrypted = sync.chat.encryptionRequired,
-                            error = error.message ?: "Не удалось загрузить чат",
+                            afterId = afterId,
                         )
-                    }
-                    return@launch
-                }
+                    },
+                    onFailure = { error ->
+                        val fallback = chatMessagesWithSyncFallback(
+                            sessionMessages = emptyList(),
+                            syncRecentMessages = sync.chat.recentMessages,
+                            sessionId = sessionId,
+                            afterId = afterId,
+                        )
+                        if (fallback.isNotEmpty() || afterId != null) {
+                            fallback
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    sessionId = sessionId,
+                                    pendingActionsCount = sync.chat.pendingActionsCount,
+                                    encrypted = sync.chat.encryptionRequired,
+                                    error = error.message ?: "Не удалось загрузить чат",
+                                )
+                            }
+                            return@launch
+                        }
+                    },
+                )
                 val displayable = messages.filter { message -> message.isDisplayableChatMessage() }
                 _uiState.update {
                     val merged = if (afterId == null) {
@@ -347,6 +368,22 @@ private fun mergeChatMessages(left: List<SollChatMessage>, right: List<SollChatM
     (left + right)
         .distinctBy { it.id }
         .sortedBy { it.id }
+
+internal fun chatMessagesWithSyncFallback(
+    sessionMessages: List<SollChatMessage>,
+    syncRecentMessages: List<SollChatMessage>,
+    sessionId: String,
+    afterId: Long?,
+): List<SollChatMessage> {
+    if (sessionMessages.isNotEmpty()) return sessionMessages
+    val targetSession = sessionId.ifBlank { "soll-main" }
+    return syncRecentMessages
+        .asSequence()
+        .filter { message -> message.sessionId.ifBlank { "soll-main" } == targetSession }
+        .filter { message -> afterId == null || message.id > afterId }
+        .sortedBy { it.id }
+        .toList()
+}
 
 internal fun shouldAdvanceChatScroll(
     previousMessages: List<SollChatMessage>,

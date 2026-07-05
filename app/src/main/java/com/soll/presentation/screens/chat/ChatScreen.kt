@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -44,6 +45,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -83,6 +86,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -242,6 +246,9 @@ fun ChatScreen(
             uiState.error?.let { error ->
                 ChatErrorBanner(error = error, onOpenSettings = onOpenSettings, onRetry = viewModel::refresh)
             }
+            uiState.actionFeedback?.let { feedback ->
+                ChatActionFeedbackBanner(text = feedback)
+            }
 
             Box(
                 modifier = Modifier
@@ -285,6 +292,7 @@ fun ChatScreen(
                             ChatMessageBubble(
                                 message = message,
                                 isBusy = uiState.isSending,
+                                busyActionId = uiState.actionInFlightId,
                                 onAction = viewModel::executeAction,
                             )
                         }
@@ -341,6 +349,7 @@ internal fun shouldAutoScrollChatList(
     }
 
 private const val CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD = 3
+private val ChatActionGreen = Color(0xFF247A52)
 
 @Composable
 private fun HistoryLoader(
@@ -441,6 +450,26 @@ private fun ChatStatusRow(
                 label = { Text("Действий: ${uiState.pendingActionsCount}") },
             )
         }
+    }
+}
+
+@Composable
+private fun ChatActionFeedbackBanner(text: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        color = ChatActionGreen.copy(alpha = 0.14f),
+        contentColor = ChatActionGreen,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -594,6 +623,7 @@ private fun ChatDatePill(text: String) {
 private fun ChatMessageBubble(
     message: SollChatMessage,
     isBusy: Boolean,
+    busyActionId: String?,
     onAction: (ChatActionUi) -> Unit,
 ) {
     val background = if (message.isFromUser) {
@@ -643,6 +673,7 @@ private fun ChatMessageBubble(
                 AssistantMessageContent(
                     message = message,
                     isBusy = isBusy,
+                    busyActionId = busyActionId,
                     foreground = foreground,
                     onAction = onAction,
                 )
@@ -655,6 +686,7 @@ private fun ChatMessageBubble(
 private fun AssistantMessageContent(
     message: SollChatMessage,
     isBusy: Boolean,
+    busyActionId: String?,
     foreground: androidx.compose.ui.graphics.Color,
     onAction: (ChatActionUi) -> Unit,
 ) {
@@ -704,6 +736,7 @@ private fun AssistantMessageContent(
         CompactChatActionRow(
             actions = actions,
             isBusy = isBusy,
+            busyActionId = busyActionId,
             onAction = onAction,
         )
     }
@@ -714,16 +747,18 @@ private fun AssistantMessageContent(
 private fun CompactChatActionRow(
     actions: List<ChatActionUi>,
     isBusy: Boolean,
+    busyActionId: String?,
     onAction: (ChatActionUi) -> Unit,
 ) {
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         actions.forEach { action ->
-            CompactChatActionChip(
+            CompactChatActionButton(
                 action = action,
+                isRunning = busyActionId == action.id,
                 enabled = !isBusy,
                 onClick = { onAction(action) },
             )
@@ -732,35 +767,32 @@ private fun CompactChatActionRow(
 }
 
 @Composable
-private fun CompactChatActionChip(
+private fun CompactChatActionButton(
     action: ChatActionUi,
+    isRunning: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val containerColor = if (enabled) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Surface(
+    Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.heightIn(min = 30.dp),
+        modifier = Modifier
+            .defaultMinSize(minWidth = 0.dp, minHeight = 32.dp)
+            .heightIn(min = 32.dp),
         shape = RoundedCornerShape(7.dp),
-        color = containerColor,
-        contentColor = contentColor,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = ChatActionGreen,
+            contentColor = Color.White,
+            disabledContainerColor = ChatActionGreen.copy(alpha = 0.62f),
+            disabledContentColor = Color.White.copy(alpha = 0.9f),
+        ),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(
-            text = action.label,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            text = if (isRunning) "..." else action.label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

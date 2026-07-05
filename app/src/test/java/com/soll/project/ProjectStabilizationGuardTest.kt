@@ -193,6 +193,7 @@ class ProjectStabilizationGuardTest {
     @Test
     fun `assistant chat messages keep structured header body badges and status colors`() {
         val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText()
+        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText()
 
         assertTrue(chatScreen.contains("AssistantMessageContent("))
         assertTrue(chatScreen.contains("messageTitle(message)"))
@@ -203,17 +204,29 @@ class ProjectStabilizationGuardTest {
         assertTrue(chatScreen.contains("extractChatLinks"))
         assertTrue(chatScreen.contains("message.actionUis()"))
         assertTrue(chatScreen.contains("CompactChatActionRow("))
-        assertTrue(chatScreen.contains("CompactChatActionChip("))
+        assertTrue(chatScreen.contains("CompactChatActionButton("))
         assertTrue(chatScreen.contains("FlowRow("))
-        assertTrue(chatScreen.contains("Modifier.heightIn(min = 30.dp)"))
+        assertTrue(chatScreen.contains("private val ChatActionGreen = Color(0xFF247A52)"))
+        assertTrue(chatScreen.contains("ButtonDefaults.buttonColors("))
+        assertTrue(chatScreen.contains("containerColor = ChatActionGreen"))
+        assertTrue(chatScreen.contains("contentColor = Color.White"))
+        assertTrue(chatScreen.contains("Modifier\n            .defaultMinSize(minWidth = 0.dp, minHeight = 32.dp)"))
         assertTrue(chatScreen.contains("MaterialTheme.typography.labelSmall"))
-        assertFalse(chatScreen.contains("import androidx.compose.material3.Button"))
+        assertTrue(chatScreen.contains("textAlign = TextAlign.Center"))
+        assertTrue(chatScreen.contains("ChatActionFeedbackBanner(text = feedback)"))
+        assertTrue(chatScreen.contains("busyActionId = uiState.actionInFlightId"))
+        assertTrue(chatScreen.contains("isRunning = busyActionId == action.id"))
         assertFalse(
             chatScreen
                 .substringAfter("private fun AssistantMessageContent")
                 .substringBefore("private fun ChatBadgeRow")
-                .contains("Button(\n                    onClick = { onAction(action) }"),
+                .contains("Surface(\n        onClick = onClick"),
         )
+        assertTrue(chatViewModel.contains("val actionFeedback: String? = null"))
+        assertTrue(chatViewModel.contains("val actionInFlightId: String? = null"))
+        assertTrue(chatViewModel.contains("actionFeedback = \"Выполняю: \${action.label}\""))
+        assertTrue(chatViewModel.contains("actionFeedback = \"Готово: \${action.label}\""))
+        assertTrue(chatViewModel.contains("actionFeedback = \"Ошибка: \${action.label}\""))
         assertTrue(chatScreen.contains("internal enum class ChatBadgeKind"))
         assertTrue(chatScreen.contains("ChatBadgeKind.STATUS"))
         assertTrue(chatScreen.contains("ChatBadgeKind.SECURITY"))

@@ -33,6 +33,8 @@ data class ChatUiState(
     val voicePartialText: String = "",
     val voiceError: String? = null,
     val error: String? = null,
+    val actionFeedback: String? = null,
+    val actionInFlightId: String? = null,
     val pendingActionsCount: Int = 0,
     val encrypted: Boolean = false,
 )
@@ -295,7 +297,14 @@ class ChatViewModel @Inject constructor(
 
     fun executeAction(action: ChatActionUi) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSending = true, error = null) }
+            _uiState.update {
+                it.copy(
+                    isSending = true,
+                    error = null,
+                    actionFeedback = "Выполняю: ${action.label}",
+                    actionInFlightId = action.id,
+                )
+            }
             sollGateway.executeChatAction(
                 actionId = action.id,
                 action = action.type,
@@ -303,14 +312,23 @@ class ChatViewModel @Inject constructor(
                 sessionId = _uiState.value.sessionId,
             ).fold(
                 onSuccess = {
-                    _uiState.update { it.copy(isSending = false) }
-                    refresh(showLoading = false)
-                },
-                onFailure = { error ->
                     _uiState.update {
                         it.copy(
                             isSending = false,
-                            error = error.message ?: "Не удалось выполнить действие",
+                            actionFeedback = "Готово: ${action.label}",
+                            actionInFlightId = null,
+                        )
+                    }
+                    refresh(showLoading = false)
+                },
+                onFailure = { error ->
+                    val message = error.message ?: "Не удалось выполнить действие"
+                    _uiState.update {
+                        it.copy(
+                            isSending = false,
+                            actionFeedback = "Ошибка: ${action.label}",
+                            actionInFlightId = null,
+                            error = message,
                         )
                     }
                 },

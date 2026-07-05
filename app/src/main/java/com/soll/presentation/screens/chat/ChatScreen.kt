@@ -790,6 +790,22 @@ private fun ChatBadgeUi.style(): ChatBadgeStyle =
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        ChatBadgeKind.INFO -> ChatBadgeStyle(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        ChatBadgeKind.SUCCESS -> ChatBadgeStyle(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+        ChatBadgeKind.WARNING -> ChatBadgeStyle(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        ChatBadgeKind.DANGER -> ChatBadgeStyle(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        )
     }
 
 @Composable
@@ -1380,15 +1396,18 @@ private fun friendlyChatError(error: String): Pair<String, String> =
         }
     }
 
-private fun messageTitle(message: SollChatMessage): String? {
+internal fun messageTitle(message: SollChatMessage): String? {
     if (message.isFromUser) return null
     val title = message.metadata["title"]?.toString()?.trim().orEmpty()
     val source = messageSourceLabel(message)
     val resolvedTitle = title.ifBlank { "Soll" }
-    return source?.let { "$resolvedTitle · $it" } ?: resolvedTitle
+    return source
+        ?.takeIf { !it.equals(resolvedTitle, ignoreCase = true) }
+        ?.let { "$resolvedTitle · $it" }
+        ?: resolvedTitle
 }
 
-private fun messageSourceLabel(message: SollChatMessage): String? {
+internal fun messageSourceLabel(message: SollChatMessage): String? {
     val source = message.metadata["source"]?.toString()?.trim().orEmpty()
     return when (source) {
         "telegram_mirror" -> "Telegram"
@@ -1396,12 +1415,13 @@ private fun messageSourceLabel(message: SollChatMessage): String? {
         "android_action" -> null
         "android_app" -> "Android"
         "desktop" -> "Desktop"
+        "server" -> null
         "yii2_soll_api" -> "API"
         else -> source.ifBlank { null }
     }
 }
 
-private data class ChatBadgeUi(
+internal data class ChatBadgeUi(
     val text: String,
     val kind: ChatBadgeKind,
 )
@@ -1411,24 +1431,51 @@ private data class ChatBadgeStyle(
     val contentColor: androidx.compose.ui.graphics.Color,
 )
 
-private enum class ChatBadgeKind {
+internal enum class ChatBadgeKind {
     STATUS,
     SECURITY,
     TASK,
     SOURCE,
+    INFO,
+    SUCCESS,
+    WARNING,
+    DANGER,
 }
 
-private fun SollChatMessage.badgeUis(): List<ChatBadgeUi> = buildList {
+internal fun SollChatMessage.badgeUis(): List<ChatBadgeUi> = buildList {
     metadata["status"]
         ?.toString()
         ?.takeIf { it.isNotBlank() }
         ?.let { status -> add(ChatBadgeUi(text = status, kind = ChatBadgeKind.STATUS)) }
+    metadata["badges"].asBadgeMaps().forEach { badge ->
+        badge.toChatBadgeUiOrNull()?.let(::add)
+    }
     if (metadata["encrypted"] == true) add(ChatBadgeUi(text = "AES", kind = ChatBadgeKind.SECURITY))
     if (metadata["task_intake"] != null) add(ChatBadgeUi(text = "task", kind = ChatBadgeKind.TASK))
     messageSourceLabel(this@badgeUis)?.let { source ->
         add(ChatBadgeUi(text = source, kind = ChatBadgeKind.SOURCE))
     }
 }.distinct()
+
+private fun Any?.asBadgeMaps(): List<Map<*, *>> =
+    (this as? List<*>)
+        ?.mapNotNull { item -> item as? Map<*, *> }
+        .orEmpty()
+
+private fun Map<*, *>.toChatBadgeUiOrNull(): ChatBadgeUi? {
+    val text = this["label"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        ?: this["text"]?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        ?: return null
+    val tone = this["tone"]?.toString()?.trim().orEmpty()
+    val kind = when (tone.lowercase()) {
+        "success", "ok", "done" -> ChatBadgeKind.SUCCESS
+        "warning", "warn", "attention" -> ChatBadgeKind.WARNING
+        "danger", "error", "failed" -> ChatBadgeKind.DANGER
+        "info", "source" -> ChatBadgeKind.INFO
+        else -> ChatBadgeKind.SOURCE
+    }
+    return ChatBadgeUi(text = text, kind = kind)
+}
 
 private fun SollChatMessage.linkPreviewOrNull(): Map<*, *>? {
     val direct = metadata["link_preview"] as? Map<*, *>

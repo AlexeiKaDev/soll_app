@@ -307,6 +307,41 @@ class ChatMessageFiltersTest {
         assertEquals(listOf("Готово", "Позже"), actions.map { it.label })
     }
 
+    @Test
+    fun `assistant badges include server badge payload and hide duplicated server source`() {
+        val message = chatMessage(
+            content = "Нужен handoff в локальный агент",
+            metadata = mapOf(
+                "source" to "server",
+                "title" to "Soll Core",
+                "status" to "needs_agent",
+                "badges" to listOf(
+                    mapOf("label" to "agent needed", "tone" to "warning"),
+                    mapOf("label" to "wiki 1", "tone" to "info"),
+                    mapOf("label" to "tasks 1", "tone" to "success"),
+                ),
+            ),
+        )
+
+        val badges = message.badgeUis()
+
+        assertEquals("Soll Core", messageTitle(message))
+        assertEquals(null, messageSourceLabel(message))
+        assertEquals(
+            listOf("needs_agent", "agent needed", "wiki 1", "tasks 1"),
+            badges.map { it.text },
+        )
+        assertEquals(
+            listOf(
+                ChatBadgeKind.STATUS,
+                ChatBadgeKind.WARNING,
+                ChatBadgeKind.INFO,
+                ChatBadgeKind.SUCCESS,
+            ),
+            badges.map { it.kind },
+        )
+    }
+
     private fun chatMessage(
         content: String,
         source: String = "telegram_mirror",

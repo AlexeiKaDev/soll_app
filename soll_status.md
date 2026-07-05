@@ -1,6 +1,6 @@
 # soll_app Status
 
-Last updated: 2026-07-05 23:24 Europe/Chisinau
+Last updated: 2026-07-05 23:31 Europe/Chisinau
 
 ## Current Changes
 
@@ -10,8 +10,9 @@ Last updated: 2026-07-05 23:24 Europe/Chisinau
   - Android Settings no longer has a manual `QR / pairing code` paste field or `Применить QR` action; pairing is QR-only through camera scanning. The `Сканировать QR` button now opens a dedicated QR pairing camera mode, not the generic scanner list/manual-entry screen.
   - The pairing camera starts immediately when permission is available, uses a full-height preview, does not depend on the generic scanner capability gate, rejects non-Soll QR codes in pairing mode, applies Soll pairing QR payloads, stops the camera, and force-runs `AndroidPushTokenRegistrar` with reason `scanner_qr_pairing`.
   - Removed the early `return@Column` from the pairing screen composition path; the pairing camera and generic scanner UI are now split with a normal `if/else` branch to avoid Compose SlotTable crashes on first render.
-  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `195864627`, built at `2026-07-05 23:24 Europe/Chisinau`.
-  - Exported APK in `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` has sha256 `5d3005af889df847146e96e1c1fb953e93563d52809a82626ea10d6334e4ad24`.
+  - QR scan reliability fix: pairing mode now runs ML Kit in QR-only mode, decodes raw bytes when `rawValue` is empty, and applies a valid Soll QR from the first recognized frame instead of waiting for two repeated frames.
+  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `195864627`, built at `2026-07-05 23:31 Europe/Chisinau`.
+  - Exported APK in `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` has sha256 `05882d392b2e51906d1071031351adbf3bde3f868eae8df7a58d0d50a3d1a263`.
   - Validation passed: `testDebugUnitTest` for `SollPairingPayloadParserTest` and `ProjectStabilizationGuardTest`; `compileDebugKotlin`; `assembleDebug`.
   - Phone smoke remains blocked locally because ADB currently lists no devices and server `android_push.token_count=0` until the phone scans the QR and opens Soll.
 

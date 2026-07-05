@@ -75,6 +75,7 @@ class ScannerViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ScannerUiState())
     val uiState: StateFlow<ScannerUiState> = _uiState.asStateFlow()
     private val confirmationGate = ScanConfirmationGate()
+    private var pairingBarcodeInFlight = false
 
     init {
         _uiState.update { it.copy(settings = settingsRepository.getScannerSettings()) }
@@ -132,6 +133,7 @@ class ScannerViewModel @Inject constructor(
         cameraStatus: String? = null,
     ) {
         if (enabled && requireScannerCapability && !ensureScannerCapability()) return
+        pairingBarcodeInFlight = false
         confirmationGate.reset()
         _uiState.update {
             it.copy(
@@ -158,6 +160,10 @@ class ScannerViewModel @Inject constructor(
     }
 
     fun handleCameraBarcode(rawValue: String, format: String, pairingOnly: Boolean = false) {
+        if (pairingOnly) {
+            handlePairingCameraBarcode(rawValue)
+            return
+        }
         if (!pairingOnly && !ensureScannerCapability()) {
             setCameraEnabled(false)
             return
@@ -218,6 +224,33 @@ class ScannerViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun handlePairingCameraBarcode(rawValue: String) {
+        val value = rawValue.trim()
+        if (value.isBlank() || pairingBarcodeInFlight) return
+
+        val pairingPayload = SollPairingPayloadParser.parse(value)
+        if (pairingPayload == null) {
+            _uiState.update {
+                it.copy(
+                    cameraStatus = "QR найден, но это не pairing Soll",
+                    message = "Открой QR pairing в Desktop и наведи камеру на него",
+                    isError = true,
+                )
+            }
+            return
+        }
+
+        pairingBarcodeInFlight = true
+        _uiState.update {
+            it.copy(
+                cameraStatus = "QR pairing найден",
+                message = "Применяю настройки Soll из QR",
+                isError = false,
+            )
+        }
+        applySollPairingPayload(pairingPayload, reason = "scanner_qr_pairing")
     }
 
     private fun applySollPairingPayload(payload: SollPairingPayload, reason: String) {

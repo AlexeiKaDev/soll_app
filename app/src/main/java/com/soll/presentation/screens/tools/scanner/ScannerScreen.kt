@@ -380,6 +380,7 @@ private fun PairingCameraPanel(
             if (cameraEnabled && hasCameraPermission) {
                 CameraBarcodePreview(
                     onBarcodeDetected = onBarcodeDetected,
+                    qrOnly = true,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (hasCameraPermission) {
@@ -594,6 +595,7 @@ private fun CameraScanCard(
 @Composable
 private fun CameraBarcodePreview(
     onBarcodeDetected: (rawValue: String, format: String) -> Unit,
+    qrOnly: Boolean = false,
     modifier: Modifier = Modifier
         .fillMaxWidth()
         .height(260.dp),
@@ -611,7 +613,9 @@ private fun CameraBarcodePreview(
         val analyzerExecutor = Executors.newSingleThreadExecutor()
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val mainExecutor = ContextCompat.getMainExecutor(context)
-        val barcodeScanner = BarcodeScanning.getClient(barcodeScannerOptions())
+        val barcodeScanner = BarcodeScanning.getClient(
+            if (qrOnly) qrBarcodeScannerOptions() else barcodeScannerOptions(),
+        )
         var cameraProvider: ProcessCameraProvider? = null
         var disposed = false
 
@@ -694,10 +698,12 @@ private class MlKitBarcodeAnalyzer(
         val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
         scanner.process(inputImage)
             .addOnSuccessListener { barcodes ->
-                val barcode = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
+                val barcode = barcodes.firstOrNull { it.decodedRawValue().isNotBlank() }
                 if (barcode != null) {
+                    val value = barcode.decodedRawValue()
+                    if (value.isBlank()) return@addOnSuccessListener
                     onBarcodeDetected(
-                        barcode.rawValue.orEmpty(),
+                        value,
                         barcode.format.toScannerFormat(),
                     )
                 }
@@ -709,6 +715,16 @@ private class MlKitBarcodeAnalyzer(
                 processing.set(false)
                 imageProxy.close()
             }
+    }
+}
+
+private fun Barcode.decodedRawValue(): String {
+    rawValue?.takeIf { it.isNotBlank() }?.let { return it }
+    val bytes = rawBytes
+    return if (bytes != null && bytes.isNotEmpty()) {
+        bytes.toString(Charsets.UTF_8)
+    } else {
+        ""
     }
 }
 
@@ -780,6 +796,12 @@ private fun barcodeScannerOptions(): BarcodeScannerOptions =
             Barcode.FORMAT_DATA_MATRIX,
             Barcode.FORMAT_PDF417,
         )
+        .enableAllPotentialBarcodes()
+        .build()
+
+private fun qrBarcodeScannerOptions(): BarcodeScannerOptions =
+    BarcodeScannerOptions.Builder()
+        .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
         .enableAllPotentialBarcodes()
         .build()
 

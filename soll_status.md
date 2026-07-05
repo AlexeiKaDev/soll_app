@@ -1,8 +1,13 @@
 # soll_app Status
 
-Last updated: 2026-07-05 21:09 Europe/Chisinau
+Last updated: 2026-07-05 21:19 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-05 Android notification recovery recheck:
+  - GitHub `origin/master` is synced to `1bfaca1`, the commit with automatic device bearer refresh before Android sync and FCM token registration.
+  - Fresh local debug APK remains `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`; it was also re-exported into `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` with sha256 `c472b2c0581601f63c14b53ec36f7c6ff23643a1ef8bce345c8cdc71e728681d`.
+  - Soll server readiness is healthy and FCM-configured, but no phone has registered yet: live `android_push.token_count=0`, token state file is absent, and local ADB lists no devices.
 
 - 2026-07-05 Android notification recovery after token expiry:
   - Root cause found: the Soll server device bearer expires after 15 minutes, while Android server sync defaults to a longer interval. Once it expired, `/api/v1/android/sync-status` and `/api/v1/android/push-token` returned unauthorized, so polling, chat/task fallback, and FCM token registration could all stop.

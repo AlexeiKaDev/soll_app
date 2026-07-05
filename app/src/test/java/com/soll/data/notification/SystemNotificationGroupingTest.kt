@@ -10,9 +10,17 @@ class SystemNotificationGroupingTest {
     fun `notification groups are stable per channel`() {
         assertEquals("soll.group.soll_chat", systemNotificationGroupKey(SollNotificationChannel.CHAT))
         assertEquals("soll.group.soll_alerts", systemNotificationGroupKey(SollNotificationChannel.ALERTS))
+        assertEquals("soll.group.monosales_schedule", systemNotificationGroupKey(SollNotificationChannel.TOOL_JOBS, "MonoSales Schedule"))
         assertNotEquals(
             systemNotificationSummaryId(SollNotificationChannel.CHAT),
             systemNotificationSummaryId(SollNotificationChannel.ALERTS),
+        )
+        assertNotEquals(
+            systemNotificationSummaryId(SollNotificationChannel.TOOL_JOBS),
+            systemNotificationSummaryId(
+                SollNotificationChannel.TOOL_JOBS,
+                systemNotificationGroupKey(SollNotificationChannel.TOOL_JOBS, "monosales_schedule"),
+            ),
         )
     }
 

@@ -245,7 +245,10 @@ class ProjectStabilizationGuardTest {
         assertTrue(fcmService.contains("classifyFcmNotification(data)"))
         assertTrue(fcmService.contains("hint.anyToken(\"task_board\", \"board\", \"sync\", \"poll\", \"heartbeat\") -> SollNotificationChannel.SERVER_SYNC"))
         assertTrue(fcmService.contains("SollNotificationChannel.EVENTS,"))
+        assertTrue(fcmService.contains("SollNotificationChannel.TOOL_JOBS,"))
         assertTrue(fcmService.contains("SollNotificationChannel.SERVER_SYNC -> SollNotificationPriority.LOW"))
+        assertTrue(fcmService.contains("systemGroupKey = fcmNotificationGroupKey(data)"))
+        assertTrue(fcmService.contains("data[\"notification_group\"].nonBlank()"))
         assertTrue(fcmService.contains("runBlocking(Dispatchers.IO)"))
         assertFalse(fcmService.contains("serviceScope.launch"))
         assertFalse(fcmService.contains("serviceScope.cancel()"))
@@ -271,10 +274,12 @@ class ProjectStabilizationGuardTest {
         assertTrue(notificationRepository.contains(".setGroup(groupKey)"))
         assertTrue(notificationRepository.contains(".setGroupSummary(true)"))
         assertTrue(notificationRepository.contains("NotificationCompat.GROUP_ALERT_SUMMARY"))
-        assertTrue(notificationRepository.contains("systemNotificationSummaryId(request.channel)"))
+        assertTrue(notificationRepository.contains("systemNotificationSummaryId(request.channel, groupKey)"))
         assertTrue(notificationDao.contains("getUnreadCountForChannel"))
         assertTrue(grouping.contains("systemNotificationGroupKey"))
+        assertTrue(grouping.contains("rawGroup: String? = null"))
         assertTrue(grouping.contains("systemNotificationSummaryText"))
+        assertTrue(grouping.contains("systemNotificationSummaryId"))
     }
 
     @Test

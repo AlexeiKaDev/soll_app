@@ -156,5 +156,54 @@ class SollFirebaseMessagingServiceTest {
         assertEquals("server_task_push", route.type)
         assertEquals(SollNotificationPriority.DEFAULT, route.priority)
         assertEquals(AppLaunchTargets.SECTION_TASKS, route.launchSection)
+        assertEquals(true, shouldShowFcmSystemNotification(route, mapOf("route" to "task/action")))
+    }
+
+    @Test
+    fun `monolith schedule summary routes to grouped opt in job notifications`() {
+        val data = mapOf(
+            "route" to "task/schedule",
+            "channel" to "tool_job",
+            "notification_channel" to "tool_job",
+            "notification_group" to "monosales_schedule",
+            "notification_group_title" to "Schedule MonoSales",
+            "type" to "schedule.cycle.summary",
+            "category" to "schedule",
+            "priority" to "default",
+            AppLaunchTargets.EXTRA_OPEN_SECTION to AppLaunchTargets.SECTION_LOGS,
+            AppLaunchTargets.EXTRA_OPEN_LOGS_TAB to AppLaunchTargets.LOGS_TAB_NOTIFICATIONS,
+        )
+        val route = classifyFcmNotification(data)
+
+        assertEquals(SollNotificationChannel.TOOL_JOBS, route.channel)
+        assertEquals("schedule.cycle.summary", route.type)
+        assertEquals(SollNotificationPriority.DEFAULT, route.priority)
+        assertEquals(AppLaunchTargets.SECTION_LOGS, route.launchSection)
+        assertEquals("monosales_schedule", fcmNotificationGroupKey(data))
+        assertEquals("Schedule MonoSales", fcmNotificationGroupTitle(data))
+        assertEquals(true, shouldShowFcmSystemNotification(route, data))
+    }
+
+    @Test
+    fun `monolith schedule failure routes to visible alerts`() {
+        val data = mapOf(
+            "route" to "critical-alert/schedule",
+            "channel" to "alerts",
+            "notification_channel" to "alerts",
+            "notification_group" to "monosales_schedule",
+            "type" to "schedule.job.failed",
+            "category" to "schedule",
+            "severity" to "error",
+            "priority" to "high",
+            AppLaunchTargets.EXTRA_OPEN_SECTION to AppLaunchTargets.SECTION_LOGS,
+            AppLaunchTargets.EXTRA_OPEN_LOGS_TAB to AppLaunchTargets.LOGS_TAB_NOTIFICATIONS,
+        )
+        val route = classifyFcmNotification(data)
+
+        assertEquals(SollNotificationChannel.ALERTS, route.channel)
+        assertEquals("schedule.job.failed", route.type)
+        assertEquals(SollNotificationPriority.HIGH, route.priority)
+        assertEquals(AppLaunchTargets.SECTION_LOGS, route.launchSection)
+        assertEquals(true, shouldShowFcmSystemNotification(route, data))
     }
 }

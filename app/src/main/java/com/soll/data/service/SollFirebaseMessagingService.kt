@@ -72,6 +72,9 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
                         onlyAlertOnce = true,
                         systemNotificationId = stablePushNotificationId(chatDedupeKey ?: "fcm:$messageKey"),
                         launchSection = route.launchSection,
+                        launchLogsTab = data[AppLaunchTargets.EXTRA_OPEN_LOGS_TAB],
+                        systemGroupKey = fcmNotificationGroupKey(data),
+                        systemGroupTitle = fcmNotificationGroupTitle(data),
                         dedupeKey = chatDedupeKey ?: "fcm:$messageKey",
                     )
                 )
@@ -148,8 +151,20 @@ internal fun fcmChatMessageIdForWatermark(route: FcmNotificationRoute, data: Map
 internal fun shouldShowFcmSystemNotification(route: FcmNotificationRoute, data: Map<String, String>): Boolean {
     if (data.explicitSilent()) return false
     if (route.priority == SollNotificationPriority.LOW) return false
-    return route.channel in setOf(SollNotificationChannel.CHAT, SollNotificationChannel.ALERTS)
+    if (route.priority == SollNotificationPriority.HIGH) return true
+    return route.channel in setOf(
+        SollNotificationChannel.CHAT,
+        SollNotificationChannel.ALERTS,
+        SollNotificationChannel.TOOL_JOBS,
+        SollNotificationChannel.EVENTS,
+    )
 }
+
+internal fun fcmNotificationGroupKey(data: Map<String, String>): String? =
+    data["notification_group"].nonBlank()
+
+internal fun fcmNotificationGroupTitle(data: Map<String, String>): String? =
+    data["notification_group_title"].nonBlank()
 
 private fun Map<String, String>.toSollNotificationChannel(): SollNotificationChannel {
     val hint = notificationHint()

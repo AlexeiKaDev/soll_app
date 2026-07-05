@@ -159,7 +159,8 @@ class SollNotificationRepository @Inject constructor(
         unreadInChannel: Int,
     ): Boolean {
         if (!canPostSystemNotifications()) return false
-        val groupKey = systemNotificationGroupKey(request.channel)
+        val groupKey = systemNotificationGroupKey(request.channel, request.systemGroupKey)
+        val summaryId = systemNotificationSummaryId(request.channel, groupKey)
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
             .setContentTitle(request.title)
@@ -183,7 +184,7 @@ class SollNotificationRepository @Inject constructor(
         return runCatching {
             val manager = NotificationManagerCompat.from(context)
             manager.notify(systemNotificationId, notification)
-            manager.notify(systemNotificationSummaryId(request.channel), summaryNotification)
+            manager.notify(summaryId, summaryNotification)
             true
         }.onFailure { error ->
             Timber.w(error, "Failed to show Soll notification")
@@ -194,24 +195,29 @@ class SollNotificationRepository @Inject constructor(
         request: SollNotificationRequest,
         groupKey: String,
         unreadInChannel: Int,
-    ) = NotificationCompat.Builder(context, request.channel.channelId)
+    ): android.app.Notification {
+        val summaryId = systemNotificationSummaryId(request.channel, groupKey)
+        val summaryTitle = request.systemGroupTitle?.trim()?.takeIf { it.isNotBlank() }
+            ?: systemNotificationSummaryTitle(request.channel)
+        val summaryText = systemNotificationSummaryText(request.channel, unreadInChannel)
+        return NotificationCompat.Builder(context, request.channel.channelId)
         .setSmallIcon(R.drawable.ic_ai_robot_notification)
-        .setContentTitle(systemNotificationSummaryTitle(request.channel))
-        .setContentText(systemNotificationSummaryText(request.channel, unreadInChannel))
+        .setContentTitle(summaryTitle)
+        .setContentText(summaryText)
         .setStyle(
             NotificationCompat.InboxStyle()
                 .addLine("${request.title}: ${request.message}".compactNotificationLine())
-                .setSummaryText(systemNotificationSummaryText(request.channel, unreadInChannel)),
+                .setSummaryText(summaryText),
         )
         .setContentIntent(
             contentIntent(
                 request.copy(
-                    title = systemNotificationSummaryTitle(request.channel),
-                    message = systemNotificationSummaryText(request.channel, unreadInChannel),
+                    title = summaryTitle,
+                    message = summaryText,
                     onlyAlertOnce = true,
-                    systemNotificationId = systemNotificationSummaryId(request.channel),
+                    systemNotificationId = summaryId,
                 ),
-                systemNotificationSummaryId(request.channel),
+                summaryId,
             )
         )
         .setPriority(request.priority.toCompatPriority())
@@ -223,6 +229,7 @@ class SollNotificationRepository @Inject constructor(
         .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
         .build()
+    }
 
     private fun contentIntent(request: SollNotificationRequest, requestCode: Int): PendingIntent {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

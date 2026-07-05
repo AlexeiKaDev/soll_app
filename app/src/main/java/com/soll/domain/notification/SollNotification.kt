@@ -59,6 +59,8 @@ data class SollNotificationRequest(
     val systemNotificationId: Int? = null,
     val launchSection: String? = null,
     val launchLogsTab: String? = null,
+    val systemGroupKey: String? = null,
+    val systemGroupTitle: String? = null,
     val dedupeKey: String? = null,
 )
 

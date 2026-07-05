@@ -2,11 +2,24 @@ package com.soll.data.notification
 
 import com.soll.domain.notification.SollNotificationChannel
 
-internal fun systemNotificationGroupKey(channel: SollNotificationChannel): String =
-    "soll.group.${channel.channelId}"
+internal fun systemNotificationGroupKey(channel: SollNotificationChannel, rawGroup: String? = null): String {
+    val customGroup = rawGroup
+        ?.trim()
+        ?.lowercase()
+        ?.replace(Regex("[^a-z0-9_.-]+"), "_")
+        ?.trim('_')
+        ?.takeIf { it.isNotBlank() }
+    return "soll.group.${customGroup ?: channel.channelId}"
+}
 
-internal fun systemNotificationSummaryId(channel: SollNotificationChannel): Int =
-    when (channel) {
+internal fun systemNotificationSummaryId(
+    channel: SollNotificationChannel,
+    groupKey: String = systemNotificationGroupKey(channel),
+): Int {
+    if (groupKey != systemNotificationGroupKey(channel)) {
+        return 4000 + (groupKey.hashCode() and 0x0fffffff)
+    }
+    return when (channel) {
         SollNotificationChannel.CHAT -> 3001
         SollNotificationChannel.ALERTS -> 3002
         SollNotificationChannel.TOOL_JOBS -> 3003
@@ -17,6 +30,7 @@ internal fun systemNotificationSummaryId(channel: SollNotificationChannel): Int 
         SollNotificationChannel.MUSIC_PLAYBACK -> 3008
         SollNotificationChannel.ACTIVITY_TRACKING -> 3009
     }
+}
 
 internal fun systemNotificationSummaryTitle(channel: SollNotificationChannel): String =
     when (channel) {

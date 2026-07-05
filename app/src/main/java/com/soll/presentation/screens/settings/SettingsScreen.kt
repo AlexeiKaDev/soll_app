@@ -106,26 +106,6 @@ fun SettingsScreen(
                     )
 
                     OutlinedTextField(
-                        value = uiState.sollPairingCode,
-                        onValueChange = viewModel::updateSollPairingCode,
-                        label = { Text("QR / pairing code") },
-                        placeholder = { Text("soll://pair?...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        maxLines = 4,
-                    )
-
-                    OutlinedButton(
-                        onClick = { viewModel.applySollPairingCode() },
-                        enabled = uiState.sollPairingCode.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Применить QR")
-                    }
-
-                    OutlinedTextField(
                         value = uiState.sollServerUrl,
                         onValueChange = viewModel::updateSollServerUrl,
                         label = { Text("URL сервера") },

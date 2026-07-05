@@ -24,8 +24,6 @@ import com.soll.domain.deviceqa.DeviceQaCheckId
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollHealth
-import com.soll.domain.soll.SollPairingPayload
-import com.soll.domain.soll.SollPairingPayloadParser
 import com.soll.domain.soll.SollTaskBoard
 import com.soll.ui.theme.SollThemeVariant
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -43,7 +41,6 @@ data class SettingsUiState(
     val sollServerUrl: String = "",
     val sollApiPathPrefix: String = "",
     val sollAccessToken: String = "",
-    val sollPairingCode: String = "",
     val sollSyncIntervalMinutes: String = "60",
     val sollWifiOnlyUpload: Boolean = true,
     val sollHealthStatus: String? = null,
@@ -183,16 +180,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateSollPairingCode(value: String) {
-        _uiState.update {
-            it.copy(
-                sollPairingCode = value,
-                message = null,
-                isError = false,
-            )
-        }
-    }
-
     fun updateSollSyncInterval(value: String) {
         val filtered = value.filter { it.isDigit() }.take(4)
         _uiState.update { it.copy(sollSyncIntervalMinutes = filtered.ifBlank { "5" }) }
@@ -283,20 +270,6 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    fun applySollPairingCode() {
-        val payload = SollPairingPayloadParser.parse(_uiState.value.sollPairingCode)
-        if (payload == null) {
-            _uiState.update {
-                it.copy(
-                    message = "QR-код Soll не распознан",
-                    isError = true,
-                )
-            }
-            return
-        }
-        applySollPairingPayload(payload, reason = "settings_qr_pairing", clearPairingCode = true)
     }
 
     fun setAssistantMemoryEnabled(enabled: Boolean) {
@@ -441,54 +414,6 @@ class SettingsViewModel @Inject constructor(
                 )
             } else {
                 nextState
-            }
-        }
-    }
-
-    private fun applySollPairingPayload(
-        payload: SollPairingPayload,
-        reason: String,
-        clearPairingCode: Boolean,
-    ) {
-        settingsRepository.applySollPairingPayload(payload)
-        GadgetServerSyncScheduler.schedule(application, settingsRepository)
-        SollServerSyncScheduler.schedule(application, settingsRepository)
-        _uiState.update {
-            it.copy(
-                sollServerUrl = settingsRepository.sollServerUrl,
-                sollApiPathPrefix = settingsRepository.sollApiPathPrefix,
-                sollAccessToken = settingsRepository.sollAccessToken,
-                sollPairingCode = if (clearPairingCode) "" else it.sollPairingCode,
-                sollHealthStatus = null,
-                sollHealthMessage = null,
-                sollSyncSummary = null,
-                sollPushTokenLastError = "",
-                isRetryingSollPushToken = true,
-                message = "Настройки Soll применены из QR. Регистрирую push-токен",
-                isError = false,
-            )
-        }
-        AndroidPushTokenRegistrar.registerCurrentToken(
-            application,
-            reason = reason,
-            force = true,
-        ) {
-            viewModelScope.launch {
-                val lastError = settingsRepository.sollPushTokenLastError
-                val registeredAt = settingsRepository.sollPushTokenRegisteredAt
-                _uiState.update {
-                    it.copy(
-                        sollPushTokenRegisteredAt = registeredAt,
-                        sollPushTokenLastError = lastError,
-                        isRetryingSollPushToken = false,
-                        message = if (lastError.isBlank()) {
-                            "Push-токен зарегистрирован после QR pairing"
-                        } else {
-                            "Настройки применены, push-токен не зарегистрирован"
-                        },
-                        isError = lastError.isNotBlank(),
-                    )
-                }
             }
         }
     }

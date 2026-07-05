@@ -228,6 +228,9 @@ class ProjectStabilizationGuardTest {
         val pushRegistrar = projectFile("app/src/main/java/com/soll/data/service/AndroidPushTokenRegistrar.kt").readText()
         val application = projectFile("app/src/main/java/com/soll/SollApplication.kt").readText()
         val settingsRepository = projectFile("app/src/main/java/com/soll/data/repository/SettingsRepository.kt").readText()
+        val notificationRepository = projectFile("app/src/main/java/com/soll/data/repository/SollNotificationRepository.kt").readText()
+        val notificationDao = projectFile("app/src/main/java/com/soll/data/local/dao/AppNotificationDao.kt").readText()
+        val grouping = projectFile("app/src/main/java/com/soll/data/notification/SystemNotificationGrouping.kt").readText()
         val settingsScreen = projectFile("app/src/main/java/com/soll/presentation/screens/settings/SettingsScreen.kt").readText()
         val settingsViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/settings/SettingsViewModel.kt").readText()
 
@@ -265,6 +268,13 @@ class ProjectStabilizationGuardTest {
         assertTrue(settingsViewModel.contains("force = true"))
         assertTrue(settingsScreen.contains("По умолчанию в Android идут только чат и важное"))
         assertTrue(settingsScreen.contains("Технические события фоновой синхронизации; выключено по умолчанию."))
+        assertTrue(notificationRepository.contains(".setGroup(groupKey)"))
+        assertTrue(notificationRepository.contains(".setGroupSummary(true)"))
+        assertTrue(notificationRepository.contains("NotificationCompat.GROUP_ALERT_SUMMARY"))
+        assertTrue(notificationRepository.contains("systemNotificationSummaryId(request.channel)"))
+        assertTrue(notificationDao.contains("getUnreadCountForChannel"))
+        assertTrue(grouping.contains("systemNotificationGroupKey"))
+        assertTrue(grouping.contains("systemNotificationSummaryText"))
     }
 
     @Test

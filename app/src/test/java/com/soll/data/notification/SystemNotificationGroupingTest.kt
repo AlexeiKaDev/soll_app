@@ -1,0 +1,29 @@
+package com.soll.data.notification
+
+import com.soll.domain.notification.SollNotificationChannel
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Test
+
+class SystemNotificationGroupingTest {
+    @Test
+    fun `notification groups are stable per channel`() {
+        assertEquals("soll.group.soll_chat", systemNotificationGroupKey(SollNotificationChannel.CHAT))
+        assertEquals("soll.group.soll_alerts", systemNotificationGroupKey(SollNotificationChannel.ALERTS))
+        assertNotEquals(
+            systemNotificationSummaryId(SollNotificationChannel.CHAT),
+            systemNotificationSummaryId(SollNotificationChannel.ALERTS),
+        )
+    }
+
+    @Test
+    fun `summary text keeps noisy streams consolidated`() {
+        assertEquals("1 уведомление в чате", systemNotificationSummaryText(SollNotificationChannel.CHAT, 1))
+        assertEquals("2 уведомления в чате", systemNotificationSummaryText(SollNotificationChannel.CHAT, 2))
+        assertEquals("5 уведомлений в чате", systemNotificationSummaryText(SollNotificationChannel.CHAT, 5))
+        assertEquals("12 уведомлений в чате", systemNotificationSummaryText(SollNotificationChannel.CHAT, 12))
+        assertEquals("3 уведомления требуют внимания", systemNotificationSummaryText(SollNotificationChannel.ALERTS, 3))
+        assertEquals("4 уведомления по задачам", systemNotificationSummaryText(SollNotificationChannel.TOOL_JOBS, 4))
+        assertEquals("7 технических уведомлений", systemNotificationSummaryText(SollNotificationChannel.SERVER_SYNC, 7))
+    }
+}

@@ -15,6 +15,9 @@ interface AppNotificationDao {
     @Query("SELECT COUNT(*) FROM app_notifications WHERE status = 'UNREAD'")
     fun getUnreadCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM app_notifications WHERE status = 'UNREAD' AND channel_id = :channelId")
+    suspend fun getUnreadCountForChannel(channelId: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(notification: AppNotificationEntity)
 

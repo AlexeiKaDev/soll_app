@@ -202,6 +202,18 @@ class ProjectStabilizationGuardTest {
         assertTrue(chatScreen.contains("LocalUriHandler.current"))
         assertTrue(chatScreen.contains("extractChatLinks"))
         assertTrue(chatScreen.contains("message.actionUis()"))
+        assertTrue(chatScreen.contains("CompactChatActionRow("))
+        assertTrue(chatScreen.contains("CompactChatActionChip("))
+        assertTrue(chatScreen.contains("FlowRow("))
+        assertTrue(chatScreen.contains("Modifier.heightIn(min = 30.dp)"))
+        assertTrue(chatScreen.contains("MaterialTheme.typography.labelSmall"))
+        assertFalse(chatScreen.contains("import androidx.compose.material3.Button"))
+        assertFalse(
+            chatScreen
+                .substringAfter("private fun AssistantMessageContent")
+                .substringBefore("private fun ChatBadgeRow")
+                .contains("Button(\n                    onClick = { onAction(action) }"),
+        )
         assertTrue(chatScreen.contains("internal enum class ChatBadgeKind"))
         assertTrue(chatScreen.contains("ChatBadgeKind.STATUS"))
         assertTrue(chatScreen.contains("ChatBadgeKind.SECURITY"))

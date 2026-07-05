@@ -220,6 +220,24 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `chat text links only expose openable http browser urls`() {
+        assertEquals(
+            listOf(
+                "https://example.com/article?ref=soll",
+                "http://sales.monolith-ost.com/api/v1/soll",
+            ),
+            extractChatLinks(
+                "Смотри https://example.com/article?ref=soll, потом http://sales.monolith-ost.com/api/v1/soll.",
+            ),
+        )
+        assertTrue(isOpenableChatUrl("https://example.com/article"))
+        assertFalse(isOpenableChatUrl("file:///sdcard/private.txt"))
+        assertFalse(isOpenableChatUrl("data:text/plain,hello"))
+        assertFalse(isOpenableChatUrl("https://user:pass@example.com/private"))
+        assertFalse(isOpenableChatUrl("not a url"))
+    }
+
+    @Test
     fun `link preview loader rejects redirect responses`() {
         assertFalse(isPreviewRedirectStatus(200))
         assertFalse(isPreviewRedirectStatus(204))

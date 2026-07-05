@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavHostController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -112,13 +113,7 @@ fun AppNavigation(
                             label = { Text(screen.title) },
                             selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                             onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
+                                navController.navigateBottomBarRoute(screen.route)
                             }
                         )
                     }
@@ -206,3 +201,16 @@ fun AppNavigation(
 }
 
 private const val LOGS_TAB_NOTIFICATIONS = 3
+
+private fun NavHostController.navigateBottomBarRoute(route: String) {
+    if (currentDestination?.hierarchy?.any { it.route == route } == true) return
+    if (route == AppDestinations.Chat.route && popBackStack(AppDestinations.Chat.route, false)) return
+
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
+}

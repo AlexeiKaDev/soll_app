@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
@@ -68,12 +69,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -209,6 +216,7 @@ fun ChatScreen(
                 onDismissVoiceError = viewModel::dismissVoiceError,
             )
         },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -618,9 +626,10 @@ private fun ChatMessageBubble(
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             if (message.isFromUser) {
-                Text(
+                LinkifiedChatText(
                     text = message.content,
                     color = foreground,
+                    linkColor = foreground.copy(alpha = 0.96f),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 ChatBubbleMeta(
@@ -672,9 +681,10 @@ private fun AssistantMessageContent(
         }
     }
     ChatBadgeRow(message)
-    Text(
+    LinkifiedChatText(
         text = message.content,
         color = foreground,
+        linkColor = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodyMedium,
         maxLines = if (isLong && !expanded) 8 else Int.MAX_VALUE,
         overflow = if (isLong && !expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
@@ -783,6 +793,66 @@ private fun ChatBadgeUi.style(): ChatBadgeStyle =
     }
 
 @Composable
+private fun LinkifiedChatText(
+    text: String,
+    color: Color,
+    linkColor: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+) {
+    val links = remember(text) { chatLinkMatches(text) }
+    if (links.isEmpty()) {
+        Text(
+            text = text,
+            modifier = modifier,
+            color = color,
+            style = style,
+            maxLines = maxLines,
+            overflow = overflow,
+        )
+        return
+    }
+
+    val uriHandler = LocalUriHandler.current
+    val annotated = remember(text, links, linkColor) {
+        buildAnnotatedString {
+            append(text)
+            links.forEach { link ->
+                addStyle(
+                    style = SpanStyle(
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                    ),
+                    start = link.start,
+                    end = link.end,
+                )
+                addStringAnnotation(
+                    tag = CHAT_LINK_ANNOTATION_TAG,
+                    annotation = link.url,
+                    start = link.start,
+                    end = link.end,
+                )
+            }
+        }
+    }
+    ClickableText(
+        text = annotated,
+        modifier = modifier,
+        style = style.copy(color = color),
+        maxLines = maxLines,
+        overflow = overflow,
+        onClick = { offset ->
+            annotated
+                .getStringAnnotations(CHAT_LINK_ANNOTATION_TAG, offset, offset)
+                .firstOrNull()
+                ?.let { annotation -> uriHandler.openUri(annotation.item) }
+        },
+    )
+}
+
+@Composable
 private fun LinkPreviewCard(preview: Map<*, *>) {
     val title = preview["title"]?.toString().orEmpty()
     val site = preview["site_name"]?.toString().orEmpty()
@@ -790,9 +860,18 @@ private fun LinkPreviewCard(preview: Map<*, *>) {
     val description = preview["description"]?.toString().orEmpty()
     val imageUrl = preview["image_url"]?.toString().orEmpty()
     if (title.isBlank() && url.isBlank()) return
+    val uriHandler = LocalUriHandler.current
+    val openableUrl = url.takeIf { isOpenableChatUrl(it) }
+    val cardModifier = if (openableUrl != null) {
+        Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri(openableUrl) }
+    } else {
+        Modifier.fillMaxWidth()
+    }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = cardModifier,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = RoundedCornerShape(8.dp),
@@ -996,6 +1075,39 @@ private fun isPublicPreviewImageHost(host: String): Boolean {
     return true
 }
 
+internal fun extractChatLinks(text: String): List<String> =
+    chatLinkMatches(text).map { it.url }.distinct()
+
+internal fun isOpenableChatUrl(url: String): Boolean =
+    runCatching {
+        val parsed = URL(url.trim())
+        parsed.protocol.lowercase() in CHAT_LINK_URL_SCHEMES &&
+            parsed.host.isNotBlank() &&
+            parsed.userInfo.isNullOrBlank()
+    }.getOrDefault(false)
+
+private fun chatLinkMatches(text: String): List<ChatLinkMatch> =
+    CHAT_LINK_PATTERN.findAll(text)
+        .mapNotNull { match ->
+            val url = match.value.trimEnd(*CHAT_LINK_TRAILING_PUNCTUATION)
+            if (url.isBlank() || !isOpenableChatUrl(url)) {
+                null
+            } else {
+                ChatLinkMatch(
+                    url = url,
+                    start = match.range.first,
+                    end = match.range.first + url.length,
+                )
+            }
+        }
+        .toList()
+
+private data class ChatLinkMatch(
+    val url: String,
+    val start: Int,
+    val end: Int,
+)
+
 internal fun isPreviewRedirectStatus(responseCode: Int): Boolean = responseCode in 300..399
 
 internal fun isPreviewSuccessStatus(responseCode: Int): Boolean = responseCode in 200..299
@@ -1038,6 +1150,10 @@ private fun previewImageSampleSize(width: Int, height: Int): Int {
 
 private const val MAX_PREVIEW_IMAGE_BYTES = 2 * 1024 * 1024
 private const val PREVIEW_IMAGE_TARGET_PX = 192
+private const val CHAT_LINK_ANNOTATION_TAG = "CHAT_URL"
+private val CHAT_LINK_PATTERN = Regex("""https?://[^\s<>()\[\]{}"']+""", RegexOption.IGNORE_CASE)
+private val CHAT_LINK_TRAILING_PUNCTUATION = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
+private val CHAT_LINK_URL_SCHEMES = setOf("http", "https")
 private val PREVIEW_IMAGE_URL_SCHEMES = setOf("http", "https")
 private val PREVIEW_IMAGE_CONTENT_TYPES = setOf(
     "image/jpeg",
@@ -1111,7 +1227,6 @@ private fun ChatInputBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .imePadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,

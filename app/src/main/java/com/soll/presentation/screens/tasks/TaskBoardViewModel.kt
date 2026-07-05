@@ -125,6 +125,42 @@ data class TaskBoardUiState(
     val hasLimitedSections: Boolean
         get() = hasLimitedOpenSections || hasLimitedDoneSection
 
+    val hasLimitedSelectedTaskSection: Boolean
+        get() = when (selectedTab) {
+            TaskTab.ALL -> hasLimitedOpenSections
+            TaskTab.TODAY -> taskCounts?.let { today.size < it.today } == true
+            TaskTab.BLOCKED -> taskCounts?.let { blocked.size < it.blocked } == true
+            TaskTab.INBOX -> taskCounts?.let { inbox.size < it.inbox } == true
+            TaskTab.STALE -> taskCounts?.let { stale.size < it.stale } == true
+            TaskTab.DEFERRED -> taskCounts?.let { deferred.size < it.deferred } == true
+            TaskTab.IDEAS -> false
+            TaskTab.DONE -> hasLimitedDoneSection
+        }
+
+    val selectedDisplayedTaskCount: Int
+        get() = when (selectedTab) {
+            TaskTab.ALL -> displayedOpenCount
+            TaskTab.TODAY -> today.size
+            TaskTab.BLOCKED -> blocked.size
+            TaskTab.INBOX -> inbox.size
+            TaskTab.STALE -> stale.size
+            TaskTab.DEFERRED -> deferred.size
+            TaskTab.IDEAS -> ideaCount
+            TaskTab.DONE -> displayedDoneCount
+        }
+
+    val selectedTaskCount: Int
+        get() = when (selectedTab) {
+            TaskTab.ALL -> openCount
+            TaskTab.TODAY -> taskCounts?.today ?: today.size
+            TaskTab.BLOCKED -> taskCounts?.blocked ?: blocked.size
+            TaskTab.INBOX -> taskCounts?.inbox ?: inbox.size
+            TaskTab.STALE -> taskCounts?.stale ?: stale.size
+            TaskTab.DEFERRED -> taskCounts?.deferred ?: deferred.size
+            TaskTab.IDEAS -> ideaCount
+            TaskTab.DONE -> doneCount
+        }
+
     val pendingEvidenceCount: Int
         get() = pendingEvidenceTaskIds.size
 
@@ -132,7 +168,7 @@ data class TaskBoardUiState(
         get() = pendingTaskActionIds.size
 
     val canLoadMoreTasks: Boolean
-        get() = hasLimitedSections && requestedTaskBoardLimitPerSection < MAX_TASK_BOARD_SECTION_LIMIT
+        get() = hasLimitedSelectedTaskSection && requestedTaskBoardLimitPerSection < MAX_TASK_BOARD_SECTION_LIMIT
 }
 
 @HiltViewModel
@@ -1034,9 +1070,9 @@ class TaskBoardViewModel @Inject constructor(
     }
 }
 
-private fun TaskBoardUiState.deriveTaskList(): TaskBoardUiState {
+internal fun TaskBoardUiState.deriveTaskList(): TaskBoardUiState {
     val base = when (selectedTab) {
-        TaskTab.ALL -> taskIndex
+        TaskTab.ALL -> openTasksRaw()
         TaskTab.TODAY -> today
         TaskTab.BLOCKED -> blocked
         TaskTab.INBOX -> inbox
@@ -1051,14 +1087,32 @@ private fun TaskBoardUiState.deriveTaskList(): TaskBoardUiState {
     )
 }
 
-private fun TaskBoardUiState.rebuildTaskIndex(): TaskBoardUiState {
+internal fun TaskBoardUiState.rebuildTaskIndex(): TaskBoardUiState {
     val allTasks = allTasksRaw()
-    val ideas = allTasks.filter { it.isIdeaTask() }
+    val ideas = openTasksRaw().filter { it.isIdeaTask() }
     return copy(
         taskIndex = allTasks,
         ideaTaskIndex = ideas,
         ideaCount = ideas.size,
     )
+}
+
+private fun TaskBoardUiState.openTasksRaw(): List<SollTask> = buildList {
+    val seen = LinkedHashSet<String>()
+
+    fun addUnique(tasks: List<SollTask>) {
+        tasks.forEach { task ->
+            if (seen.add(task.id)) {
+                add(task)
+            }
+        }
+    }
+
+    addUnique(today)
+    addUnique(blocked)
+    addUnique(inbox)
+    addUnique(stale)
+    addUnique(deferred)
 }
 
 private fun TaskBoardUiState.allTasksRaw(): List<SollTask> = buildList {

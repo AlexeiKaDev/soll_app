@@ -1,6 +1,8 @@
 package com.soll.presentation.screens.tasks
 
 import com.soll.domain.soll.SollTask
+import com.soll.domain.soll.SollTaskBoardCounts
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,4 +29,40 @@ class TaskBoardFilterTest {
         assertTrue(task.matchesTaskQuery("in_progress"))
         assertFalse(task.matchesTaskQuery("roadmap"))
     }
+
+    @Test
+    fun `all tab lists only open tasks while done stays in done tab`() {
+        val base = TaskBoardUiState(
+            blocked = listOf(task(id = "blocked-1", status = "blocked")),
+            doneRecent = listOf(task(id = "done-1", status = "done")),
+            taskCounts = SollTaskBoardCounts(blocked = 1, doneRecent = 10),
+            selectedTab = TaskTab.ALL,
+        ).rebuildTaskIndex().deriveTaskList()
+
+        assertEquals(listOf("blocked-1"), base.visibleTasks.map { it.id })
+        assertEquals(1, base.selectedDisplayedTaskCount)
+        assertEquals(1, base.selectedTaskCount)
+        assertFalse(base.canLoadMoreTasks)
+
+        val done = base.copy(selectedTab = TaskTab.DONE)
+            .deriveTaskList()
+
+        assertEquals(listOf("done-1"), done.visibleTasks.map { it.id })
+        assertEquals(1, done.selectedDisplayedTaskCount)
+        assertEquals(10, done.selectedTaskCount)
+        assertTrue(done.canLoadMoreTasks)
+    }
+
+    private fun task(id: String, status: String): SollTask =
+        SollTask(
+            id = id,
+            title = "Task $id",
+            description = "",
+            sourceRef = "test",
+            projectName = "Soll",
+            status = status,
+            priority = "B",
+            dueDate = null,
+            tags = emptyList(),
+        )
 }

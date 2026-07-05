@@ -206,8 +206,8 @@ fun TaskBoardScreen(
                                         if (uiState.canLoadMoreTasks) {
                                             item(key = "load-more-tasks", contentType = "load-more") {
                                                 LoadMoreTasksRow(
-                                                    displayedTotal = uiState.displayedTotalCount,
-                                                    total = uiState.totalCount,
+                                                    displayedTotal = uiState.selectedDisplayedTaskCount,
+                                                    total = uiState.selectedTaskCount,
                                                     currentLimit = uiState.taskBoardLimitPerSection
                                                         ?: uiState.requestedTaskBoardLimitPerSection,
                                                     onLoadMore = viewModel::loadMoreTasks,
@@ -1318,7 +1318,7 @@ private fun EmptyTasks(tab: TaskTab) {
 
 private fun TaskTab.title(uiState: TaskBoardUiState): String =
     when (this) {
-        TaskTab.ALL -> "Все ${uiState.totalCount}"
+        TaskTab.ALL -> "Все ${uiState.openCount}"
         TaskTab.TODAY -> "Сегодня ${uiState.taskCounts?.today ?: uiState.today.size}"
         TaskTab.BLOCKED -> "Блок ${uiState.taskCounts?.blocked ?: uiState.blocked.size}"
         TaskTab.INBOX -> "Вход ${uiState.taskCounts?.inbox ?: uiState.inbox.size}"

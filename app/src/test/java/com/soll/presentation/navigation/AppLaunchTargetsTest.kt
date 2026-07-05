@@ -23,16 +23,28 @@ class AppLaunchTargetsTest {
     }
 
     @Test
-    fun `tool extras open requested local tools`() {
-        listOf(
+    fun `media notification extras open restored tools`() {
+        assertEquals(
             AppLaunchTargets.SECTION_MUSIC,
+            AppLaunchTargets.fromExtras(section = AppLaunchTargets.SECTION_MUSIC, logsTab = null)?.section,
+        )
+        assertEquals(
             AppLaunchTargets.SECTION_BOOK_READER,
-            AppLaunchTargets.SECTION_NOTES,
-        ).forEach { section ->
-            val command = AppLaunchTargets.fromExtras(section = section, logsTab = null)
-            assertEquals(section, command?.section)
-            assertNull(command?.logsTab)
-        }
+            AppLaunchTargets.fromExtras(section = AppLaunchTargets.SECTION_BOOK_READER, logsTab = null)?.section,
+        )
+    }
+
+    @Test
+    fun `task notification extras open task board`() {
+        assertEquals(
+            AppLaunchTargets.SECTION_TASKS,
+            AppLaunchTargets.fromExtras(section = AppLaunchTargets.SECTION_TASKS, logsTab = null)?.section,
+        )
+    }
+
+    @Test
+    fun `archived notes extra is ignored`() {
+        assertNull(AppLaunchTargets.fromExtras(section = AppLaunchTargets.SECTION_NOTES, logsTab = null))
     }
 
     @Test

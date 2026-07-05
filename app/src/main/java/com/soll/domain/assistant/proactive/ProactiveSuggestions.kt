@@ -59,9 +59,9 @@ class ScenarioDetector {
         if (!snapshot.hasToken) {
             add(
                 ProactiveScenario(
-                    id = "telegram_token_missing",
-                    title = "Настроить Telegram",
-                    detail = "Бот не сможет принимать команды, пока токен не задан.",
+                    id = "soll_server_access_missing",
+                    title = "Настроить доступ к серверу",
+                    detail = "Нужен device-token или API token для чата и действий Soll.",
                     priority = ProactiveSuggestionPriority.HIGH,
                     confidence = 0.98f,
                     action = ProactiveSuggestionAction.OPEN_APP_SETTINGS,
@@ -72,12 +72,12 @@ class ScenarioDetector {
         if (snapshot.hasToken && !snapshot.botRunning) {
             add(
                 ProactiveScenario(
-                    id = "bot_stopped",
-                    title = "Запустить фонового бота",
-                    detail = "Токен есть, но сервис сейчас остановлен.",
+                    id = "soll_server_url_missing",
+                    title = "Настроить сервер Soll",
+                    detail = "Доступ сохранен, но URL сервера не задан.",
                     priority = ProactiveSuggestionPriority.HIGH,
                     confidence = 0.94f,
-                    action = ProactiveSuggestionAction.START_BOT,
+                    action = ProactiveSuggestionAction.OPEN_APP_SETTINGS,
                 )
             )
         }
@@ -87,7 +87,7 @@ class ScenarioDetector {
                 ProactiveScenario(
                     id = "battery_optimization_blocks_background",
                     title = "Снять ограничение батареи",
-                    detail = "Android может останавливать бота, музыку и фоновые задачи.",
+                    detail = "Android может задерживать чат, музыку и фоновые задачи.",
                     priority = ProactiveSuggestionPriority.HIGH,
                     confidence = 0.9f,
                     action = ProactiveSuggestionAction.OPEN_BATTERY_SETTINGS,

@@ -9,7 +9,6 @@ import androidx.security.crypto.MasterKeys
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.soll.BuildConfig
-import com.soll.data.api.TelegramApiService
 import com.soll.data.local.SollDatabase
 import com.soll.data.local.dao.AppNotificationDao
 import com.soll.data.local.dao.AssistantEventDao
@@ -37,16 +36,10 @@ import com.soll.data.repository.ScannerRepository
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollNotificationRepository
 import com.soll.data.repository.SollRepository
-import com.soll.data.repository.TelegramRepository
 import com.soll.data.repository.ToolJobRepository
 import com.soll.domain.assistant.AssistantEventLogger
 import com.soll.domain.assistant.CapabilityRegistry
 import com.soll.domain.assistant.CapabilitySettings
-import com.soll.domain.command.CommandExecutionGateway
-import com.soll.domain.command.CommandProcessor
-import com.soll.domain.command.CapabilityPermissionChecker
-import com.soll.domain.command.AndroidCapabilityPermissionChecker
-import com.soll.domain.command.CommandSafetyGate
 import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.tool.ToolJobRunner
 import com.soll.domain.tool.ToolJobStore
@@ -58,8 +51,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
@@ -569,7 +560,28 @@ object AppModule {
         }
     }
 
-    private const val TELEGRAM_API_BASE_URL = "https://api.telegram.org/"
+    private val migration19To20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `approval_id` TEXT")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `tool_job_id` TEXT")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `execution_state` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `outcome_artifacts_json` TEXT NOT NULL DEFAULT '[]'")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `value_metric` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `branch` TEXT NOT NULL DEFAULT 'innovation'")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `pair_id` TEXT")
+        }
+    }
+
+    private val migration20To21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `app_notifications` ADD COLUMN `dedupe_key` TEXT")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_app_notifications_dedupe_key` " +
+                    "ON `app_notifications` (`dedupe_key`)"
+            )
+        }
+    }
+
     private const val ENCRYPTED_PREFS_NAME = "soll_secure_prefs"
 
     private fun createCoreTables(db: SupportSQLiteDatabase) {
@@ -707,23 +719,10 @@ object AppModule {
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS) // Long polling needs longer timeout
+            .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit = Retrofit.Builder()
-        .baseUrl(TELEGRAM_API_BASE_URL)
-        .client(okHttpClient)
-        .addConverterFactory(MoshiConverterFactory.create(moshi))
-        .build()
-
-    @Provides
-    @Singleton
-    fun provideTelegramApiService(retrofit: Retrofit): TelegramApiService =
-        retrofit.create(TelegramApiService::class.java)
 
     @Provides
     @Singleton
@@ -752,6 +751,8 @@ object AppModule {
                 migration16To17,
                 migration17To18,
                 migration18To19,
+                migration19To20,
+                migration20To21,
             )
             .build()
 
@@ -908,59 +909,6 @@ object AppModule {
     @Singleton
     fun provideSollGateway(repository: SollRepository): SollGateway =
         repository
-
-    @Provides
-    @Singleton
-    fun provideTelegramRepository(
-        apiService: TelegramApiService,
-        settingsRepository: SettingsRepository,
-        messageLogDao: MessageLogDao,
-        commandLogDao: CommandLogDao
-    ): TelegramRepository = TelegramRepository(
-        apiService,
-        settingsRepository,
-        messageLogDao,
-        commandLogDao
-    )
-
-    @Provides
-    @Singleton
-    fun provideCommandExecutionGateway(telegramRepository: TelegramRepository): CommandExecutionGateway =
-        telegramRepository
-
-    @Provides
-    @Singleton
-    fun provideCapabilityPermissionChecker(
-        checker: AndroidCapabilityPermissionChecker,
-    ): CapabilityPermissionChecker = checker
-
-    @Provides
-    @Singleton
-    fun provideCommandProcessor(
-        @ApplicationContext context: Context,
-        telegramRepository: TelegramRepository,
-        commandExecutionGateway: CommandExecutionGateway,
-        capabilityRegistry: CapabilityRegistry,
-        commandSafetyGate: CommandSafetyGate,
-        assistantEventLogger: AssistantEventLogger,
-        notificationCenter: SollNotificationCenter,
-        toolJobRunner: ToolJobRunner,
-        toolJobStore: ToolJobStore,
-        sollGateway: SollGateway,
-        noteRepository: NoteRepository,
-    ): CommandProcessor = CommandProcessor(
-        context,
-        telegramRepository,
-        commandExecutionGateway,
-        capabilityRegistry,
-        commandSafetyGate,
-        assistantEventLogger,
-        notificationCenter,
-        toolJobRunner,
-        toolJobStore,
-        sollGateway,
-        noteRepository,
-    )
 
     @Provides
     @Singleton

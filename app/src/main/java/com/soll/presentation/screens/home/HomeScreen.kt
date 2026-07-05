@@ -72,23 +72,15 @@ fun HomeScreen(
                         tint = if (uiState.isRunning) StatusRunning else StatusStopped
                     )
                     Text(
-                        text = if (uiState.isRunning) "Бот запущен" else "Бот остановлен",
+                        text = if (uiState.isRunning) "Сервер настроен" else "Сервер не настроен",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
 
-                uiState.botUsername?.let { botUsername ->
-                    Text(
-                        text = botUsername,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
                 if (!uiState.hasToken) {
                     Text(
-                        text = "Токен бота не настроен. Добавьте его в настройках.",
+                        text = "Device/API token не настроен. Добавьте доступ к серверу в настройках.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -99,15 +91,12 @@ fun HomeScreen(
         // Control Button
         Button(
             onClick = {
-                if (uiState.isRunning) viewModel.stopBot() else viewModel.startBot()
+                viewModel.startBot()
             },
-            enabled = !uiState.isLoading && (uiState.hasToken || uiState.isRunning),
+            enabled = !uiState.isLoading,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (uiState.isRunning)
-                    MaterialTheme.colorScheme.error
-                else
-                    MaterialTheme.colorScheme.primary
+                containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
             if (uiState.isLoading) {
@@ -119,11 +108,11 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Icon(
-                imageVector = if (uiState.isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                imageVector = Icons.Default.Settings,
                 contentDescription = null
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(if (uiState.isRunning) "Остановить бота" else "Запустить бота")
+            Text("Настроить сервер и доступ")
         }
 
         ProactiveSuggestionsCard(
@@ -159,14 +148,8 @@ fun HomeScreen(
                     )
 
                     StatRow(
-                        icon = Icons.Default.Timer,
-                        label = "Время работы",
-                        value = uiState.uptime
-                    )
-
-                    StatRow(
                         icon = Icons.AutoMirrored.Filled.Message,
-                        label = "Обработано сообщений",
+                        label = "Открытых задач",
                         value = uiState.messagesProcessed.toString()
                     )
                 }
@@ -214,8 +197,8 @@ fun HomeScreen(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Soll работает как фоновый сервис и слушает команды, отправленные вашему Telegram-боту. " +
-                            "После запуска можно удаленно управлять устройством через команды /status, /info, /ping и другие.",
+                    text = "Android подключается к серверу Soll через device-token, получает сообщения и действия в чате приложения, " +
+                            "а системные уведомления открывают нужный диалог.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }

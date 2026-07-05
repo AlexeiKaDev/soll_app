@@ -35,15 +35,15 @@ val DarkOnBackground = Color(0xFFE0E0E0)
 val DarkOnSurface = Color(0xFFE0E0E0)
 
 // Status Colors
-val Success = Color(0xFF4CAF50)
+val Success = Color(0xFF247A52)
 val Warning = Color(0xFFFF9800)
-val Error = Color(0xFFE53935)
+val Error = Color(0xFFBA1A1A)
 val Info = Color(0xFF2196F3)
 
 // Running status
-val StatusRunning = Color(0xFF4CAF50)
-val StatusStopped = Color(0xFF9E9E9E)
-val StatusError = Color(0xFFE53935)
+val StatusRunning = Color(0xFF247A52)
+val StatusStopped = Color(0xFF6F7978)
+val StatusError = Color(0xFFBA1A1A)
 
 val PrimaryContainer = Color(0xFFDCE8C7)
 val OnPrimaryContainer = Color(0xFF10380F)
@@ -108,6 +108,33 @@ val md_theme_light_outline = Outline
 val md_theme_light_inverseOnSurface = InverseOnSurface
 val md_theme_light_inverseSurface = InverseSurface
 val md_theme_light_inversePrimary = InversePrimary
+
+val SollLightPrimary = Color(0xFF006A67)
+val SollLightOnPrimary = Color.White
+val SollLightPrimaryContainer = Color(0xFFDDF3F1)
+val SollLightOnPrimaryContainer = Color(0xFF00201F)
+val SollLightSecondary = Color(0xFF4A6361)
+val SollLightOnSecondary = Color.White
+val SollLightSecondaryContainer = Color(0xFFCCE8E6)
+val SollLightOnSecondaryContainer = Color(0xFF051F1E)
+val SollLightTertiary = Color(0xFF456179)
+val SollLightOnTertiary = Color.White
+val SollLightTertiaryContainer = Color(0xFFCCE5FF)
+val SollLightOnTertiaryContainer = Color(0xFF001E31)
+val SollLightError = Color(0xFFBA1A1A)
+val SollLightErrorContainer = Color(0xFFFFDAD6)
+val SollLightOnError = Color.White
+val SollLightOnErrorContainer = Color(0xFF410002)
+val SollLightBackground = Color(0xFFFAFDFC)
+val SollLightOnBackground = Color(0xFF191C1C)
+val SollLightSurface = Color.White
+val SollLightOnSurface = Color(0xFF191C1C)
+val SollLightSurfaceVariant = Color(0xFFDAE5E3)
+val SollLightOnSurfaceVariant = Color(0xFF3F4948)
+val SollLightOutline = Color(0xFF6F7978)
+val SollLightInverseOnSurface = Color(0xFFEFF1F0)
+val SollLightInverseSurface = Color(0xFF2D3130)
+val SollLightInversePrimary = Color(0xFF4DDAD5)
 
 val md_theme_dark_primary = DarkPrimary
 val md_theme_dark_onPrimary = DarkOnPrimary

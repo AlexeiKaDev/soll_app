@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.soll.data.repository.SettingsRepository
+import com.soll.data.repository.SollServerSyncScheduler
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -30,11 +31,15 @@ class BootReceiver : BroadcastReceiver() {
             )
             val settingsRepository = entryPoint.settingsRepository()
 
-            if (settingsRepository.autoStartEnabled && settingsRepository.hasValidToken()) {
-                Timber.d("Auto-starting bot service")
-                BotService.start(context)
-            } else {
-                Timber.d("Auto-start disabled or no valid token")
+            Timber.d("Telegram bot auto-start is archived; server chat sync is scheduled by WorkManager")
+            SollServerSyncScheduler.schedule(context.applicationContext, settingsRepository, initialDelayMs = 0L)
+            SollServerSyncAlarmScheduler.scheduleNext(context.applicationContext)
+
+            if (settingsRepository.activityTrackerEnabled) {
+                Timber.d("Auto-starting activity tracker service")
+                if (!ActivityTrackingService.start(context)) {
+                    Timber.w("Activity tracker auto-start was blocked by Android")
+                }
             }
         }
     }

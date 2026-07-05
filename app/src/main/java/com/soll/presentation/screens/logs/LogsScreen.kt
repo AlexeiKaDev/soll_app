@@ -390,7 +390,7 @@ private fun MemoriesList(
                             SyncStatusMessage(message)
                         }
                         Text(
-                            text = "В Soll отправляются только безопасные summary. Сырые логи, Telegram-тексты, payload JSON и медиа не включаются.",
+                            text = "В Soll отправляются только безопасные summary. Сырые логи, тексты чата, payload JSON и медиа не включаются.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1021,12 +1021,15 @@ private fun SollNotificationPriority.icon(): androidx.compose.ui.graphics.vector
 }
 
 private fun SollNotificationChannel.label(): String = when (this) {
+    SollNotificationChannel.CHAT -> "Чат"
     SollNotificationChannel.EVENTS -> "События"
     SollNotificationChannel.ALERTS -> "Важное"
     SollNotificationChannel.TOOL_JOBS -> "Задачи"
-    SollNotificationChannel.BOT_SERVICE -> "Бот"
-    SollNotificationChannel.TTS_PLAYBACK -> "Книги"
+    SollNotificationChannel.SERVER_SYNC -> "Sync"
+    SollNotificationChannel.BOT_SERVICE -> "Архив"
+    SollNotificationChannel.TTS_PLAYBACK -> "Читалка"
     SollNotificationChannel.MUSIC_PLAYBACK -> "Музыка"
+    SollNotificationChannel.ACTIVITY_TRACKING -> "Активность"
 }
 
 private fun AssistantMemoryCategory.label(): String = when (this) {
@@ -1041,12 +1044,12 @@ private fun AssistantMemoryCategory.label(): String = when (this) {
 private fun String.toolLabel(): String = when (this) {
     "books" -> "Книги"
     "music_scan" -> "Музыка"
-    "scanner_export" -> "Сканер"
-    "raw" -> "Raw"
-    "photo" -> "Фото"
-    "record" -> "Аудио"
-    "download" -> "Файл"
-    "bot_service" -> "Бот"
+    "scanner_export" -> "Архив"
+    "raw" -> "Архив"
+    "photo" -> "Архив"
+    "record" -> "Архив"
+    "download" -> "Архив"
+    "bot_service" -> "Архив"
     else -> this
 }
 

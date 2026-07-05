@@ -6,12 +6,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.NFC" />
 
     <uses-feature
         android:name="android.hardware.telephony"
@@ -32,6 +32,7 @@
     <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <!-- Storage -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -64,8 +65,8 @@
     <!-- Features -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application
         android:name=".SollApplication"
@@ -84,6 +85,8 @@
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.Soll">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -91,19 +94,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Bot Foreground Service -->
-        <service
-            android:name=".data.service.BotService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
-
-        <!-- TTS Foreground Service -->
+        <!-- Book reader TTS foreground service -->
         <service
             android:name=".data.service.TtsService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
-        <!-- Music Foreground Service -->
+        <!-- Local music foreground service -->
         <service
             android:name=".data.service.MusicPlaybackService"
             android:foregroundServiceType="mediaPlayback"
@@ -124,42 +121,25 @@
             </intent-filter>
         </receiver>
 
-        <!-- Home screen widgets -->
-        <receiver
-            android:name=".presentation.widgets.MusicWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_music_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_music_info" />
-        </receiver>
+        <!-- Battery-aware activity / timeline tracker -->
+        <service
+            android:name=".data.service.ActivityTrackingService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
 
-        <receiver
-            android:name=".presentation.widgets.ReaderWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_reader_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_reader_info" />
-        </receiver>
+        <!-- User-visible server sync while the app is backgrounded -->
+        <service
+            android:name=".data.service.SollServerSyncForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
 
-        <receiver
-            android:name=".presentation.widgets.NotesWidgetProvider"
-            android:exported="false"
-            android:label="@string/widget_notes_name">
+        <service
+            android:name=".data.service.SollFirebaseMessagingService"
+            android:exported="false">
             <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_notes_info" />
-        </receiver>
+        </service>
 
         <!-- Boot Receiver -->
         <receiver
@@ -169,6 +149,25 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".data.service.SollServerSyncAlarmReceiver"
+            android:exported="false"
+            android:enabled="true" />
+
+        <receiver
+            android:name=".data.service.PortableSsdAttachReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_CHECKING" />
+                <action android:name="android.intent.action.MEDIA_MOUNTED" />
+                <data android:scheme="file" />
             </intent-filter>
         </receiver>
 

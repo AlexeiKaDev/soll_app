@@ -7,13 +7,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.soll.BuildConfig
 import androidx.core.content.ContextCompat
 import com.soll.R
 import com.soll.data.local.dao.AppNotificationDao
 import com.soll.data.local.entity.AppNotificationEntity
+import com.soll.data.notification.AppForegroundState
 import com.soll.data.notification.SollNotificationChannels
+import com.soll.data.notification.SystemNotificationDisplayPolicy
 import com.soll.domain.notification.SollNotification
 import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.notification.SollNotificationPriority
@@ -31,6 +35,7 @@ import javax.inject.Singleton
 class SollNotificationRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val notificationDao: AppNotificationDao,
+    private val settingsRepository: SettingsRepository,
 ) : SollNotificationCenter {
     override fun observeRecent(limit: Int): Flow<List<SollNotification>> =
         notificationDao.getRecent(limit).map { items -> items.map { it.toDomain() } }
@@ -39,6 +44,19 @@ class SollNotificationRepository @Inject constructor(
 
     override suspend fun post(request: SollNotificationRequest): SollNotification {
         ensureChannels()
+        val dedupeKey = request.dedupeKey?.trim()?.takeIf { it.isNotBlank() }
+        if (dedupeKey != null) {
+            notificationDao.findByDedupeKey(dedupeKey)?.let { existing ->
+                logNotificationDiagnostic(
+                    "dedupe type=%s channel=%s key=%s systemId=%s",
+                    request.type,
+                    request.channel.channelId,
+                    dedupeKey,
+                    existing.systemNotificationId,
+                )
+                return existing.toDomain()
+            }
+        }
         val now = System.currentTimeMillis()
         val systemNotificationId = request.systemNotificationId ?: request.stableSystemNotificationId(now)
         val base = SollNotification(
@@ -51,14 +69,42 @@ class SollNotificationRepository @Inject constructor(
             priority = request.priority,
             createdAt = now,
             systemNotificationId = systemNotificationId,
+            dedupeKey = dedupeKey,
         )
-        notificationDao.insert(AppNotificationEntity.fromDomain(base))
+        val entity = AppNotificationEntity.fromDomain(base)
+        if (dedupeKey != null) {
+            val inserted = notificationDao.insertIfAbsent(entity)
+            if (inserted == -1L) {
+                notificationDao.findByDedupeKey(dedupeKey)?.let { existing ->
+                    return existing.toDomain()
+                }
+            }
+        } else {
+            notificationDao.insert(entity)
+        }
 
-        val shown = if (request.showSystem && canPostSystemNotifications()) {
+        val appInForeground = AppForegroundState.isUserFacing()
+        val canPostSystem = canPostSystemNotifications()
+        val shouldShowSystem = SystemNotificationDisplayPolicy.shouldShowSystemNotification(
+            request = request,
+            appInForeground = appInForeground,
+            preferences = settingsRepository.systemNotificationPreferences(),
+        )
+        val shown = if (shouldShowSystem && canPostSystem) {
             showSystemNotification(request, systemNotificationId)
         } else {
             false
         }
+        logNotificationDiagnostic(
+            "post type=%s channel=%s foreground=%s shouldSystem=%s canPost=%s shown=%s systemId=%d",
+            request.type,
+            request.channel.channelId,
+            appInForeground,
+            shouldShowSystem,
+            canPostSystem,
+            shown,
+            systemNotificationId,
+        )
         return if (shown) {
             val shownAt = System.currentTimeMillis()
             notificationDao.markShown(base.id, shownAt, systemNotificationId)
@@ -103,11 +149,11 @@ class SollNotificationRepository @Inject constructor(
     ): Boolean {
         if (!canPostSystemNotifications()) return false
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_ai_robot_notification)
             .setContentTitle(request.title)
             .setContentText(request.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(request.message))
-            .setContentIntent(contentIntent(systemNotificationId))
+            .setContentIntent(contentIntent(request, systemNotificationId))
             .setPriority(request.priority.toCompatPriority())
             .setCategory(request.priority.toCategory())
             .setAutoCancel(request.autoCancel)
@@ -123,15 +169,25 @@ class SollNotificationRepository @Inject constructor(
         }.getOrDefault(false)
     }
 
-    private fun contentIntent(requestCode: Int): PendingIntent {
+    private fun contentIntent(request: SollNotificationRequest, requestCode: Int): PendingIntent {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val launchSection = request.launchSection ?: if (request.channel == com.soll.domain.notification.SollNotificationChannel.CHAT) {
+            AppLaunchTargets.SECTION_CHAT
+        } else {
+            AppLaunchTargets.SECTION_LOGS
+        }
         return PendingIntent.getActivity(
             context,
             requestCode,
             Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                putExtra(AppLaunchTargets.EXTRA_OPEN_SECTION, AppLaunchTargets.SECTION_LOGS)
-                putExtra(AppLaunchTargets.EXTRA_OPEN_LOGS_TAB, AppLaunchTargets.LOGS_TAB_NOTIFICATIONS)
+                putExtra(AppLaunchTargets.EXTRA_OPEN_SECTION, launchSection)
+                if (launchSection == AppLaunchTargets.SECTION_LOGS) {
+                    putExtra(
+                        AppLaunchTargets.EXTRA_OPEN_LOGS_TAB,
+                        request.launchLogsTab ?: AppLaunchTargets.LOGS_TAB_NOTIFICATIONS,
+                    )
+                }
             },
             flags,
         )
@@ -152,6 +208,12 @@ class SollNotificationRepository @Inject constructor(
         SollNotificationPriority.HIGH -> NotificationCompat.CATEGORY_ALARM
         SollNotificationPriority.DEFAULT -> NotificationCompat.CATEGORY_EVENT
         SollNotificationPriority.LOW -> NotificationCompat.CATEGORY_STATUS
+    }
+
+    private fun logNotificationDiagnostic(message: String, vararg args: Any?) {
+        if (BuildConfig.DEBUG) {
+            Log.i("SollNotificationRepository", message.format(*args))
+        }
     }
 
 }

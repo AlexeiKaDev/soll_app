@@ -16,14 +16,14 @@ class DeviceQaReportFormatterTest {
                 manual = false,
             ),
             DeviceQaCheck(
-                id = DeviceQaCheckId.MUSIC_SCREEN_OFF,
-                category = DeviceQaCategory.MUSIC,
-                title = "Музыка с выключенным экраном",
-                detail = "Проверить 10+ минут.",
+                id = DeviceQaCheckId.GADGET_MANUAL_WRITE_FLOW,
+                category = DeviceQaCategory.GADGETS,
+                title = "Manual write flow",
+                detail = "Проверить ручное подтверждение.",
                 status = DeviceQaStatus.NEEDS_MANUAL_TEST,
                 manual = true,
-                expectedResult = "Музыка не останавливается после выключения экрана.",
-                roadmapRef = "Music Player / Device QA",
+                expectedResult = "Write-команда не исполняется фоном без явного UI-подтверждения.",
+                roadmapRef = "ESP Connector / Device QA",
                 lastManualResult = DeviceQaManualResult(
                     status = DeviceQaStatus.MANUAL_OK,
                     checkedAt = 1_700_000_000_000L,
@@ -31,10 +31,10 @@ class DeviceQaReportFormatterTest {
                 ),
             ),
             DeviceQaCheck(
-                id = DeviceQaCheckId.NFC_OWNED_TAGS,
-                category = DeviceQaCategory.NFC,
-                title = "Свои NFC-метки",
-                detail = "Проверить чтение/запись.",
+                id = DeviceQaCheckId.GADGET_MESH_OUTBOX_WORKER,
+                category = DeviceQaCategory.GADGETS,
+                title = "Mesh/outbox worker",
+                detail = "Проверить claim/ACK.",
                 status = DeviceQaStatus.NEEDS_MANUAL_TEST,
                 manual = true,
             ),
@@ -53,13 +53,12 @@ class DeviceQaReportFormatterTest {
         assertTrue(report.contains("Итог: Нужна проверка: 1"))
         assertTrue(report.contains("Статусы: ОК/проверено 2, внимание/проверить 1, проблемы 0"))
         assertTrue(report.contains("## Уведомления"))
-        assertTrue(report.contains("## Музыка"))
-        assertTrue(report.contains("## NFC"))
+        assertTrue(report.contains("## Гаджеты"))
         assertTrue(report.contains("Разрешение уведомлений: ОК"))
-        assertTrue(report.contains("Музыка с выключенным экраном: Проверено"))
-        assertTrue(report.contains("Ожидание: Музыка не останавливается после выключения экрана."))
-        assertTrue(report.contains("План: Music Player / Device QA"))
+        assertTrue(report.contains("Manual write flow: Проверено"))
+        assertTrue(report.contains("Ожидание: Write-команда не исполняется фоном без явного UI-подтверждения."))
+        assertTrue(report.contains("План: ESP Connector / Device QA"))
         assertTrue(report.contains("Устройство проверки: Doogee S200, Android 15 (API 35)"))
-        assertTrue(report.contains("Свои NFC-метки: Нужна проверка"))
+        assertTrue(report.contains("Mesh/outbox worker: Нужна проверка"))
     }
 }

@@ -47,18 +47,18 @@ class DeviceQaModelsTest {
     @Test
     fun `check keeps expected result and roadmap context`() {
         val check = check(DeviceQaStatus.NEEDS_MANUAL_TEST).copy(
-            expectedResult = "Музыка играет 10+ минут с выключенным экраном.",
-            roadmapRef = "Music Player / Device QA",
+            expectedResult = "Manual write-команда требует явного подтверждения.",
+            roadmapRef = "ESP Connector / Device QA",
         )
 
-        assertEquals("Музыка играет 10+ минут с выключенным экраном.", check.expectedResult)
-        assertEquals("Music Player / Device QA", check.roadmapRef)
+        assertEquals("Manual write-команда требует явного подтверждения.", check.expectedResult)
+        assertEquals("ESP Connector / Device QA", check.roadmapRef)
     }
 
     private fun check(status: DeviceQaStatus): DeviceQaCheck =
         DeviceQaCheck(
-            id = DeviceQaCheckId.MUSIC_SCREEN_OFF,
-            category = DeviceQaCategory.MUSIC,
+            id = DeviceQaCheckId.GADGET_MANUAL_WRITE_FLOW,
+            category = DeviceQaCategory.GADGETS,
             title = "Проверка",
             detail = "Детали",
             status = DeviceQaStatus.OK,

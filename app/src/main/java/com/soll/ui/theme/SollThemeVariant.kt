@@ -5,6 +5,11 @@ enum class SollThemeVariant(
     val title: String,
     val description: String,
 ) {
+    SOLL(
+        storageKey = "soll",
+        title = "Soll",
+        description = "Светлая teal-тема Soll для мобильного приложения",
+    ),
     CLASSIC(
         storageKey = "classic",
         title = "Классика",
@@ -22,7 +27,7 @@ enum class SollThemeVariant(
     );
 
     companion object {
-        val default: SollThemeVariant = CLASSIC
+        val default: SollThemeVariant = SOLL
 
         fun fromStorage(value: String?): SollThemeVariant =
             entries.firstOrNull { it.storageKey == value } ?: default

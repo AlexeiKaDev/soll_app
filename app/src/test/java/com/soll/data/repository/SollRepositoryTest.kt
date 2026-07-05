@@ -1,5 +1,6 @@
 package com.soll.data.repository
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -17,6 +18,32 @@ class SollRepositoryTest {
     @Test
     fun `normalize base url keeps blank as blank`() {
         assertEquals("", normalizeSollBaseUrl("   "))
+    }
+
+    @Test
+    fun `normalize api prefix keeps blank blank`() {
+        assertEquals("", normalizeSollApiPathPrefix("   "))
+        assertEquals("api/v1/soll", normalizeSollApiPathPrefix("/api/v1/soll/"))
+    }
+
+    @Test
+    fun `api prefix rewrites legacy api v1 paths to soll namespace`() {
+        val rewritten = rewriteSollApiUrl(
+            "https://sales.monolith-ost.com/api/v1/chat/turn?x=1".toHttpUrl(),
+            "api/v1/soll",
+        )
+
+        assertEquals("https://sales.monolith-ost.com/api/v1/soll/chat/turn?x=1", rewritten.toString())
+    }
+
+    @Test
+    fun `api prefix does not duplicate already rewritten soll path`() {
+        val rewritten = rewriteSollApiUrl(
+            "https://sales.monolith-ost.com/api/v1/soll/chat/turn".toHttpUrl(),
+            "api/v1/soll",
+        )
+
+        assertEquals("https://sales.monolith-ost.com/api/v1/soll/chat/turn", rewritten.toString())
     }
 
     @Test

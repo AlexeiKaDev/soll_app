@@ -9,7 +9,10 @@ object SollNotificationChannels {
     const val BOT_SERVICE_NOTIFICATION_ID = 1001
     const val TTS_NOTIFICATION_ID = 1002
     const val MUSIC_NOTIFICATION_ID = 1003
-    const val TELEGRAM_COMMAND_NOTIFICATION_ID = 2001
+    const val ACTIVITY_TRACKING_NOTIFICATION_ID = 1004
+    const val SERVER_SYNC_NOTIFICATION_ID = 1005
+    const val CHAT_NOTIFICATION_ID = 2001
+    const val PORTABLE_SSD_NOTIFICATION_ID = 2002
 
     fun ensureAll(context: Context) {
         val notificationManager =
@@ -18,19 +21,28 @@ object SollNotificationChannels {
         notificationManager.createNotificationChannels(
             listOf(
                 NotificationChannel(
-                    SollNotificationChannel.BOT_SERVICE.channelId,
-                    "Фоновый бот Soll",
+                    SollNotificationChannel.CHAT.channelId,
+                    "Чат Soll",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "Сообщения, действия и ответы сервера Soll"
+                    enableVibration(true)
+                    setShowBadge(true)
+                },
+                NotificationChannel(
+                    SollNotificationChannel.ACTIVITY_TRACKING.channelId,
+                    "Активность Soll",
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "Статус фонового Telegram-бота"
+                    description = "Экономный фоновый шагомер и геоистория"
                     setShowBadge(false)
                 },
                 NotificationChannel(
                     SollNotificationChannel.TTS_PLAYBACK.channelId,
-                    "Чтение книг",
+                    "Читалка Soll",
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "Управление озвучиванием книг"
+                    description = "Озвучивание книг и управление TTS"
                     setShowBadge(false)
                 },
                 NotificationChannel(
@@ -38,7 +50,15 @@ object SollNotificationChannels {
                     "Музыка Soll",
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "Фоновое воспроизведение музыки"
+                    description = "Фоновое воспроизведение локальной музыки"
+                    setShowBadge(false)
+                },
+                NotificationChannel(
+                    SollNotificationChannel.SERVER_SYNC.channelId,
+                    "Фоновый sync Soll",
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply {
+                    description = "Поддерживает проверку чата и задач, когда приложение свернуто"
                     setShowBadge(false)
                 },
                 NotificationChannel(

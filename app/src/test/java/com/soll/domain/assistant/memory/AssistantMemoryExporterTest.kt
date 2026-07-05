@@ -10,9 +10,9 @@ class AssistantMemoryExporterTest {
             listOf(
                 AssistantMemory(
                     category = AssistantMemoryCategory.SUGGESTION,
-                    key = "suggestion:bot_stopped",
-                    title = "Запустить фонового бота",
-                    summary = "Пользователь принял предложение запустить сервис.",
+                    key = "suggestion:soll_server_url_missing",
+                    title = "Настроить сервер Soll",
+                    summary = "Пользователь принял предложение открыть настройки сервера.",
                     source = "home.proactive",
                     confidence = 0.94f,
                     createdAt = 10L,
@@ -23,7 +23,7 @@ class AssistantMemoryExporterTest {
 
         assertTrue(markdown.contains("# Память Soll"))
         assertTrue(markdown.contains("## Принятые предложения"))
-        assertTrue(markdown.contains("Запустить фонового бота"))
+        assertTrue(markdown.contains("Настроить сервер Soll"))
         assertTrue(markdown.contains("Источник: home.proactive"))
     }
 

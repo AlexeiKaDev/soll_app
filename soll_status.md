@@ -1,9 +1,141 @@
 # soll_app Status
 
-Last updated: 2026-05-20 12:55 Europe/Chisinau
+Last updated: 2026-07-05 13:27 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-05 Android roadmap-line to task continuation without phone:
+  - Roadmap line cards now have `В задачу`; Android calls `POST /api/v1/roadmap/stages/{stage_id}/lines/{line}/task`, shows per-line progress through `roadmapLineTaskKey`, and refreshes the task board quietly after success.
+  - Android Retrofit/domain/repository contracts now include `createTaskFromRoadmapLine(...)`.
+  - Python Soll server and Monolith Soll relay both expose matching `roadmap line -> task` endpoints; Python also now exposes `source item -> task` under `/api/v1` and `/api/v1/soll`.
+  - Focused validation passed: Android `compileDebugKotlin`; Android `ProjectStabilizationGuardTest`; Python `tests/test_task_bridge_routes.py tests/test_roadmap.py` -> 27 passed; Monolith PHP lint for Soll controller/config; scoped `git diff --check`.
+  - Phone smoke remains skipped: no ADB-visible phone is available.
+
+- 2026-07-05 Soll source-item to task continuation without phone:
+  - Monolith Soll API now exposes `POST /api/v1/soll/sources/{source_id}/items/{item_id}/task`; it creates or merges a `soll_tasks` inbox task from a concrete source material with `source_id`, `source_item_id`, `source_url`, and `link_preview` metadata.
+  - Android `Источники` material cards now have a `В задачу` action with per-item progress; after success the task board refreshes quietly.
+  - Android Retrofit/domain/repository contracts now include `createTaskFromSourceItem(...)`.
+  - `api/modules/soll/README.md` documents the task/insight/roadmap/source routes including the new source-item task route.
+  - Focused validation passed: Monolith PHP lint for Soll `V1Controller.php` and `api/config/main.php`; Android `compileDebugKotlin`; targeted `testDebugUnitTest`; scoped `git diff --check`.
+
+- 2026-07-05 Android task workspace continuation, second pass without phone:
+  - Task board keeps the default server section limit at 80 for fast first load, but the screen now exposes an explicit `Показать больше` row when server `counts` say sections are truncated; each tap doubles the requested `limit_per_section` up to 500.
+  - Insights now have status filters for `Новые`, `Готово`, `Скрытые`, and `Все` instead of hard-loading only `pending`.
+  - Source creation now supports `web`, `rss`, and `telegram_chat`; Android still allowlists the server-supported values before sending `source_type`.
+  - Guard coverage was extended in `ProjectStabilizationGuardTest` for explicit task-board load-more, insight status filters, and source type creation.
+  - Focused no-phone validation passed: Android `compileDebugKotlin`, scoped `git diff --check`, and targeted `testDebugUnitTest` for task filters/counts/project guards.
+
+- 2026-07-05 Android task workspace continuation without phone:
+  - `Задачи / Инсайты / Roadmap / Источники` stay as compact top workspace tabs; graph remains absent from Android.
+  - Roadmap now shows server readiness rows, supports inline edit/save for existing lines through `PATCH /roadmap/stages/{stage_id}/lines/{line}`, and still supports add/delete.
+  - Sources now support inline edit/save for name, description, tags, and enabled state through `PUT /sources/{source_id}`; target URL changes stay create-new-source because the server does not update `target`.
+  - Source item cards now render `link_preview.image_url` with the same bounded safe public-image loader pattern used by chat previews.
+  - Insight-to-task creation now explicitly sends `mark_done=true` so the server marks the learning item done after creating/merging the task.
+  - Focused no-phone validation passed: Android `compileDebugKotlin`; scoped `git diff --check` on touched files.
+
+- 2026-07-04 Android notification duplicate/noise clamp continued without phone:
+  - Android notifications now carry a persisted nullable `dedupeKey`; Room moved to schema v21 with a non-destructive `app_notifications.dedupe_key` migration and unique index.
+  - FCM and `/android/sync-status` polling now share the same chat key shape, `chat:{session_id}:{message_id}`, so the same server chat message cannot create a second notification record or alert path after push wakes an immediate poll.
+  - Server chat push/poll notifications now use `onlyAlertOnce=true`; task-board poll changes are journal-only (`showSystem=false`) unless a more urgent path posts separately.
+  - Poll sync now skips messages marked `metadata.silent`, `metadata.extra.silent`, `source_monitor`, `task_digest`, and routine `tool_job/job_completed`, so backend-silent notices do not become Android banners later.
+  - FCM payloads with `silent/android_silent/suppress_notification` or low-priority non-chat channels do not request system notification display.
+  - Focused no-phone validation passed: Android `:app:testDebugUnitTest` for `SollServerSyncWorkerTest`, `SollFirebaseMessagingServiceTest`, `SystemNotificationDisplayPolicyTest`, and `ProjectStabilizationGuardTest` -> BUILD SUCCESSFUL.
+
+- 2026-07-04 Android chat/task hardening continued without phone:
+  - Chat link-preview image fetches now use direct `HttpURLConnection` requests with redirects disabled; 3xx image responses are rejected, and IPv4-mapped IPv6 private/loopback/link-local hosts are blocked before fetch.
+  - FCM closed-app receipt now records the local notification, advances the chat watermark, and schedules immediate server sync before `onMessageReceived()` returns instead of launching fire-and-forget work that can be cancelled when the service is destroyed.
+  - Task `Источники` mode now validates the selected source against the refreshed source list, prunes stale source-item cache entries, reuses cached source items, and ignores late errors from sources that are no longer selected.
+  - Room v20 task-cache migration is now guarded by schema/migration assertions for the execution metadata columns and defaults.
+  - Focused no-phone validation passed: Android `testDebugUnitTest` for chat filters, FCM, server sync worker, task filters, task cache entity, and project guards; `git diff --check` on touched files; Android `assembleDebug`.
+
+- 2026-07-04 Android chat/push fallback pass continued without phone:
+  - Server delivery now returns FCM push status to callers; Telegram notification routing keeps Android chat primary but restores archived Telegram Bot API fallback when Android delivery fails or FCM is not deliverable (`fcm_not_configured`, `no_tokens`, `all_failed`, auth failure, disabled FCM, or push exception).
+  - Android FCM receipt now schedules an immediate `SollServerSyncWorker` run after the local notification is recorded, so push wakes fresh chat/task sync instead of relying only on the next polling interval.
+  - Focused validation passed: server Android/Telegram/protocol/health pytest subset -> 61 passed; Android FCM/sync/notification/chat/navigation/project-guard unit tests -> BUILD SUCCESSFUL; Android `assembleDebug` -> BUILD SUCCESSFUL.
+  - Real closed-app push smoke remains blocked: local server health has `android_push.configured=false`, `service_account_exists=false`, `token_count=0`; ADB still lists no attached devices.
+  - Artifact: `D:\Projects\Soll\Soll\outputs\soll-android-chat-push-continuation-20260704.md`.
+
+- 2026-07-04 Android push/task continuation without phone:
+  - Android FCM data-only chat payloads no longer disappear when `notification.body`/`data.body` is missing; they get a safe fallback body, honor explicit `soll_open_section`, and keep chat pushes routed to Chat.
+  - FCM chat `message_id` now advances `sollChatLastSeenMessageId`, so a later background `/android/sync-status` poll does not duplicate the same chat notification.
+  - Android protocol validation now requires `POST /api/v1/android/push-token`, and the Soll server `/android/sync-status` bootstrap now includes `chat_stream_worker`.
+  - Server FCM chat data now carries explicit `channel`, `notification_channel`, `type`, `category`, `route`, `priority`, and `soll_open_section` fields for Android classification.
+  - Task cache Room schema moved to v20 and now preserves execution metadata: approval/tool-job ids, execution state, outcome artifacts, value metric, branch, and pair id.
+  - TaskBoard filtering now uses a rebuilt-on-board-change task/idea index instead of rescanning all sections on every tab/search/priority change; source item selection uses a per-source cache and no longer refetches the whole source registry on simple selection.
+  - Chat link-preview image loading now dedupes in-flight loads for the same image URL in long chats while keeping the existing positive/negative cache.
+  - Validation passed: Android targeted `testDebugUnitTest` for FCM, server sync worker, protocol, chat/task filters, Room entity, and project guards; Android `assembleDebug`; server `test_android_sync_routes.py`, `test_protocol_contract.py`, `test_android_delivery_callbacks.py`, `test_health_route.py`.
+
+- 2026-07-04 Android task/chat hardening follow-up without phone:
+  - Roadmap tab no longer materializes a separate roadmap row list and no longer composes all lines inside stage cards; `LazyColumn` registers direct stage, line, and editor intervals with content types.
+  - Chat silent refresh now has an in-flight guard, so slow background refreshes cannot stack every 10 seconds and race older responses into the message list.
+  - FCM chat watermark now advances only after `notificationCenter.post()` succeeds, preserving poll fallback if local notification recording fails.
+  - Link-preview image URLs now reject localhost, loopback, link-local, and RFC1918 private hosts before any fetch.
+  - Validation passed: Android targeted `testDebugUnitTest` for chat filters, FCM, server sync worker, task filters and project guards; broader targeted suite including Room/protocol/voice; Android `assembleDebug`; server contract/action pytest subset and server Android/protocol/push/health suite.
+
+- 2026-07-04 Android closed-app push continuation without phone:
+  - Android FCM token registration path was re-audited without ADB: startup calls `AndroidPushTokenRegistrar.registerCurrentToken(..., reason = "startup")`, `FirebaseMessagingService.onNewToken()` calls `registerToken(..., reason = "fcm_refresh")`, and unchanged tokens are retried after the existing 24-hour TTL.
+  - `ProjectStabilizationGuardTest` now locks startup token fetch, refresh-token registration, gateway registration, and the 24-hour retry contract so closed-app push does not silently regress back to one-time token registration.
+  - Settings -> notification filter now shows a compact `Push FCM` status: last successful token registration time or last registration error, plus a `Повторить` button that requests `AndroidPushTokenRegistrar.registerCurrentToken(..., reason = "settings_manual_retry")`.
+  - Manual `Push FCM -> Повторить` now bypasses the 24-hour token throttle with `force=true`, shows a pending state, and refreshes the displayed success time/error after the async server registration completes.
+  - Production Monolith status recheck passed: `android_push.enabled=true`, `configured=true`, `service_account_exists=true`, `token_count=1`.
+  - Focused validation passed: Android `compileDebugKotlin`, `ProjectStabilizationGuardTest`, `SollFirebaseMessagingServiceTest`, `SystemNotificationDisplayPolicyTest`; desktop/server `test_health_route.py` and Android push-token route checks; Android `assembleDebug`.
+
+- 2026-07-03 Soll Android chat/task workspace continuation:
+  - Android chat header now shows the existing Soll robot notification icon before `Чат Soll`; guard coverage lives in `ProjectStabilizationGuardTest`.
+  - Focused validation passed: `.\gradlew.bat testDebugUnitTest --tests "com.soll.presentation.screens.chat.ChatMessageFiltersTest" --tests "com.soll.presentation.screens.chat.ChatVoiceInputTest" --tests "com.soll.domain.soll.SollTaskBoardCountsTest" --tests "com.soll.data.service.SollFirebaseMessagingServiceTest" --tests "com.soll.project.ProjectStabilizationGuardTest"`.
+  - Android task workspace keeps `Задачи / Инсайты / Roadmap / Источники`; graph is not exposed as an Android tab.
+  - Retrofit no longer calls trailing-slash `roadmap/` and `sources/`, because Yii2 Monolith matches the non-trailing `/api/v1/soll/roadmap` and `/api/v1/soll/sources` routes.
+  - Monolith `V1Controller.php` now implements task graph, learning insights, roadmap line add/update/delete, monitored sources add/update/delete/check, source items, link-preview extraction, and chat task-intake metadata.
+  - Monolith task board now honors `limit_per_section`/`include_counts`, and chat session reads honor `before_id`/`after_id` for paged history refresh.
+  - User chat messages with actionable text now create or merge a mirrored `soll_tasks` inbox task; link messages get `metadata.link_preview` for Android chat cards.
+  - Production `https://sales.monolith-ost.com/api/v1/soll/{roadmap,sources,insights/learning}` now returns HTTP 200 after the server controller update.
+  - Standalone Android `Voice` now uses manual-stop STT like chat: tap microphone to start, pause naturally, tap stop to emit the final recognized text instead of cancelling the session immediately.
+  - Android link-preview images now load only from safe `http/https` image URLs and require supported `image/*` response types before reading bytes.
+  - Android chat action rendering now supports both legacy single `metadata.action` and multiple `metadata.actions` / `task_intake.actions` buttons.
+  - Android assistant chat messages keep structured header/body/link/actions, and badges now use type-specific colors for status, AES, task, and source labels.
+  - Android chat auto-scroll now behaves like a professional messenger: initial load/session change/user send can jump to bottom, but background remote appends only auto-scroll when the user is already near the bottom; otherwise the floating down button remains the explicit control.
+  - Android notification noise is filtered by importance and channel: default Android shade delivery is now only `Чат` and `Важное`; task-board polling and FCM event/sync pushes are low-priority non-chat channels and stay in the journal unless explicitly enabled.
+  - Android and Monolith FCM payloads now share explicit data fields (`channel`, `notification_channel`, `route`, `type`, `priority`) so push classification does not treat every event as chat.
+  - Android unit coverage now locks the exact Monolith chat FCM payload as visible chat notification, while explicit sync payloads remain low-priority `SERVER_SYNC` noise.
+  - Monolith chat task-intake now returns actionable task buttons, and `chat/actions/{action_id}/execute` applies `task.*` actions to the mirrored task before recording the chat action.
+  - Android task board now requests at most 80 tasks per section, parses server `counts`/`limit_per_section`, keeps real open/done/total counts separate from the displayed limited list, and shows a `Показано: N/M` chip when any section is truncated.
+  - Android task cards now clamp long descriptions to 4 lines in the collapsed list and keep full text behind `Детали`; long `source_ref` labels are single-line ellipsized, so imported tasks cannot inflate every visible row.
+  - Android task filtering now avoids building large combined strings for every visible task; search uses direct field checks with case-insensitive matching, and task dedupe no longer concatenates all sections before `distinctBy`.
+  - Android task priority badges and priority filters now normalize `P1/P2/P3/P4` into `A/B/C/D`; `A` stays Soll green, while `B/C/D` use app palette colors.
+  - Android task workspace mutation controls are guarded: `Roadmap` keeps add/delete line controls, and `Источники` keeps add/check/delete source controls without exposing graph on Android.
+  - Monolith chat task-intake merge behavior was live-smoked: similar user task messages return the same `task_id` and append to the existing mirrored task instead of creating a duplicate.
+  - Android chat history remains paged and explicit: the top loader keeps `Загрузить историю`, but automatic first-visible-item history loading is disabled to avoid runaway large-chat pagination.
+  - Focused no-phone validation for the chat scroll guard passed: Android `compileDebugKotlin`, `ChatMessageFiltersTest`, `ChatVoiceInputTest`, `ProjectStabilizationGuardTest`, and `assembleDebug`.
+  - Focused no-phone validation for task-card list performance passed: Android `compileDebugKotlin`, `ProjectStabilizationGuardTest`, `SollTaskBoardCountsTest`, and `assembleDebug`.
+  - Focused no-phone validation for task filtering passed: Android `compileDebugKotlin`, `TaskBoardFilterTest`, `SollTaskBoardCountsTest`, `ProjectStabilizationGuardTest`, and `assembleDebug`.
+- Soll Android chat/server transition is in progress:
+  - Bottom navigation now has only `Чат`, `Задачи`, `Утилиты`, `Настройки`; `Главная` and old tool pages are not active entry points.
+  - Tools expose the active non-Telegram surface: `Музыка`, `Читалка`, `Дыхание`, `Гаджеты`, `SSD Wiki`, `Активность`, `Логи`.
+  - `MainActivity` is locked to portrait orientation through `android:screenOrientation="portrait"`.
+  - Default Soll server settings now use `https://sales.monolith-ost.com/` with API path prefix `api/v1/soll`; Retrofit requests still declare `api/v1/...`, and the Android client rewrites them to `/api/v1/soll/...` at the OkHttp layer.
+  - Android chat uses Soll server `chat/turn` and `chat/actions/{action_id}/execute` endpoints with AES-GCM payload envelope when a device pairing secret is available.
+  - Chat screen error state now explains public Yii2 `db_soll`/migration failures and has direct retry/settings actions.
+  - Mesh/outbox now ACKs chat payloads and posts local `Чат Soll` notifications that open the chat screen.
+  - Active Telegram bot entry points are archived: `BotService` is not registered in the manifest, boot autostart is disabled, and Settings no longer expose Telegram token/autostart controls. Music/book/TTS channels remain active because those utilities are still part of Soll.
+  - Home proactive suggestions now point to Soll server access/chat sync instead of Telegram token/bot startup.
+  - Archive note: `docs/archive/android-telegram-bot.md`.
+- Portable SSD Android reader v1 is implemented:
+  - `Утилиты -> SSD Wiki` opens a read-only SAF browser for a portable SSD connected over USB OTG.
+  - Android can select SSD root, `Projects/Soll`, or vault `Soll`, then read `Soll/wiki`, `Soll/daily`, `Soll/.soll/tasks.json`, and `wiki/task-board.md`.
+  - Search covers path/title/loaded markdown text; entries open inside the app without writing back to SSD.
+  - Opening a wiki/daily/task entry copies its text into the phone cache (`portable-ssd-cache`) and can reopen the cached copy if the SSD is later detached.
+  - The reader intentionally avoids `server/.env`, `.app-settings.json`, `.codex`, `.claude`, `userbot.session`, and any write/delete API.
+  - Guard tests lock `Routes.PORTABLE_SSD`, `SSD Wiki`, `OpenDocumentTree`, persistable read URI, and no write permission.
+  - Launcher icon background now uses Soll green `#247A52` instead of black, with a guard test.
+  - Android now listens for USB/media attach and posts a high-importance system notification when the saved SSD root is recognized as a Soll portable SSD; tapping it opens `SSD Wiki`.
+- Telegram task 2026-05-23: Android activity tracker MVP is implemented:
+  - `ActivityTrackingService` runs as a foreground location service and records a battery-aware step/location timeline.
+  - Step data uses `TYPE_STEP_COUNTER`; GPS uses balanced fused location only on first sample, movement threshold, or periodic heartbeat.
+  - Low battery mode raises thresholds and sampling interval to reduce drain.
+  - A separate Tools tile `Активность` opens the tracker card; the existing Field Map screen also shows summary, start/stop, last point, steps, distance and Android permission hints.
+  - History is stored as a bounded local SharedPreferences ring buffer for MVP, avoiding a Room schema migration until the model is validated on a real phone.
+  - Real-device smoke on `S200PLUS20000101035` confirmed foreground service startup, notification, first GPS sample, UI summary update, and stop flow without `ACCESS_BACKGROUND_LOCATION`.
+  - Guard tests now lock the activity route, foreground notification channel, no-background-location permission boundary, and daily summary math.
 - Device QA roadmap follow-up is implemented:
   - Settings -> Device QA now has explicit gadget checks for mesh/outbox worker, read-only server command worker, and manual write flow.
   - Existing Soll contract QA now expects protocol/discovery schema, token_refresh, and worker contracts.
@@ -17,15 +149,220 @@ Last updated: 2026-05-20 12:55 Europe/Chisinau
 - Shared AI model root policy applied: all AI model files should live under `D:\AI\Models`.
 - `tools/tts/asr_audit_piper_dataset.py` now resolves faster-whisper models from `D:\AI\Models\audio\whisper` and passes that folder as Faster-Whisper `download_root`.
 - No models were downloaded.
+- Ignored local Android TTS ONNX caches were moved out of APK/source asset paths to `D:\AI\Models\audio\tts\soll_app`.
+- Project guard now fails if local AI model cache files reappear under Android asset paths.
 
 ## Open Tasks / Plan
 
+- Keep watching real Android task workspace behavior with large boards; the production tab smoke passes, but longer scrolling/editing sessions should still be checked during normal use.
+- Android closed-app push smoke is blocked while the phone is unavailable; local FCM classification and Monolith payload lint pass.
+- Portable SSD real-device smoke: blocked until the phone is visible to ADB again; then connect the real SSD through USB OTG, choose the SSD root in `SSD Wiki`, open `Task Board`, search a known wiki note, verify daily/tasks counts, open a wiki article, and confirm the cached phone copy is shown after detach.
+- Activity tracker extended walk smoke: run 10-15 minutes with the phone moving, verify steps increase from `TYPE_STEP_COUNTER`, additional samples appear, and battery drain is acceptable.
 - Hardware smoke remains open: test the manual write path with a real ESP/Aquik target after the device is visible and binding QA passes.
 - Keep any future ASR/Whisper downloads under `D:\AI\Models\audio\whisper`.
 - If another local model cache is found in this project, move it to `D:\AI\Models` and update this status file.
 
 ## Verification Notes
 
+- 2026-07-03 Portable SSD Android OTG smoke attempt blocked:
+  - Desktop SSD mirror state is ready enough for Android content smoke: last stable mirror sync finished at `2026-07-03T14:30:00Z`, target `F:\Projects\Soll`, `files_done=70912`, SQLite snapshots checked, portable readiness `ready=true`.
+  - Android smoke report: `D:\Projects\Soll\Soll\outputs\portable-ssd\android-otg-smoke-20260703.md`.
+  - `adb devices -l` returned no online Android devices.
+  - Windows USB diagnostics in the report saw only local Samsung SSD devices, not Android/MTP/ADB phone devices, so the final OTG notification/article-open smoke remains blocked on phone visibility.
+- 2026-07-03 Soll narrow smoke passed:
+  - Report: `D:\Projects\Soll\Soll\outputs\smoke\soll-narrow-smoke-20260703.md`.
+  - Desktop/server: `.\.venv\Scripts\python.exe -m pytest tests/test_local_agent.py tests/test_soll_relay.py tests/test_android_delivery_callbacks.py tests/test_android_sync_routes.py tests/test_protocol_contract.py tests/test_portable_ssd.py tests/test_portable_ssd_smoke.py tests/test_portable_ssd_home_sync.py tests/test_portable_ssd_android_otg_smoke.py -q` -> 138 passed.
+  - Portable restore smoke now explicitly requires the root launcher `start-portable-soll.ps1`, so launch readiness fails if the visible SSD start script is missing.
+  - Android focused: `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.data.repository.SollRepositoryTest --tests com.soll.data.repository.SyncReliabilityTest --tests com.soll.data.notification.SystemNotificationDisplayPolicyTest --tests com.soll.domain.portablessd.PortableSsdTreeReaderTest --tests com.soll.domain.portablessd.PortableSsdAttachNotificationPolicyTest --tests "com.soll.project.ProjectStabilizationGuardTest.portable SSD wiki stays read only SAF tool" --tests com.soll.presentation.screens.chat.ChatMessageFiltersTest` -> BUILD SUCCESSFUL.
+  - Hardware-only checks remain blocked: no online ADB phone and no currently connected portable SSD on Windows.
+- 2026-07-03 Android APK export for portable SSD passed:
+  - Report: `D:\Projects\Soll\Soll\outputs\portable-ssd\android-apk-export-20260703.md`.
+  - `.\gradlew.bat :app:assembleDebug` -> BUILD SUCCESSFUL.
+  - `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk` exported to `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk`.
+  - APK size: `196510201`; SHA-256: `594d7af901a91379fd6d1b685d6eafdda9abd9f454536d981bfb5e1cb1db3a32`.
+  - `.\.venv\Scripts\python.exe -m pytest tests/test_export_android_companion_apk.py -q` -> 1 passed.
+  - Portable mirror guard: `.\.venv\Scripts\python.exe -m pytest tests/test_portable_ssd.py::test_sync_policy_includes_portable_layers_and_excludes_large_generated_media tests/test_export_android_companion_apk.py tests/test_portable_ssd_smoke.py -q` -> 5 passed.
+  - Full portable SSD/export suite: `.\.venv\Scripts\python.exe -m pytest tests/test_portable_ssd.py tests/test_portable_ssd_smoke.py tests/test_export_android_companion_apk.py -q` -> 49 passed.
+  - Desktop portable SSD sync now exports the Android companion APK before planning the mirror when the source APK exists, so a manual export step is no longer required before SSD sync.
+  - Dashboard Portable SSD widget now shows the Android APK pre-sync export result; combined portable/dashboard check `.\.venv\Scripts\python.exe -m pytest tests/test_portable_ssd.py tests/test_portable_ssd_smoke.py tests/test_export_android_companion_apk.py tests/test_dashboard_health_cards.py -q` -> 71 passed.
+  - Backup-only generated media now has explicit desktop mode `backup_media` and Dashboard button `Media backup`; daily mirror remains fast and skips `Soll/outputs/clip` + `Soll/outputs/video_postprocess`.
+  - `backup_media` writes separate `sync-manifest-backup-media.json`, so daily `sync-manifest.json` stays intact for fast mirror resumes.
+  - `backup_media` is append/update-only for generated media: it copies new or changed media but does not delete old media copies from the SSD archive.
+  - Desktop `SOLL_PORTABLE_BACKUP_MEDIA_ROOTS` can add external generated-media roots (`source=>target`); `backup_media` stores them under `external-backups/<target>/...`.
+  - Dashboard Portable SSD details now show external media roots as `Media roots: available/total`, and the fifth badge shows `Media N/M` when roots are configured. Combined portable/dashboard check -> 78 passed.
+  - Phone install was intentionally skipped because the phone is unavailable; the APK path is covered by the mirror policy and will reach SSD after the next desktop sync.
+- 2026-07-03 Android workspace/server continuation passed locally:
+  - Yii2 local: `D:\OSPanel\modules\PHP-7.4\php.exe -l api\modules\soll\controllers\V1Controller.php` -> no syntax errors.
+  - Local Monolith smoke: `http://monolith.loc/api/v1/soll/roadmap`, `/sources`, `/insights/learning`, `/tasks/graph` returned HTTP 200.
+  - Local Monolith smoke: source check for `https://example.com` created a source item with `link_preview`; `/insights/learning` showed the pending source insight.
+  - Local Monolith smoke: posting a user chat message with `https://example.com` returned metadata with `link_preview` and `task_intake.task_id`.
+  - Local Monolith pagination smoke: `/tasks/board?limit_per_section=2&include_counts=1` returned a bounded board with counts; `/chat/sessions/soll-main?limit=2&before_id=4` and `after_id=2` returned bounded pages.
+  - Production recheck: `/api/v1/soll/roadmap`, `/api/v1/soll/sources`, `/api/v1/soll/insights/learning`, and `/api/v1/soll/tasks/graph` returned HTTP 200.
+  - Android UI smoke on `S200PLUS20000101035`: task screen shows top tabs `Задачи / Инсайты / Roadmap / Источники`, no graph tab; `Инсайты` opens `Нет pending-инсайтов`, `Roadmap` opens current stages, and `Источники` opens the add-source form without 404.
+  - Android: `.\gradlew.bat testDebugUnitTest --tests com.soll.data.repository.SollRepositoryTest --tests com.soll.presentation.screens.chat.ChatMessageFiltersTest --tests com.soll.data.notification.SystemNotificationDisplayPolicyTest`
+  - Android: `.\gradlew.bat assembleDebug`
+  - Installed `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+- 2026-07-03 Android voice manual-stop follow-up passed:
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.project.ProjectStabilizationGuardTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed after stopping locked Gradle daemons.
+  - Installed updated `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+- 2026-07-03 Android chat link-preview guard passed:
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.presentation.screens.chat.ChatMessageFiltersTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - Installed updated `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+- 2026-07-03 Android chat multiple-actions follow-up passed:
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.presentation.screens.chat.ChatMessageFiltersTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - Installed updated `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+- 2026-07-03 Monolith chat task-intake action smoke passed:
+  - PHP: `D:\OSPanel\modules\PHP-7.4\php.exe -l api\modules\soll\controllers\V1Controller.php` -> no syntax errors.
+  - Local Monolith smoke: posting a user chat task returned `task_intake.actions` count `3`; executing the first `task.today` action through `/chat/actions/{action_id}/execute` returned `status=done` and task `status=today`.
+- 2026-07-03 Android task-board counts follow-up passed:
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.domain.soll.SollTaskBoardCountsTest" --tests "com.soll.data.repository.SollRepositoryTest" --tests "com.soll.project.ProjectStabilizationGuardTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - Installed updated `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+  - Real-device UI dump on `Задачи` shows top tabs `Задачи / Инсайты / Roadmap / Источники`, summary `Открытых: 62`, `Блок: 36`, and task tabs `Все 67 / Блок 36 / Вход 13 / Зависли 8`.
+  - Production smoke: `/api/v1/soll/tasks/board?limit_per_section=1&include_counts=1` returned `limit_per_section=1`, one blocked item, and counts `blocked=36`, `inbox=13`, `stale=8`, `deferred=5`.
+  - Android follow-up: section request limit reduced from 160 to 80; `.\gradlew.bat testDebugUnitTest --tests "com.soll.domain.soll.SollTaskBoardCountsTest" --tests "com.soll.data.repository.SollRepositoryTest" --tests "com.soll.project.ProjectStabilizationGuardTest"` and `.\gradlew.bat assembleDebug` passed; APK install returned `Success`.
+- 2026-07-03 Android workspace mutation guard passed:
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.project.ProjectStabilizationGuardTest"` passed.
+  - Local Monolith smoke: temporary roadmap line `codex-smoke-*` added to `current` and removed; remaining count after delete was `0`.
+  - Local Monolith smoke: temporary monitored source `src-*` created and then removed; source list check after delete returned `present_after_delete=0`.
+- 2026-07-03 Monolith chat task-intake merge smoke passed:
+  - Local Monolith smoke: two similar user messages from `codex_merge_smoke` returned the same `task_id=task:chat:488b99e4e9a47fca7325`.
+  - Cleanup action `/chat/actions/{action_id}/execute` with `task.reject` returned task `status=rejected` for the temporary smoke task.
+- 2026-07-03 Android chat large-history follow-up passed:
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.project.ProjectStabilizationGuardTest" --tests "com.soll.presentation.screens.chat.ChatMessageFiltersTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - Installed updated `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+- 2026-07-03 Android task-board done-count follow-up passed locally:
+  - Android now uses server `counts.done_recent` for `Готово`, `Все`, and `Показано: displayed/total` instead of mixing server open totals with locally loaded `done_recent`.
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.domain.soll.SollTaskBoardCountsTest" --tests "com.soll.project.ProjectStabilizationGuardTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - `git diff --check -- app\src\main\java\com\soll\domain\soll\SollGateway.kt app\src\main\java\com\soll\presentation\screens\tasks\TaskBoardViewModel.kt app\src\main\java\com\soll\presentation\screens\tasks\TaskBoardScreen.kt app\src\test\java\com\soll\domain\soll\SollTaskBoardCountsTest.kt` passed with CRLF warnings only.
+  - Production smoke: `/tasks/board?limit_per_section=1&include_counts=1` returned HTTP 200 with `limit_per_section=1`, `counts_open=76`, `done_recent=12`; `/insights/learning`, `/roadmap`, and `/sources` returned HTTP 200.
+  - Local Monolith smoke: the same task workspace endpoints returned HTTP 200; local board counts were `counts_open=2`, `done_recent=0`.
+  - Current APK install was not repeated because `adb kill-server`, `adb start-server`, and `adb devices -l` returned no attached devices.
+- 2026-07-03 Android task priority color follow-up passed locally:
+  - Task priority chips now render normalized labels: `P1 -> A`, `P2 -> B`, `P3 -> C`, `P4 -> D`.
+  - Task priority filtering now uses the same normalized labels, so filter `A` also matches server priority `P1`.
+  - `A` uses Soll green `Color(0xFF247A52)`; `B/C/D` use `MaterialTheme.colorScheme.primary/tertiary/outline`.
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.project.ProjectStabilizationGuardTest" --tests "com.soll.domain.soll.SollTaskBoardCountsTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - `git diff --check -- app\src\main\java\com\soll\presentation\screens\tasks\TaskBoardScreen.kt app\src\main\java\com\soll\presentation\screens\tasks\TaskBoardViewModel.kt app\src\test\java\com\soll\project\ProjectStabilizationGuardTest.kt soll_status.md` passed with CRLF warnings only.
+  - Current APK install was not repeated because `adb devices -l` returned no attached devices.
+- 2026-07-03 Android chat badge styling follow-up passed locally:
+  - Assistant message badges now use explicit types: status, security/AES, task, and source.
+  - Status badges use primary/error/secondary containers by status value; AES uses tertiary, task uses primary, and source uses surface variant.
+  - User messages keep their existing bubble color and compact body/time format.
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.project.ProjectStabilizationGuardTest" --tests "com.soll.presentation.screens.chat.ChatMessageFiltersTest" --tests "com.soll.domain.soll.SollTaskBoardCountsTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - `git diff --check` passed for tracked touched files with CRLF warnings only; `rg -n "[ \t]+$"` over touched tracked files plus untracked `ChatScreen.kt` found no trailing whitespace.
+  - Current APK install was not repeated because `adb devices -l` returned no attached devices.
+- 2026-07-03 Android notification noise follow-up passed locally:
+  - Default system notification channels now include only `CHAT` and `ALERTS`; `TOOL_JOBS`, `EVENTS`, and `SERVER_SYNC` stay in the in-app journal unless enabled in Settings.
+  - Server task-board polling changes are posted as `SERVER_SYNC` with `LOW` priority, so ordinary board churn no longer reaches the Android shade under default settings.
+  - Settings text now states that Android receives only chat/important notifications by default, and technical sync/events are marked as off by default.
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.data.notification.SystemNotificationDisplayPolicyTest" --tests "com.soll.data.repository.SollServerSyncWorkerTest" --tests "com.soll.project.ProjectStabilizationGuardTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - `git diff --check` passed for touched tracked files with CRLF warnings only; trailing-whitespace scan over touched files found no matches.
+  - Current APK install was not repeated because `adb devices -l` returned no attached devices.
+- 2026-07-03 Android FCM channel classification follow-up passed locally:
+  - FCM payloads now classify `channel`/`route`/`type`/`source` into `CHAT`, `ALERTS`, `TOOL_JOBS`, `EVENTS`, or `SERVER_SYNC` instead of treating every push as chat.
+  - Monolith chat FCM data now explicitly includes `channel=chat`, `notification_channel=chat`, `route=chat`, `type=server_chat_push`, and `category=chat`.
+  - `task_board`/`sync` pushes default to `SERVER_SYNC` + `LOW`; `events` default to `LOW`; alerts default to `HIGH`; chat remains `CHAT` + `DEFAULT`.
+  - Non-chat FCM pushes open the relevant section: task/tool pushes open `Задачи`, technical/event/alert pushes open `Логи`, chat opens `Чат`.
+  - Android: `.\gradlew.bat testDebugUnitTest --tests "com.soll.data.service.SollFirebaseMessagingServiceTest" --tests "com.soll.data.notification.SystemNotificationDisplayPolicyTest" --tests "com.soll.project.ProjectStabilizationGuardTest"` passed.
+  - Android: `.\gradlew.bat assembleDebug` passed.
+  - Monolith: `D:\OSPanel\modules\PHP-7.4\php.exe -l api\modules\soll\controllers\V1Controller.php` passed.
+  - `git diff --check` passed for touched files with CRLF warnings only; trailing-whitespace scan found no matches.
+  - Phone install/device smoke intentionally skipped because the phone is currently unavailable.
+- 2026-07-01 Chat UI/server relay follow-up passed:
+  - Desktop: `python -m py_compile server/app/config.py server/app/services/soll_relay.py server/app/services/android_delivery.py server/app/services/telegram_bot.py`
+  - Desktop: `python -m pytest tests/test_soll_relay.py tests/test_telegram_bot_menu.py::test_send_notification_splits_long_message_and_keeps_markup_on_last_chunk tests/test_android_sync_routes.py::AndroidSyncRouteTests::test_device_chat_action_can_update_task_with_write_scope -q` -> 6 passed.
+  - Yii2 local: PHP lint passed for Soll API controller/config/migration; `yii migrate-soll/new` reported no new migrations; `http://monolith.loc/api/v1/soll/status` returned `schema_ready:true`.
+  - Public Yii2: `https://sales.monolith-ost.com/api/v1/soll/android/sync-status` still returns HTTP 503 with `DATABASE_UNAVAILABLE`, so the public host needs `db_soll` and Soll migrations applied.
+  - Android: `.\gradlew.bat :app:assembleDebug`
+  - Android: `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.project.ProjectStabilizationGuardTest --tests com.soll.presentation.navigation.BottomNavigationGuardTest --tests com.soll.presentation.navigation.AppLaunchTargetsTest --tests com.soll.data.repository.SollRepositoryTest --tests com.soll.domain.deviceqa.DeviceQaModelsTest --tests com.soll.domain.deviceqa.DeviceQaReportFormatterTest`
+  - Installed `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+  - Cold launch returned `Status: ok`; `dumpsys activity activities` shows `requestedOrientation=SCREEN_ORIENTATION_PORTRAIT`.
+  - UI dump/screenshot show the chat screen with the clarified `API база Soll не подключена` error, stable input bar, and bottom nav `Чат / Задачи / Утилиты / Настройки`.
+- 2026-07-01 Soll chat/server Android transition check passed:
+  - Server: `python -m compileall -q server/app/api/routes/android.py server/app/api/routes/chat.py server/app/services/android_delivery.py server/app/services/secure_payload.py server/app/services/chat_storage.py server/app/services/device_auth.py server/app/services/protocol_contract.py`
+  - Server: `python -m pytest tests/test_android_sync_routes.py tests/test_protocol_contract.py tests/test_system_search_chat.py -q` -> 24 passed.
+  - Android: `.\gradlew.bat :app:compileDebugKotlin`
+  - Android: `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.project.ProjectStabilizationGuardTest --tests com.soll.presentation.navigation.BottomNavigationGuardTest --tests com.soll.data.repository.SyncReliabilityTest --tests com.soll.domain.soll.SollProtocolSchemaTest --tests com.soll.domain.assistant.proactive.ProactiveSuggestionsTest --tests com.soll.domain.assistant.AssistantEventSummaryExporterTest --tests com.soll.domain.assistant.memory.AssistantMemoryExporterTest`
+  - Android: `.\gradlew.bat :app:assembleDebug`
+  - ADB saw `S200PLUS20000101035 device product:M24PST_EEA model:S200_Plus device:M24PST`.
+  - Installed `app\build\outputs\apk\debug\app-debug.apk` with `adb install -r`: `Success`.
+  - Cold launch `adb shell am start -W -n com.soll.debug/com.soll.presentation.MainActivity` returned `Status: ok`.
+  - `dumpsys activity activities` shows `requestedOrientation=SCREEN_ORIENTATION_PORTRAIT`.
+  - UI dump now shows bottom navigation `Чат / Задачи / Утилиты / Настройки`; old Telegram token prompt is gone from the active app surface.
+- 2026-07-01 Default server settings follow-up passed:
+  - Android: `.\gradlew.bat :app:compileDebugKotlin`
+  - Android: `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.data.repository.SollRepositoryTest --tests com.soll.project.ProjectStabilizationGuardTest --tests com.soll.presentation.navigation.BottomNavigationGuardTest --tests com.soll.data.repository.SyncReliabilityTest --tests com.soll.domain.soll.SollProtocolSchemaTest --tests com.soll.domain.assistant.proactive.ProactiveSuggestionsTest --tests com.soll.domain.assistant.AssistantEventSummaryExporterTest --tests com.soll.domain.assistant.memory.AssistantMemoryExporterTest`
+  - Android: `.\gradlew.bat :app:assembleDebug`
+  - Installed updated debug APK on `S200PLUS20000101035` with `adb install -r`: `Success`.
+  - Cold launch returned `Status: ok`; server settings now seed the recommended endpoint by default and still report missing Device/API token until pairing is configured.
+- 2026-07-01 Active Android surface cleanup passed:
+  - Android: `.\gradlew.bat :app:compileDebugKotlin`
+  - Android: `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.project.ProjectStabilizationGuardTest --tests com.soll.presentation.navigation.BottomNavigationGuardTest --tests com.soll.presentation.navigation.AppLaunchTargetsTest --tests com.soll.domain.assistant.CapabilityRegistryTest --tests com.soll.domain.assistant.CapabilityRegistryDeviceTest --tests com.soll.domain.deviceqa.DeviceQaModelsTest --tests com.soll.domain.deviceqa.DeviceQaReportFormatterTest --tests com.soll.data.repository.SollRepositoryTest --tests com.soll.data.repository.SyncReliabilityTest --tests com.soll.domain.soll.SollProtocolSchemaTest`
+  - Android: `.\gradlew.bat :app:assembleDebug`
+  - Installed `app\build\outputs\apk\debug\app-debug.apk` on `S200PLUS20000101035` with `adb install -r`: `Success`.
+  - Cold launch returned `Status: ok`; `dumpsys activity activities` shows `requestedOrientation=SCREEN_ORIENTATION_PORTRAIT`.
+  - UI dump shows chat first screen with `Чат Soll`, `Сообщение Soll`, and bottom nav `Чат / Задачи / Утилиты / Настройки`.
+  - UI dump shows Tools list only `Гаджеты`, `SSD Wiki`, `Активность`, `Логи`.
+  - Full Settings scroll shows editable server values `https://sales.monolith-ost.com/` and `api/v1/soll`, plus `Подставить рекомендуемый адрес`; active scan did not show old `бот`/`Telegram`/`NFC`/`Музыка` surface labels.
+  - `adb logcat -d -t 300` showed no `FATAL EXCEPTION`.
+  - `git diff --check` exited 0; only CRLF normalization warnings were printed.
+- 2026-06-30 Portable SSD Android reader build/device check passed:
+  - `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.domain.portablessd.PortableSsdTreeReaderTest --tests com.soll.project.ProjectStabilizationGuardTest`
+  - `.\gradlew.bat :app:assembleDebug`
+  - ADB saw `S200PLUS20000101035 device product:M24PST_EEA model:S200_Plus device:M24PST`.
+  - Installed fresh `app\build\outputs\apk\debug\app-debug.apk` with `adb install -r`: `Success`.
+  - Explicit launch `adb shell am start -W -n com.soll.debug/com.soll.presentation.MainActivity` returned `Status: ok`; crash buffer stayed empty.
+  - Full Android OTG content smoke remains blocked until the real initialized SSD is connected.
+- 2026-06-30 Portable SSD Android attach notification check passed:
+  - `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.domain.portablessd.PortableSsdTreeReaderTest --tests com.soll.domain.portablessd.PortableSsdAttachNotificationPolicyTest --tests com.soll.project.ProjectStabilizationGuardTest`
+  - `.\gradlew.bat :app:assembleDebug`
+  - Installed fresh debug APK on `S200PLUS20000101035`; `am start -W` returned `Status: ok`; crash buffer stayed empty.
+  - `dumpsys package com.soll.debug` shows `PortableSsdAttachReceiver` registered for `android.hardware.usb.action.USB_DEVICE_ATTACHED` and `android.intent.action.MEDIA_MOUNTED`.
+  - Synthetic shell broadcast for `USB_DEVICE_ATTACHED` is blocked by Android as protected; real verification needs physical USB attach from the system.
+- 2026-06-30 Portable SSD Android reader focused check passed:
+  - `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.domain.portablessd.PortableSsdTreeReaderTest --tests "com.soll.project.ProjectStabilizationGuardTest.portable SSD wiki stays read only SAF tool"`
+  - Covered portable SSD root detection, project/vault root selection, wiki/daily/tasks reading, task-board fallback, and read-only SAF guard.
+- 2026-06-18 phone install check:
+  - ADB saw `S200PLUS20000101035 device product:M24PST_EEA model:S200_Plus device:M24PST`.
+  - Installed `app\build\outputs\apk\debug\app-debug.apk` with `adb install -r`: `Success`.
+  - Confirmed package `com.soll.debug`, versionName `1.0.0`, versionCode `1`, and `com.soll.presentation.MainActivity` resumed.
+  - Activity permissions were granted (`POST_NOTIFICATIONS`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `ACTIVITY_RECOGNITION`).
+  - UI dump showed the light Soll home screen and bottom navigation.
+  - Extended UI activity smoke did not complete because the phone moved to lockscreen/NotificationShade and then disappeared from `adb devices`.
+- 2026-06-18 device availability check:
+  - `adb start-server` completed, but `adb devices -l` returned no attached devices.
+  - Extended activity walk smoke and ESP/Aquik hardware smoke remain blocked until a phone/target is visible to ADB.
+- 2026-06-18 model-cache scan/cleanup passed:
+  - Confirmed `app/src/main/assets/natasha_vits2/model.onnx` and `app/assets/utrobin_tts/model.onnx` were ignored by `*.onnx`, not git-tracked app sources.
+  - Moved them to `D:\AI\Models\audio\tts\soll_app\natasha_vits2\model.onnx` and `D:\AI\Models\audio\tts\soll_app\utrobin_tts\model.onnx`.
+  - Kept tracked Android assets/libs unchanged (`app/src/main/assets/kokoro/kokoro_en_cmudict_mini.txt`, `app/libs/sherpa-onnx.aar`).
+  - Added `ProjectStabilizationGuardTest.local ai model caches stay out of android asset paths`.
+  - `.\gradlew.bat testDebugUnitTest --tests com.soll.project.ProjectStabilizationGuardTest`
+  - APK ZIP scan found no `*.onnx`, `*.onnx_data`, `natasha_vits2`, or `utrobin_tts` entries in `app\build\outputs\apk\debug\app-debug.apk`.
+  - `.\gradlew.bat testDebugUnitTest`
+  - `.\gradlew.bat assembleDebug`
+- 2026-06-18 Activity tracker real-device smoke passed on `S200PLUS20000101035`:
+  - Granted `ACTIVITY_RECOGNITION`, `ACCESS_FINE_LOCATION`, and `POST_NOTIFICATIONS`.
+  - Tools -> `Активность` started `ActivityTrackingService` as foreground service `id=1004`, channel `soll_activity_tracking`.
+  - Notification text reached `Сегодня шагов: 0 • первый замер`.
+  - UI showed `Точек сегодня: 1`, last sample `47.032263, 28.825773`, then stop returned to `Фоновый демон остановлен`.
+- 2026-06-18 Activity tracker guard tests passed:
+  - `.\gradlew.bat testDebugUnitTest --tests "com.soll.domain.activity.ActivityTrackingPolicyTest" --tests "com.soll.project.ProjectStabilizationGuardTest.field map is offline first tool"`
+  - `.\gradlew.bat testDebugUnitTest`
+  - `.\gradlew.bat assembleDebug`
+  - Added daily summary coverage for today-only steps/samples, total history count, last sample, and calculated distance.
+  - Added project guard coverage for `Routes.ACTIVITY_HISTORY`, `ActivityTrackingService`, notification channel, boot restart path, and no `ACCESS_BACKGROUND_LOCATION`.
+- 2026-05-23 Activity tracker focused Gradle check passed:
+  - `.\gradlew.bat testDebugUnitTest --tests com.soll.domain.activity.ActivityTrackingPolicyTest`
 - 2026-05-20 Device QA targeted Gradle check passed:
   - `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.project.ProjectStabilizationGuardTest --tests com.soll.domain.deviceqa.DeviceQaModelsTest --tests com.soll.domain.deviceqa.DeviceQaReportFormatterTest`
 - 2026-05-20 targeted Gradle check passed:

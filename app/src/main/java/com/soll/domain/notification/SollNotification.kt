@@ -4,12 +4,15 @@ import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
 enum class SollNotificationChannel(val channelId: String) {
+    CHAT("soll_chat"),
     EVENTS("soll_events"),
     ALERTS("soll_alerts"),
     TOOL_JOBS("soll_tool_jobs"),
+    SERVER_SYNC("soll_server_sync"),
     BOT_SERVICE("soll_bot_service"),
     TTS_PLAYBACK("soll_tts_service"),
     MUSIC_PLAYBACK("soll_music_playback"),
+    ACTIVITY_TRACKING("soll_activity_tracking"),
 }
 
 enum class SollNotificationPriority {
@@ -39,6 +42,7 @@ data class SollNotification(
     val readAt: Long? = null,
     val dismissedAt: Long? = null,
     val systemNotificationId: Int? = null,
+    val dedupeKey: String? = null,
 )
 
 data class SollNotificationRequest(
@@ -53,6 +57,9 @@ data class SollNotificationRequest(
     val autoCancel: Boolean = true,
     val onlyAlertOnce: Boolean = false,
     val systemNotificationId: Int? = null,
+    val launchSection: String? = null,
+    val launchLogsTab: String? = null,
+    val dedupeKey: String? = null,
 )
 
 interface SollNotificationCenter {

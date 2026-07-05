@@ -4,6 +4,7 @@ import com.soll.data.local.dao.TaskCacheDao
 import com.soll.data.local.entity.TaskCacheEntity
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
+import com.soll.domain.soll.SollTaskBoardCounts
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,12 +50,12 @@ class TaskCacheRepository @Inject constructor(
 }
 
 private fun SollTaskBoard.allTasks(): List<SollTask> =
-    today + inbox + stale + doneRecent
+    today + blocked + inbox + stale + deferred + doneRecent
 
 private fun SollTaskBoard.withPendingStatuses(pendingStatuses: Map<String, String>): SollTaskBoard =
     allTasks()
         .withPendingStatuses(pendingStatuses)
-        .toBoard()
+        .toBoard(counts = counts, limitPerSection = limitPerSection)
 
 private fun List<SollTask>.withPendingStatuses(pendingStatuses: Map<String, String>): List<SollTask> =
     if (pendingStatuses.isEmpty()) {
@@ -65,12 +66,19 @@ private fun List<SollTask>.withPendingStatuses(pendingStatuses: Map<String, Stri
         }
     }
 
-private fun List<SollTask>.toBoard(): SollTaskBoard =
+private fun List<SollTask>.toBoard(
+    counts: SollTaskBoardCounts? = null,
+    limitPerSection: Int? = null,
+): SollTaskBoard =
     SollTaskBoard(
         today = filter { it.status in TODAY_STATUSES },
+        blocked = filter { it.status == "blocked" },
         inbox = filter { it.status == "inbox" },
         stale = filter { it.status == "stale" },
+        deferred = filter { it.status == "deferred" },
         doneRecent = filter { it.status == "done" },
+        counts = counts,
+        limitPerSection = limitPerSection,
     )
 
-private val TODAY_STATUSES = setOf("today", "in_progress", "blocked")
+private val TODAY_STATUSES = setOf("today", "in_progress")

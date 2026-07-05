@@ -29,7 +29,6 @@ class ProjectStabilizationGuardTest {
         val files = listOf(
             "app/src/main/java/com/soll/domain/command/handlers/PingHandler.kt",
             "app/src/main/java/com/soll/domain/command/CommandProcessor.kt",
-            "app/src/main/java/com/soll/data/repository/TelegramRepository.kt",
             "app/src/main/java/com/soll/data/repository/BookRepository.kt",
             "app/src/main/java/com/soll/domain/epub/EpubParser.kt",
             "app/src/main/java/com/soll/domain/tts/TextToSpeechManager.kt",
@@ -66,10 +65,33 @@ class ProjectStabilizationGuardTest {
     @Test
     fun `database does not use destructive fallback`() {
         val appModule = projectFile("app/src/main/java/com/soll/di/AppModule.kt").readText()
+        val schema20 = projectFile("app/schemas/com.soll.data.local.SollDatabase/20.json").readText()
+        val schema21 = projectFile("app/schemas/com.soll.data.local.SollDatabase/21.json").readText()
 
         assertFalse(appModule.contains("fallbackToDestructiveMigration()"))
         assertTrue(appModule.contains("migration1To2"))
         assertTrue(appModule.contains("migration3To4"))
+        assertTrue(appModule.contains("migration19To20"))
+        assertTrue(appModule.contains("migration20To21"))
+        assertTrue(schema20.contains("\"version\": 20"))
+        assertTrue(schema21.contains("\"version\": 21"))
+        listOf(
+            "approval_id",
+            "tool_job_id",
+            "execution_state",
+            "outcome_artifacts_json",
+            "value_metric",
+            "branch",
+            "pair_id",
+        ).forEach { column ->
+            assertTrue(appModule.contains("ADD COLUMN `$column`"))
+            assertTrue(schema20.contains("\"columnName\": \"$column\""))
+        }
+        assertTrue(appModule.contains("DEFAULT '[]'"))
+        assertTrue(appModule.contains("DEFAULT 'innovation'"))
+        assertTrue(appModule.contains("ADD COLUMN `dedupe_key`"))
+        assertTrue(schema21.contains("\"columnName\": \"dedupe_key\""))
+        assertTrue(schema21.contains("\"name\": \"index_app_notifications_dedupe_key\""))
     }
 
     @Test
@@ -78,11 +100,266 @@ class ProjectStabilizationGuardTest {
 
         assertTrue(manifest.contains("android:allowBackup=\"false\""))
         assertTrue(manifest.contains("android:usesCleartextTraffic=\"\${usesCleartextTraffic}\""))
+        assertTrue(manifest.contains("android:launchMode=\"singleTop\""))
+        assertTrue(manifest.contains("android:screenOrientation=\"portrait\""))
         assertFalse(manifest.contains("ACCESS_BACKGROUND_LOCATION"))
+        assertFalse(manifest.contains(".data.service.BotService"))
     }
 
     @Test
-    fun `requested tool widgets stay registered`() {
+    fun `soll chat replaces active android telegram bot entry points`() {
+        val destinations = projectFile("app/src/main/java/com/soll/presentation/navigation/AppDestinations.kt").readText()
+        val navigation = projectFile("app/src/main/java/com/soll/presentation/navigation/AppNavigation.kt").readText()
+        val launchTargets = projectFile("app/src/main/java/com/soll/presentation/navigation/AppLaunchTargets.kt").readText()
+        val settings = projectFile("app/src/main/java/com/soll/presentation/screens/settings/SettingsScreen.kt").readText()
+        val application = projectFile("app/src/main/java/com/soll/SollApplication.kt").readText()
+        val channels = projectFile("app/src/main/java/com/soll/data/notification/SollNotificationChannels.kt").readText()
+        val proactive = projectFile("app/src/main/java/com/soll/domain/assistant/proactive/ProactiveSuggestions.kt").readText()
+        val settingsRepository = projectFile("app/src/main/java/com/soll/data/repository/SettingsRepository.kt").readText()
+        val sollRepository = projectFile("app/src/main/java/com/soll/data/repository/SollRepository.kt").readText()
+
+        assertTrue(projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").exists())
+        assertTrue(projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").exists())
+        assertTrue(destinations.contains("val bottomBar = listOf(Chat, Tasks, Tools, Settings)"))
+        assertTrue(navigation.contains("startDestination = AppDestinations.Chat.route"))
+        assertTrue(navigation.contains("ChatScreen("))
+        assertTrue(launchTargets.contains("SECTION_CHAT"))
+        assertTrue(application.contains("NOTIFICATION_CHANNEL_ID = \"soll_chat\""))
+        assertTrue(channels.contains("CHAT_NOTIFICATION_ID"))
+        assertTrue(channels.contains("Чат Soll"))
+        assertTrue(settingsRepository.contains("RECOMMENDED_SOLL_SERVER_URL = \"https://sales.monolith-ost.com/\""))
+        assertTrue(settingsRepository.contains("RECOMMENDED_SOLL_API_PATH_PREFIX = \"api/v1/soll\""))
+        assertTrue(settingsRepository.contains("seedRecommendedSollEndpoint"))
+        assertFalse(settingsRepository.contains("ifBlank { RECOMMENDED_SOLL_SERVER_URL }"))
+        assertFalse(settingsRepository.contains("ifBlank { RECOMMENDED_SOLL_API_PATH_PREFIX }"))
+        assertTrue(sollRepository.contains("rewriteSollApiUrl"))
+        assertTrue(settings.contains("API путь"))
+        assertTrue(settings.contains("Подставить рекомендуемый адрес"))
+        assertFalse(settings.contains("Токен Telegram-бота"))
+        assertFalse(settings.contains("@BotFather"))
+        assertFalse(settings.contains("Автоматически запускать сервис бота"))
+        assertFalse(settings.contains("команды бота"))
+        assertFalse(settings.contains("Старый бот"))
+        assertFalse(channels.contains("Архивный бот Soll"))
+        assertTrue(channels.contains("Музыка Soll"))
+        assertTrue(channels.contains("Читалка Soll"))
+        assertFalse(channels.contains("Чтение книг"))
+        assertFalse(proactive.contains("Настроить " + "Telegram"))
+        assertFalse(proactive.contains("Запустить фонового " + "бота"))
+        assertFalse(proactive.contains("Бот " + "не сможет принимать " + "команды"))
+    }
+
+    @Test
+    fun `voice input waits for manual stop in chat and voice screens`() {
+        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText()
+        val voiceViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/voice/VoiceViewModel.kt").readText()
+        val sttAdapter = projectFile("app/src/main/java/com/soll/data/voice/AndroidSpeechRecognizerAdapter.kt").readText()
+
+        assertTrue(chatViewModel.contains("holdUntilStop = true"))
+        assertTrue(voiceViewModel.contains("holdUntilStop = true"))
+        assertFalse(voiceViewModel.contains(".cancelled()"))
+        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L"))
+        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L"))
+        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L"))
+    }
+
+    @Test
+    fun `chat history pagination stays explicit to avoid runaway large chat loads`() {
+        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText()
+        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText()
+
+        assertTrue(chatScreen.contains("HistoryLoader("))
+        assertTrue(chatScreen.contains("onLoad = viewModel::loadOlderMessages"))
+        assertTrue(chatScreen.contains("Загрузить историю"))
+        assertTrue(chatViewModel.contains("beforeId = oldestId"))
+        assertTrue(chatViewModel.contains("private const val CHAT_PAGE_SIZE = 80"))
+        assertTrue(chatViewModel.contains("val scrollToBottomReason: ChatScrollReason = ChatScrollReason.NONE"))
+        assertTrue(chatScreen.contains("visibleChatMessages(uiState.messages, uiState.searchQuery)"))
+        assertTrue(chatScreen.contains("if (searchQuery.isBlank()) return messages"))
+        assertTrue(chatViewModel.contains("metadata.matchesChatMetadataQuery(needle)"))
+        assertFalse(chatViewModel.substringAfter("internal fun SollChatMessage.matchesChatQuery").substringBefore("internal fun SollChatMessage.isDisplayableChatMessage").contains("joinToString"))
+        assertTrue(chatScreen.contains("shouldAutoScrollChatList("))
+        assertTrue(chatScreen.contains("viewModel.onScrollRequestHandled(token)"))
+        assertTrue(chatViewModel.contains("private var refreshInFlight = false"))
+        assertTrue(chatViewModel.contains("if (refreshInFlight) return@launch"))
+        assertTrue(chatViewModel.contains("finally {\n                refreshInFlight = false"))
+        assertFalse(chatScreen.contains("LaunchedEffect(\n        listState.firstVisibleItemIndex"))
+    }
+
+    @Test
+    fun `assistant chat messages keep structured header body badges and status colors`() {
+        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText()
+
+        assertTrue(chatScreen.contains("AssistantMessageContent("))
+        assertTrue(chatScreen.contains("messageTitle(message)"))
+        assertTrue(chatScreen.contains("ChatBadgeRow(message)"))
+        assertTrue(chatScreen.contains("message.linkPreviewOrNull()"))
+        assertTrue(chatScreen.contains("message.actionUis()"))
+        assertTrue(chatScreen.contains("private enum class ChatBadgeKind"))
+        assertTrue(chatScreen.contains("ChatBadgeKind.STATUS"))
+        assertTrue(chatScreen.contains("ChatBadgeKind.SECURITY"))
+        assertTrue(chatScreen.contains("ChatBadgeKind.TASK"))
+        assertTrue(chatScreen.contains("ChatBadgeKind.SOURCE"))
+        assertTrue(chatScreen.contains("MaterialTheme.colorScheme.errorContainer"))
+        assertTrue(chatScreen.contains("MaterialTheme.colorScheme.primaryContainer"))
+        assertTrue(chatScreen.contains("MaterialTheme.colorScheme.tertiaryContainer"))
+    }
+
+    @Test
+    fun `chat header keeps the Soll robot identity icon`() {
+        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText()
+
+        assertTrue(chatScreen.contains("R.drawable.ic_ai_robot_notification"))
+        assertTrue(chatScreen.contains("painterResource(R.drawable.ic_ai_robot_notification)"))
+    }
+
+    @Test
+    fun `notification settings keep noisy sync events out of android shade by default`() {
+        val preferences = projectFile("app/src/main/java/com/soll/data/notification/SystemNotificationPreferences.kt").readText()
+        val syncWorker = projectFile("app/src/main/java/com/soll/data/repository/SollServerSyncWorker.kt").readText()
+        val fcmService = projectFile("app/src/main/java/com/soll/data/service/SollFirebaseMessagingService.kt").readText()
+        val pushRegistrar = projectFile("app/src/main/java/com/soll/data/service/AndroidPushTokenRegistrar.kt").readText()
+        val application = projectFile("app/src/main/java/com/soll/SollApplication.kt").readText()
+        val settingsRepository = projectFile("app/src/main/java/com/soll/data/repository/SettingsRepository.kt").readText()
+        val settingsScreen = projectFile("app/src/main/java/com/soll/presentation/screens/settings/SettingsScreen.kt").readText()
+        val settingsViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/settings/SettingsViewModel.kt").readText()
+
+        assertTrue(preferences.contains("val DEFAULT_ALLOWED_CHANNELS = setOf("))
+        assertTrue(preferences.contains("SollNotificationChannel.CHAT"))
+        assertTrue(preferences.contains("SollNotificationChannel.ALERTS"))
+        assertFalse(preferences.substringAfter("val DEFAULT_ALLOWED_CHANNELS = setOf(").substringBefore(")").contains("TOOL_JOBS"))
+        assertFalse(preferences.substringAfter("val DEFAULT_ALLOWED_CHANNELS = setOf(").substringBefore(")").contains("EVENTS"))
+        assertFalse(preferences.substringAfter("val DEFAULT_ALLOWED_CHANNELS = setOf(").substringBefore(")").contains("SERVER_SYNC"))
+        assertTrue(syncWorker.contains("channel = SollNotificationChannel.SERVER_SYNC"))
+        assertTrue(syncWorker.contains("priority = SollNotificationPriority.LOW"))
+        assertTrue(fcmService.contains("classifyFcmNotification(data)"))
+        assertTrue(fcmService.contains("hint.anyToken(\"task_board\", \"board\", \"sync\", \"poll\", \"heartbeat\") -> SollNotificationChannel.SERVER_SYNC"))
+        assertTrue(fcmService.contains("SollNotificationChannel.EVENTS,"))
+        assertTrue(fcmService.contains("SollNotificationChannel.SERVER_SYNC -> SollNotificationPriority.LOW"))
+        assertTrue(fcmService.contains("runBlocking(Dispatchers.IO)"))
+        assertFalse(fcmService.contains("serviceScope.launch"))
+        assertFalse(fcmService.contains("serviceScope.cancel()"))
+        val fcmReceiveBlock = fcmService.substringAfter("runBlocking(Dispatchers.IO)").substringBefore("}.onFailure")
+        assertTrue(fcmReceiveBlock.indexOf("notificationCenter().post") < fcmReceiveBlock.indexOf("advanceSollChatLastSeenMessageId"))
+        assertTrue(fcmReceiveBlock.indexOf("notificationCenter().post") < fcmReceiveBlock.indexOf("SollServerSyncScheduler.schedule"))
+        assertTrue(application.contains("AndroidPushTokenRegistrar.registerCurrentToken(this, reason = \"startup\")"))
+        assertTrue(fcmService.contains("AndroidPushTokenRegistrar.registerToken(applicationContext, token, reason = \"fcm_refresh\")"))
+        assertTrue(pushRegistrar.contains("FirebaseMessaging.getInstance()"))
+        assertTrue(pushRegistrar.contains("entryPoint.sollGateway().registerAndroidPushToken(cleanToken, provider = \"fcm\")"))
+        assertTrue(pushRegistrar.contains("if (!force && !settings.shouldRegisterSollPushToken(cleanToken))"))
+        assertTrue(settingsRepository.contains("fun shouldRegisterSollPushToken(token: String, nowMillis: Long = System.currentTimeMillis())"))
+        assertTrue(settingsRepository.contains("return nowMillis - sollPushTokenRegisteredAt > DAY_MS"))
+        assertTrue(settingsScreen.contains("Push FCM"))
+        assertTrue(settingsScreen.contains("pushTokenStatusText(pushTokenRegisteredAt, pushTokenLastError)"))
+        assertTrue(settingsScreen.contains("isRetryingPushToken = uiState.isRetryingSollPushToken"))
+        assertTrue(settingsScreen.contains("Text(if (isRetryingPushToken) \"Проверяю\" else \"Повторить\")"))
+        assertTrue(settingsViewModel.contains("fun retryAndroidPushTokenRegistration()"))
+        assertTrue(settingsViewModel.contains("reason = \"settings_manual_retry\""))
+        assertTrue(settingsViewModel.contains("force = true"))
+        assertTrue(settingsScreen.contains("По умолчанию в Android идут только чат и важное"))
+        assertTrue(settingsScreen.contains("Технические события фоновой синхронизации; выключено по умолчанию."))
+    }
+
+    @Test
+    fun `task workspace keeps roadmap and source mutation controls`() {
+        val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt").readText()
+        val viewModel = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardViewModel.kt").readText()
+        val api = projectFile("app/src/main/java/com/soll/data/api/SollApiService.kt").readText()
+        val repository = projectFile("app/src/main/java/com/soll/data/repository/SollRepository.kt").readText()
+        val destinations = projectFile("app/src/main/java/com/soll/presentation/navigation/AppDestinations.kt").readText()
+
+        assertTrue(screen.contains("TaskWorkspaceMode.TASKS"))
+        assertTrue(screen.contains("TaskWorkspaceMode.INSIGHTS"))
+        assertTrue(screen.contains("TaskWorkspaceMode.ROADMAP -> RoadmapMode"))
+        assertTrue(screen.contains("TaskWorkspaceMode.SOURCES -> SourcesMode"))
+        assertFalse(screen.contains("TaskWorkspaceMode.GRAPH"))
+        assertFalse(destinations.contains("title = \"Граф\""))
+        assertTrue(viewModel.contains("fun addRoadmapLine"))
+        assertTrue(viewModel.contains("fun deleteRoadmapLine"))
+        assertTrue(viewModel.contains("fun createSource"))
+        assertTrue(viewModel.contains("fun deleteSource"))
+        assertTrue(viewModel.contains("fun checkSource"))
+        assertTrue(viewModel.contains("sourceItemsCache.keys.retainAll(sourceIds)"))
+        assertTrue(viewModel.contains("sourceId?.takeIf { it in sourceIds }"))
+        val sourceFailureBlock = viewModel
+            .substringAfter("private fun loadSourceItems")
+            .substringAfter("getOrElse { error ->")
+            .substringBefore("return@launch")
+        assertTrue(sourceFailureBlock.contains("if (it.selectedSourceId == sourceId)"))
+        assertTrue(api.contains("@GET(\"api/v1/roadmap\")"))
+        assertTrue(api.contains("@POST(\"api/v1/roadmap/stages/{stage_id}/lines\")"))
+        assertTrue(api.contains("@DELETE(\"api/v1/roadmap/stages/{stage_id}/lines/{line}\")"))
+        assertTrue(api.contains("@POST(\"api/v1/roadmap/stages/{stage_id}/lines/{line}/task\")"))
+        assertTrue(api.contains("@GET(\"api/v1/sources\")"))
+        assertTrue(api.contains("@POST(\"api/v1/sources\")"))
+        assertTrue(api.contains("@DELETE(\"api/v1/sources/{source_id}\")"))
+        assertTrue(api.contains("@POST(\"api/v1/sources/{source_id}/items/{item_id}/task\")"))
+        assertTrue(viewModel.contains("fun createTaskFromSourceItem(sourceId: String, item: SollSourceItem)"))
+        assertTrue(viewModel.contains("fun createTaskFromRoadmapLine(stageId: String, line: SollRoadmapLine)"))
+        assertTrue(viewModel.contains("roadmapLineTaskKey(stageId, line.line)"))
+        assertTrue(repository.contains("createTaskFromRoadmapLine("))
+        assertTrue(repository.contains("createTaskFromSourceItem("))
+        assertTrue(screen.contains("Text(\"В задачу\")"))
+        assertTrue(screen.contains("uiState.roadmapLineTaskKey == roadmapLineTaskKey(stage.id, line.line)"))
+        assertTrue(screen.contains("items = stage.lines"))
+        assertTrue(screen.contains("contentType = { \"roadmap-line\" }"))
+        assertTrue(screen.contains("RoadmapLineCard"))
+        assertTrue(screen.contains("RoadmapStageEditor"))
+        assertFalse(screen.contains("private fun RoadmapStageCard("))
+        assertFalse(screen.contains("private sealed interface RoadmapRow"))
+        assertFalse(screen.contains("roadmapRows("))
+        assertTrue(repository.contains("private const val TASK_BOARD_SECTION_LIMIT = 80"))
+        assertTrue(repository.contains("private const val TASK_BOARD_MAX_SECTION_LIMIT = 500"))
+        assertTrue(repository.contains("limitPerSection = sectionLimit"))
+        assertTrue(viewModel.contains("private const val DEFAULT_TASK_BOARD_SECTION_LIMIT = 80"))
+        assertTrue(viewModel.contains("private const val MAX_TASK_BOARD_SECTION_LIMIT = 500"))
+        assertTrue(viewModel.contains("fun loadMoreTasks()"))
+        assertTrue(viewModel.contains("sollGateway.getTaskBoard(limitPerSection = sectionLimit)"))
+        assertTrue(screen.contains("LoadMoreTasksRow"))
+        assertTrue(screen.contains("uiState.canLoadMoreTasks"))
+        assertTrue(viewModel.contains("enum class InsightStatusFilter"))
+        assertTrue(viewModel.contains("selectedInsightStatus.apiStatus"))
+        assertTrue(screen.contains("InsightStatusFilters"))
+        assertTrue(screen.contains("InsightStatusFilter.entries.forEach"))
+        assertTrue(repository.contains("private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, \"rss\", \"telegram_chat\")"))
+        assertTrue(viewModel.contains("fun createSource(name: String, target: String, sourceType: String = \"web\")"))
+        assertTrue(screen.contains("private enum class SourceTypeOption"))
+        assertTrue(screen.contains("TELEGRAM(\"Telegram\", \"telegram_chat\")"))
+        assertTrue(viewModel.contains("internal fun SollTask.matchesTaskQuery(query: String)"))
+        assertTrue(viewModel.contains("return filter { task -> task.matchesTaskQuery(needle) }"))
+        assertFalse(viewModel.substringAfter("private fun List<SollTask>.filterByQuery").substringBefore("internal fun SollTask.matchesTaskQuery").contains("joinToString"))
+        assertTrue(screen.contains("private const val TASK_DESCRIPTION_COLLAPSED_LINES = 4"))
+        assertTrue(screen.contains("maxLines = if (expanded) Int.MAX_VALUE else TASK_DESCRIPTION_COLLAPSED_LINES"))
+        assertTrue(screen.contains("text = \"Источник: \${task.sourceRef}\""))
+        assertTrue(screen.contains("maxLines = 1"))
+        assertTrue(screen.contains("private val TASK_STATUS_HIDE_MOVE_TO_TODAY = setOf("))
+        assertTrue(screen.contains("status !in TASK_STATUS_HIDE_MOVE_TO_TODAY"))
+        assertFalse(screen.substringAfter("private fun TaskActions(").substringBefore("@Composable\nprivate fun ErrorMessage").contains("setOf("))
+    }
+
+    @Test
+    fun `task priority badges normalize ABCD and keep app palette colors`() {
+        val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt").readText()
+        val viewModel = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardViewModel.kt").readText()
+
+        assertTrue(screen.contains("priorityBadgeStyle(task.priority)"))
+        assertTrue(screen.contains("private fun priorityLabel(priority: String)"))
+        assertTrue(screen.contains("\"A\", \"P1\" -> \"A\""))
+        assertTrue(screen.contains("\"B\", \"P2\" -> \"B\""))
+        assertTrue(screen.contains("\"C\", \"P3\" -> \"C\""))
+        assertTrue(screen.contains("\"D\", \"P4\" -> \"D\""))
+        assertTrue(screen.contains("\"A\" -> Color(0xFF247A52)"))
+        assertTrue(screen.contains("\"B\" -> MaterialTheme.colorScheme.primary"))
+        assertTrue(screen.contains("\"C\" -> MaterialTheme.colorScheme.tertiary"))
+        assertTrue(screen.contains("\"D\" -> MaterialTheme.colorScheme.outline"))
+        assertTrue(viewModel.contains("it.priority.normalizedTaskPriorityLabel() == filter.label"))
+        assertTrue(viewModel.contains("private fun String.normalizedTaskPriorityLabel()"))
+        assertTrue(viewModel.contains("\"A\", \"P1\" -> \"A\""))
+        assertTrue(viewModel.contains("\"D\", \"P4\" -> \"D\""))
+    }
+
+    @Test
+    fun `tool widgets stay archived while media services are active`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
         val resources = listOf(
             "app/src/main/res/xml/widget_music_info.xml",
@@ -96,9 +373,12 @@ class ProjectStabilizationGuardTest {
             "app/src/main/res/layout/widget_notes.xml",
         )
 
-        assertTrue(manifest.contains(".presentation.widgets.MusicWidgetProvider"))
-        assertTrue(manifest.contains(".presentation.widgets.ReaderWidgetProvider"))
-        assertTrue(manifest.contains(".presentation.widgets.NotesWidgetProvider"))
+        assertFalse(manifest.contains(".presentation.widgets.MusicWidgetProvider"))
+        assertFalse(manifest.contains(".presentation.widgets.ReaderWidgetProvider"))
+        assertFalse(manifest.contains(".presentation.widgets.NotesWidgetProvider"))
+        assertTrue(manifest.contains(".data.service.MusicPlaybackService"))
+        assertTrue(manifest.contains(".data.service.TtsService"))
+        assertTrue(manifest.contains("FOREGROUND_SERVICE_MEDIA_PLAYBACK"))
         resources.forEach { path ->
             assertTrue("Missing widget resource: $path", projectFile(path).exists())
         }
@@ -129,14 +409,27 @@ class ProjectStabilizationGuardTest {
         val settings = projectFile("app/src/main/java/com/soll/presentation/screens/settings/SettingsScreen.kt").readText()
         val repository = projectFile("app/src/main/java/com/soll/data/repository/SettingsRepository.kt").readText()
 
+        assertTrue(themeVariant.contains("SOLL"))
         assertTrue(themeVariant.contains("CLASSIC"))
         assertTrue(themeVariant.contains("AURORA"))
         assertTrue(themeVariant.contains("AQUIK"))
+        assertTrue(theme.contains("SollLightColorScheme"))
         assertTrue(theme.contains("ClassicDarkColorScheme"))
         assertTrue(theme.contains("AuroraDarkColorScheme"))
         assertTrue(theme.contains("AquikDarkColorScheme"))
+        assertTrue(repository.contains("\"soll\""))
         assertTrue(repository.contains("\"aquik\""))
         assertTrue(settings.contains("Тема"))
+    }
+
+    @Test
+    fun `launcher icon uses soll green background`() {
+        val colors = projectFile("app/src/main/res/values/colors.xml").readText()
+        val foreground = projectFile("app/src/main/res/drawable/ic_launcher_foreground.xml").readText()
+
+        assertTrue(colors.contains("<color name=\"ic_launcher_background\">#247A52</color>"))
+        assertFalse(colors.contains("#FF000000"))
+        assertTrue(foreground.contains("android:fillColor=\"#FFFFFF\""))
     }
 
     @Test
@@ -152,6 +445,32 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
+    fun `local ai model caches stay out of android asset paths`() {
+        val assetRoots = listOfNotNull(
+            optionalProjectFile("app/src/main/assets"),
+            optionalProjectFile("app/assets"),
+        )
+        val modelExtensions = setOf(
+            "onnx",
+            "onnx_data",
+            "gguf",
+            "safetensors",
+            "ckpt",
+            "pt",
+            "pth",
+            "bin",
+        )
+        val offenders = assetRoots.flatMap { root ->
+            root.walkTopDown()
+                .filter { file -> file.isFile && file.extension.lowercase() in modelExtensions }
+                .map { file -> file.invariantSeparatorsPath }
+                .toList()
+        }
+
+        assertTrue("Local AI model caches must live under D:\\AI\\Models, not Android asset paths: $offenders", offenders.isEmpty())
+    }
+
+    @Test
     fun `device qa covers manual roadmap checks`() {
         val models = projectFile("app/src/main/java/com/soll/domain/deviceqa/DeviceQaModels.kt").readText()
         val repository = projectFile("app/src/main/java/com/soll/data/repository/DeviceQaRepository.kt").readText()
@@ -163,20 +482,12 @@ class ProjectStabilizationGuardTest {
         listOf(
             "NOTIFICATION_ANDROID13_FLOW",
             "NOTIFICATION_TAP_ROUTING",
-            "NOTIFICATION_MEDIA_SESSION",
-            "MUSIC_SCREEN_OFF",
-            "MUSIC_LOCKSCREEN_CONTROLS",
-            "MUSIC_AUDIO_FOCUS",
-            "WIDGET_LAUNCHER_COLD",
-            "WIDGET_MEDIA_CONTROLS",
             "THEME_VISUAL_PASS",
             "GADGET_PROTOCOL_SCHEMA",
             "GADGET_SERVER_LOCAL_BINDING",
             "GADGET_MESH_OUTBOX_WORKER",
             "GADGET_READ_ONLY_COMMAND_WORKER",
             "GADGET_MANUAL_WRITE_FLOW",
-            "NFC_OWNED_TAGS",
-            "NFC_ACCESS_FOB_DIAGNOSTIC",
         ).forEach { id ->
             assertTrue("Missing Device QA id: $id", models.contains(id))
             assertTrue("Device QA repository does not expose: $id", repository.contains("DeviceQaCheckId.$id"))
@@ -210,20 +521,104 @@ class ProjectStabilizationGuardTest {
         val appModule = projectFile("app/src/main/java/com/soll/di/AppModule.kt").readText()
         val buildGradle = projectFile("app/build.gradle.kts").readText()
         val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
+        val notificationChannels = projectFile("app/src/main/java/com/soll/data/notification/SollNotificationChannels.kt").readText()
+        val notificationModels = projectFile("app/src/main/java/com/soll/domain/notification/SollNotification.kt").readText()
+        val bootReceiver = projectFile("app/src/main/java/com/soll/data/service/BootReceiver.kt").readText()
+        val activityService = projectFile("app/src/main/java/com/soll/data/service/ActivityTrackingService.kt").readText()
+        val fieldMapScreen = projectFile("app/src/main/java/com/soll/presentation/screens/tools/fieldmap/FieldMapScreen.kt").readText()
 
         assertTrue(projectFile("app/src/main/java/com/soll/presentation/screens/tools/fieldmap/FieldMapScreen.kt").exists())
         assertTrue(projectFile("app/src/main/java/com/soll/data/repository/FieldMapRepository.kt").exists())
         assertTrue(projectFile("app/src/main/java/com/soll/domain/field/FieldMapModels.kt").exists())
-        assertTrue(destinations.contains("route = Routes.FIELD_MAP"))
-        assertTrue(destinations.contains("title = \"Карта\""))
-        assertTrue(navigation.contains("Routes.FIELD_MAP"))
+        assertTrue(projectFile("app/src/main/java/com/soll/data/service/ActivityTrackingService.kt").exists())
+        assertTrue(projectFile("app/src/main/java/com/soll/data/repository/ActivityTrackingRepository.kt").exists())
+        assertTrue(projectFile("app/src/main/java/com/soll/domain/activity/ActivityTrackingModels.kt").exists())
+        assertFalse(destinations.contains("route = Routes.FIELD_MAP"))
+        assertFalse(destinations.contains("title = \"Карта\""))
+        assertTrue(destinations.contains("route = Routes.ACTIVITY_HISTORY"))
+        assertTrue(destinations.contains("title = \"Активность\""))
+        assertFalse(navigation.contains("Routes.FIELD_MAP"))
+        assertTrue(navigation.contains("Routes.ACTIVITY_HISTORY"))
+        assertTrue(navigation.contains("initialActivityFocus = true"))
         assertTrue(database.contains("FieldPointEntity::class"))
         assertTrue(appModule.contains("migration17To18"))
         assertTrue(appModule.contains("field_points"))
+        assertTrue(manifest.contains("FOREGROUND_SERVICE_LOCATION"))
+        assertTrue(manifest.contains("ACTIVITY_RECOGNITION"))
+        assertTrue(manifest.contains(".data.service.ActivityTrackingService"))
         assertFalse(manifest.contains("ACCESS_BACKGROUND_LOCATION"))
         assertFalse(buildGradle.contains("play-services-maps"))
         assertFalse(buildGradle.contains("mapbox"))
         assertFalse(buildGradle.contains("osmdroid"))
+        assertTrue(notificationChannels.contains("ACTIVITY_TRACKING_NOTIFICATION_ID"))
+        assertTrue(notificationModels.contains("ACTIVITY_TRACKING"))
+        assertTrue(bootReceiver.contains("ActivityTrackingService.start"))
+        assertTrue(activityService.contains("startForeground("))
+        assertTrue(fieldMapScreen.contains("Запустить демон"))
+    }
+
+    @Test
+    fun `portable SSD wiki stays read only SAF tool`() {
+        val navigation = projectFile("app/src/main/java/com/soll/presentation/navigation/AppNavigation.kt").readText()
+        val destinations = projectFile("app/src/main/java/com/soll/presentation/navigation/AppDestinations.kt").readText()
+        val launchTargets = projectFile("app/src/main/java/com/soll/presentation/navigation/AppLaunchTargets.kt").readText()
+        val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
+        val settingsRepository = projectFile("app/src/main/java/com/soll/data/repository/SettingsRepository.kt").readText()
+        val repository = projectFile("app/src/main/java/com/soll/data/repository/PortableSsdRepository.kt").readText()
+        val attachWorker = projectFile("app/src/main/java/com/soll/data/repository/PortableSsdAttachWorker.kt").readText()
+        val attachReceiver = projectFile("app/src/main/java/com/soll/data/service/PortableSsdAttachReceiver.kt").readText()
+        val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tools/portablessd/PortableSsdScreen.kt").readText()
+        val reader = projectFile("app/src/main/java/com/soll/domain/portablessd/PortableSsdModels.kt").readText()
+        val notifications = projectFile("app/src/main/java/com/soll/domain/notification/SollNotification.kt").readText()
+
+        assertTrue(destinations.contains("PORTABLE_SSD"))
+        assertTrue(destinations.contains("SSD Wiki"))
+        assertTrue(navigation.contains("PortableSsdScreen"))
+        assertTrue(navigation.contains("SECTION_PORTABLE_SSD"))
+        assertTrue(launchTargets.contains("SECTION_PORTABLE_SSD"))
+        assertTrue(manifest.contains(".data.service.PortableSsdAttachReceiver"))
+        assertTrue(manifest.contains("android.hardware.usb.action.USB_DEVICE_ATTACHED"))
+        assertTrue(manifest.contains("android.intent.action.MEDIA_MOUNTED"))
+        assertTrue(screen.contains("ActivityResultContracts.OpenDocumentTree"))
+        assertTrue(repository.contains("takePersistableUriPermission"))
+        assertTrue(repository.contains("cacheEntry(entry, sourceText, PortableSsdEntryContentSource.SSD)"))
+        assertTrue(repository.contains("PortableSsdEntryContentSource.PHONE_CACHE"))
+        assertTrue(repository.contains("portable-ssd-cache"))
+        assertTrue(screen.contains("Скопировано на телефон"))
+        assertTrue(screen.contains("Из памяти телефона"))
+        assertTrue(settingsRepository.contains("KEY_PORTABLE_SSD_TREE_URI"))
+        assertTrue(settingsRepository.contains("KEY_PORTABLE_SSD_LAST_ATTACH_NOTICE_AT"))
+        assertTrue(attachWorker.contains("PortableSsdAttachNotificationPolicy.noticeFor"))
+        assertTrue(attachWorker.contains("PORTABLE_SSD_NOTIFICATION_ID"))
+        assertTrue(attachWorker.contains("SECTION_PORTABLE_SSD"))
+        assertTrue(attachWorker.contains("PortableSsdAttachNoticeKind.VERIFIED"))
+        assertTrue(attachWorker.contains("SollNotificationChannel.ALERTS"))
+        assertTrue(attachReceiver.contains("PortableSsdAttachWorkScheduler.enqueue"))
+        assertTrue(notifications.contains("launchSection"))
+        assertTrue(reader.contains(".soll-portable"))
+        assertTrue(reader.contains("server/.env").not())
+        assertTrue(reader.contains("pairing.secret").not())
+        assertFalse(repository.contains("FLAG_GRANT_WRITE_URI_PERMISSION"))
+        assertFalse(repository.contains("createFile("))
+        assertFalse(repository.contains("delete("))
+    }
+
+    @Test
+    fun `server sync foreground service enters foreground before optional stop`() {
+        val source = projectFile("app/src/main/java/com/soll/data/service/SollServerSyncForegroundService.kt").readText()
+        val onStart = source.indexOf("override fun onStartCommand")
+        val foregroundCall = source.indexOf("startSyncForeground()", startIndex = onStart)
+        val actionStop = source.indexOf("if (intent?.action == ACTION_STOP)", startIndex = onStart)
+        val blankSettingsStop = source.indexOf("if (settings.sollServerUrl.isBlank())", startIndex = onStart)
+
+        assertTrue(foregroundCall > onStart)
+        assertTrue(actionStop > foregroundCall)
+        assertTrue(blankSettingsStop > foregroundCall)
+        assertFalse(
+            source.substring(onStart, foregroundCall).contains("stopSelf()"),
+        )
+        assertTrue(source.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC"))
+        assertTrue(source.contains(".setAction(ACTION_STOP)"))
     }
 
     @Test
@@ -268,15 +663,12 @@ class ProjectStabilizationGuardTest {
     @Test
     fun `network repositories preserve coroutine cancellation`() {
         val helper = projectFile("app/src/main/java/com/soll/data/repository/CoroutineResult.kt").readText()
-        val telegram = projectFile("app/src/main/java/com/soll/data/repository/TelegramRepository.kt").readText()
         val soll = projectFile("app/src/main/java/com/soll/data/repository/SollRepository.kt").readText()
         val syncQueue = projectFile("app/src/main/java/com/soll/data/repository/SollSyncQueueRepository.kt").readText()
 
         assertTrue(helper.contains("catch (error: CancellationException)"))
         assertTrue(helper.contains("throw error"))
-        assertFalse(telegram.contains("runCatching"))
         assertFalse(soll.contains("runCatching"))
-        assertTrue(telegram.contains("runSuspendCatching"))
         assertTrue(soll.contains("runSuspendCatching"))
         assertTrue(syncQueue.contains("catch (error: CancellationException)"))
     }
@@ -331,5 +723,15 @@ class ProjectStabilizationGuardTest {
             current = current.parentFile ?: current
         }
         error("Project file not found: $path from ${System.getProperty("user.dir")}")
+    }
+
+    private fun optionalProjectFile(path: String): File? {
+        var current = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            val candidate = File(current, path)
+            if (candidate.exists()) return candidate
+            current = current.parentFile ?: current
+        }
+        return null
     }
 }

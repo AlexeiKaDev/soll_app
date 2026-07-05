@@ -6,7 +6,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,12 +20,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.soll.data.notification.SystemNotificationImportanceMode
 import com.soll.domain.assistant.RiskTier
 import com.soll.domain.deviceqa.DeviceQaCategory
 import com.soll.domain.deviceqa.DeviceQaCheck
 import com.soll.domain.deviceqa.DeviceQaCheckId
 import com.soll.domain.deviceqa.DeviceQaStatus
 import com.soll.domain.deviceqa.DeviceQaSummary
+import com.soll.domain.notification.SollNotificationChannel
 import com.soll.ui.theme.SollThemeVariant
 import com.soll.ui.components.PassiveChip
 import java.text.SimpleDateFormat
@@ -34,10 +38,10 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onOpenDeviceQa: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showToken by remember { mutableStateOf(false) }
     var showSollToken by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -71,113 +75,6 @@ fun SettingsScreen(
                 fontWeight = FontWeight.Bold
             )
 
-            ThemeSection(
-                selectedVariant = uiState.appThemeVariant,
-                onVariantSelected = viewModel::setAppThemeVariant,
-            )
-
-            DeviceQaSection(
-                checks = uiState.deviceQaChecks,
-                isPostingNotification = uiState.isPostingDeviceQaNotification,
-                onRefresh = viewModel::refreshDeviceQa,
-                onTestNotification = viewModel::postDeviceQaNotification,
-                onOpenNotifications = viewModel::openNotificationSettings,
-                onOpenBattery = viewModel::openBatterySettings,
-                onOpenNfc = viewModel::openNfcSettings,
-                onPassed = viewModel::markDeviceQaPassed,
-                onProblem = viewModel::markDeviceQaProblem,
-                onClear = viewModel::clearDeviceQaResult,
-                onReport = viewModel::showDeviceQaReport,
-            )
-
-            uiState.deviceQaReport?.let { report ->
-                DeviceQaReportDialog(
-                    report = report,
-                    onShare = viewModel::shareDeviceQaReport,
-                    onDismiss = viewModel::dismissDeviceQaReport,
-                )
-            }
-
-            // Bot Token Section
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Токен бота",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.token,
-                        onValueChange = { viewModel.updateToken(it) },
-                        label = { Text("Токен Telegram-бота") },
-                        placeholder = { Text("123456789:ABC-DEF...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        visualTransformation = if (showToken)
-                            VisualTransformation.None
-                        else
-                            PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        trailingIcon = {
-                            Row {
-                                IconButton(onClick = { showToken = !showToken }) {
-                                    Icon(
-                                        imageVector = if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = "Показать или скрыть токен"
-                                    )
-                                }
-                            }
-                        },
-                        isError = uiState.token.isNotEmpty() && !uiState.isTokenValid
-                    )
-
-                    if (uiState.isTokenVerified && uiState.botUsername != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Подключено к ${uiState.botUsername}",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = { viewModel.saveToken() },
-                        enabled = uiState.isTokenValid && !uiState.isLoading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                        Text("Сохранить и проверить токен")
-                    }
-
-                    Text(
-                        text = "Получите токен бота у @BotFather в Telegram",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             // Soll Backend Section
             Card(
                 modifier = Modifier.fillMaxWidth()
@@ -203,7 +100,7 @@ fun SettingsScreen(
                     }
 
                     Text(
-                        text = "Подключение к локальному серверу Soll для проверки состояния, задач, черновых заметок и будущей синхронизации.",
+                        text = "Основной канал приложения: чат Soll, действия, задачи, push-уведомления и синхронизация с локальным сервером.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -212,10 +109,19 @@ fun SettingsScreen(
                         value = uiState.sollServerUrl,
                         onValueChange = viewModel::updateSollServerUrl,
                         label = { Text("URL сервера") },
-                        placeholder = { Text("http://192.168.1.10:8000/") },
+                        placeholder = { Text("https://sales.monolith-ost.com/") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.sollApiPathPrefix,
+                        onValueChange = viewModel::updateSollApiPathPrefix,
+                        label = { Text("API путь") },
+                        placeholder = { Text("api/v1/soll") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
                     )
 
                     OutlinedTextField(
@@ -319,6 +225,15 @@ fun SettingsScreen(
                         }
                     }
 
+                    OutlinedButton(
+                        onClick = { viewModel.resetSollEndpointToRecommended() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Подставить рекомендуемый адрес")
+                    }
+
                     Button(
                         onClick = { viewModel.syncSollNow() },
                         enabled = !uiState.isCheckingSollHealth && !uiState.isSyncingSoll,
@@ -339,6 +254,38 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            DeviceQaSummaryCard(
+                checks = uiState.deviceQaChecks,
+                isPostingNotification = uiState.isPostingDeviceQaNotification,
+                onRefresh = viewModel::refreshDeviceQa,
+                onOpenDeviceQa = onOpenDeviceQa,
+                onTestNotification = viewModel::postDeviceQaNotification,
+            )
+
+            SystemNotificationFilterSection(
+                importanceMode = uiState.systemNotificationImportanceMode,
+                channels = uiState.systemNotificationChannels,
+                pushTokenRegisteredAt = uiState.sollPushTokenRegisteredAt,
+                pushTokenLastError = uiState.sollPushTokenLastError,
+                isRetryingPushToken = uiState.isRetryingSollPushToken,
+                onModeSelected = viewModel::setSystemNotificationImportanceMode,
+                onChannelToggle = viewModel::setSystemNotificationChannelEnabled,
+                onRetryPushToken = viewModel::retryAndroidPushTokenRegistration,
+            )
+
+            uiState.deviceQaReport?.let { report ->
+                DeviceQaReportDialog(
+                    report = report,
+                    onShare = viewModel::shareDeviceQaReport,
+                    onDismiss = viewModel::dismissDeviceQaReport,
+                )
+            }
+
+            ThemeSection(
+                selectedVariant = uiState.appThemeVariant,
+                onVariantSelected = viewModel::setAppThemeVariant,
+            )
 
             // Voice Section
             Card(
@@ -471,13 +418,10 @@ fun SettingsScreen(
                         onCheckedChange = viewModel::setProactiveSystemDeliveryEnabled,
                     )
 
-                    ProactiveDeliveryRow(
-                        icon = Icons.AutoMirrored.Filled.Send,
-                        title = "Telegram",
-                        description = "Отправлять предложения в последний чат, который писал боту. По умолчанию выключено.",
-                        checked = uiState.proactiveTelegramDeliveryEnabled,
-                        enabled = uiState.proactiveSuggestionsEnabled,
-                        onCheckedChange = viewModel::setProactiveTelegramDeliveryEnabled,
+                    Text(
+                        text = "Серверные предложения и действия теперь приходят в чат Soll и Android-уведомления через sync/outbox.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -523,7 +467,7 @@ fun SettingsScreen(
                 }
             }
 
-            // Auto-start Section
+            // Background Sync Section
             Card(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -536,19 +480,20 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Автозапуск после включения",
+                            text = "Фоновая синхронизация",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Автоматически запускать сервис бота после включения устройства",
+                            text = "WorkManager и служебный sync проверяют чат и задачи, когда приложение свернуто.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
-                        checked = uiState.autoStartEnabled,
-                        onCheckedChange = { viewModel.setAutoStart(it) }
-                    )
+                    FilledTonalButton(onClick = viewModel::checkSollHealth) {
+                        Icon(Icons.Default.Sync, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Проверить")
+                    }
                 }
             }
 
@@ -581,9 +526,9 @@ fun SettingsScreen(
 
                     Text(
                         text = if (uiState.isBatteryOptimizationDisabled)
-                            "Оптимизация батареи отключена для Soll. Бот сможет надежнее работать в фоне."
+                            "Оптимизация батареи отключена для Soll. Чат и серверная синхронизация смогут надежнее работать в фоне."
                         else
-                            "Оптимизация батареи включена. Из-за этого бот может останавливаться в фоне. Отключите ее для надежной работы.",
+                            "Оптимизация батареи включена. Из-за этого серверная синхронизация и системные уведомления могут задерживаться.",
                         style = MaterialTheme.typography.bodyMedium
                     )
 
@@ -622,7 +567,7 @@ fun SettingsScreen(
                     )
 
                     Text(
-                        text = "Выдайте разрешения, чтобы работали все команды бота. Управление доступно в настройках приложения.",
+                        text = "Выдайте разрешения, чтобы работали чат Soll, действия, задачи, активность и системные уведомления. Управление доступно в настройках приложения.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -646,7 +591,7 @@ fun SettingsScreen(
                     }
 
                     Text(
-                        text = "Нужно: SMS, звонки, контакты, камера, микрофон, геолокация, хранилище",
+                        text = "Нужно: уведомления, геолокация для активности, микрофон для голоса и доступы для включенных возможностей.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -679,7 +624,7 @@ fun SettingsScreen(
                                 )
                             }
                             Text(
-                                text = "Управляйте тем, какие команды Telegram можно выполнять.",
+                                text = "Управляйте тем, какие действия Soll можно выполнять с устройства и сервера.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -692,9 +637,9 @@ fun SettingsScreen(
 
                     Text(
                         text = if (uiState.riskyCapabilitiesEnabled)
-                            "Рискованные команды доступны, если включен их отдельный переключатель."
+                            "Рискованные действия доступны, если включен их отдельный переключатель."
                         else
-                            "Рискованные команды заблокированы глобально. Безопасные информационные команды продолжают работать.",
+                            "Рискованные действия заблокированы глобально. Безопасные информационные действия продолжают работать.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -760,8 +705,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Soll позволяет удаленно управлять Android-устройством через Telegram. " +
-                                "Отправляйте команды боту и получайте информацию об устройстве.",
+                        text = "Soll подключает Android к серверу, чату, действиям, задачам и локальным push-уведомлениям.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -770,6 +714,162 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DeviceQaScreen(
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onBack: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshDeviceQa()
+    }
+
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearMessage()
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Проверка устройства") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = viewModel::refreshDeviceQa) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Обновить проверку")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            DeviceQaSection(
+                checks = uiState.deviceQaChecks,
+                isPostingNotification = uiState.isPostingDeviceQaNotification,
+                onRefresh = viewModel::refreshDeviceQa,
+                onTestNotification = viewModel::postDeviceQaNotification,
+                onOpenNotifications = viewModel::openNotificationSettings,
+                onOpenBattery = viewModel::openBatterySettings,
+                onPassed = viewModel::markDeviceQaPassed,
+                onProblem = viewModel::markDeviceQaProblem,
+                onClear = viewModel::clearDeviceQaResult,
+                onReport = viewModel::showDeviceQaReport,
+            )
+        }
+    }
+
+    uiState.deviceQaReport?.let { report ->
+        DeviceQaReportDialog(
+            report = report,
+            onShare = viewModel::shareDeviceQaReport,
+            onDismiss = viewModel::dismissDeviceQaReport,
+        )
+    }
+}
+
+@Composable
+private fun DeviceQaSummaryCard(
+    checks: List<DeviceQaCheck>,
+    isPostingNotification: Boolean,
+    onRefresh: () -> Unit,
+    onOpenDeviceQa: () -> Unit,
+    onTestNotification: () -> Unit,
+) {
+    val effectiveStatuses = checks.map { it.effectiveStatus }
+    val problemCount = effectiveStatuses.count {
+        it == DeviceQaStatus.PROBLEM || it == DeviceQaStatus.MANUAL_PROBLEM
+    }
+    val warningCount = effectiveStatuses.count {
+        it == DeviceQaStatus.WARNING || it == DeviceQaStatus.NEEDS_MANUAL_TEST
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Build,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Проверка устройства",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = DeviceQaSummary.headline(checks),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Обновить проверку")
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PassiveChip(text = "Проблем: $problemCount")
+                PassiveChip(text = "Проверить: $warningCount")
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onOpenDeviceQa,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Rule, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Открыть")
+                }
+                OutlinedButton(
+                    onClick = onTestNotification,
+                    enabled = !isPostingNotification,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (isPostingNotification) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.NotificationsActive, contentDescription = null)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Тест")
                 }
             }
         }
@@ -803,7 +903,7 @@ private fun ThemeSection(
             }
 
             Text(
-                text = "Все темы темные; переключение меняет палитру приложения без возврата к светлому режиму.",
+                text = "Выберите мобильную палитру приложения. Soll - светлая teal-тема, остальные варианты остаются темными.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -832,6 +932,243 @@ private fun ThemeSection(
 }
 
 @Composable
+private fun SystemNotificationFilterSection(
+    importanceMode: SystemNotificationImportanceMode,
+    channels: List<SystemNotificationChannelUiState>,
+    pushTokenRegisteredAt: Long,
+    pushTokenLastError: String,
+    isRetryingPushToken: Boolean,
+    onModeSelected: (SystemNotificationImportanceMode) -> Unit,
+    onChannelToggle: (SollNotificationChannel, Boolean) -> Unit,
+    onRetryPushToken: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Фильтр уведомлений",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "События остаются в журнале. По умолчанию в Android идут только чат и важное.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Важность",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SystemNotificationImportanceMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = importanceMode == mode,
+                            onClick = { onModeSelected(mode) },
+                            label = { Text(mode.shortLabel()) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                Text(
+                    text = importanceMode.description(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "Push FCM",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = pushTokenStatusText(pushTokenRegisteredAt, pushTokenLastError),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (pushTokenLastError.isBlank()) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onRetryPushToken,
+                        enabled = !isRetryingPushToken,
+                    ) {
+                        if (isRetryingPushToken) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isRetryingPushToken) "Проверяю" else "Повторить")
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Каналы",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                channels.forEach { item ->
+                    SystemNotificationChannelRow(
+                        item = item,
+                        onCheckedChange = { enabled -> onChannelToggle(item.channel, enabled) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun pushTokenStatusText(registeredAt: Long, lastError: String): String {
+    if (lastError.isNotBlank()) {
+        return "Ошибка регистрации: ${lastError.take(160)}"
+    }
+    if (registeredAt <= 0L) {
+        return "Токен еще не подтвержден сервером"
+    }
+    val stamp = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(registeredAt))
+    return "Последняя регистрация: $stamp"
+}
+
+@Composable
+private fun SystemNotificationChannelRow(
+    item: SystemNotificationChannelUiState,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = item.channel.settingsIcon(),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = item.channel.settingsLabel(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = item.channel.settingsDescription(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Switch(
+                checked = item.enabled,
+                onCheckedChange = onCheckedChange,
+            )
+        }
+    }
+}
+
+private fun SystemNotificationImportanceMode.shortLabel(): String = when (this) {
+    SystemNotificationImportanceMode.HIGH_ONLY -> "Критичное"
+    SystemNotificationImportanceMode.DEFAULT_AND_HIGH -> "Рабочее"
+    SystemNotificationImportanceMode.ALL -> "Все"
+}
+
+private fun SystemNotificationImportanceMode.description(): String = when (this) {
+    SystemNotificationImportanceMode.HIGH_ONLY -> "В шторку идут только high/alert события из включенных каналов."
+    SystemNotificationImportanceMode.DEFAULT_AND_HIGH -> "В шторку идут default/high события из включенных каналов; low остается в журнале."
+    SystemNotificationImportanceMode.ALL -> "В шторку идут все включенные каналы, включая low и технический шум."
+}
+
+private fun SollNotificationChannel.settingsLabel(): String = when (this) {
+    SollNotificationChannel.CHAT -> "Чат"
+    SollNotificationChannel.ALERTS -> "Важное"
+    SollNotificationChannel.TOOL_JOBS -> "Работы"
+    SollNotificationChannel.EVENTS -> "Инфо"
+    SollNotificationChannel.SERVER_SYNC -> "Синхронизация"
+    SollNotificationChannel.BOT_SERVICE -> "Архив"
+    SollNotificationChannel.TTS_PLAYBACK -> "Читалка"
+    SollNotificationChannel.MUSIC_PLAYBACK -> "Музыка"
+    SollNotificationChannel.ACTIVITY_TRACKING -> "Активность"
+}
+
+private fun SollNotificationChannel.settingsDescription(): String = when (this) {
+    SollNotificationChannel.CHAT -> "Новые сообщения от сервера и FCM."
+    SollNotificationChannel.ALERTS -> "Критичные проверки и ручные алерты."
+    SollNotificationChannel.TOOL_JOBS -> "Финальные статусы фоновых работ; успехи могут быть частыми."
+    SollNotificationChannel.EVENTS -> "Обычные предложения и информационные события; выключено по умолчанию."
+    SollNotificationChannel.SERVER_SYNC -> "Технические события фоновой синхронизации; выключено по умолчанию."
+    SollNotificationChannel.BOT_SERVICE -> "Архивные события Telegram-бота."
+    SollNotificationChannel.TTS_PLAYBACK -> "Уведомления чтения вслух."
+    SollNotificationChannel.MUSIC_PLAYBACK -> "Уведомления плеера."
+    SollNotificationChannel.ACTIVITY_TRACKING -> "Уведомления трекера активности."
+}
+
+private fun SollNotificationChannel.settingsIcon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
+    SollNotificationChannel.CHAT -> Icons.Default.Notifications
+    SollNotificationChannel.ALERTS -> Icons.Default.NotificationImportant
+    SollNotificationChannel.TOOL_JOBS -> Icons.Default.Build
+    SollNotificationChannel.EVENTS -> Icons.Default.NotificationsNone
+    SollNotificationChannel.SERVER_SYNC -> Icons.Default.Sync
+    SollNotificationChannel.BOT_SERVICE -> Icons.Default.Storage
+    SollNotificationChannel.TTS_PLAYBACK -> Icons.Default.RecordVoiceOver
+    SollNotificationChannel.MUSIC_PLAYBACK -> Icons.Default.MusicNote
+    SollNotificationChannel.ACTIVITY_TRACKING -> Icons.AutoMirrored.Filled.DirectionsWalk
+}
+
+@Composable
 private fun DeviceQaSection(
     checks: List<DeviceQaCheck>,
     isPostingNotification: Boolean,
@@ -839,7 +1176,6 @@ private fun DeviceQaSection(
     onTestNotification: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenBattery: () -> Unit,
-    onOpenNfc: () -> Unit,
     onPassed: (DeviceQaCheckId) -> Unit,
     onProblem: (DeviceQaCheckId) -> Unit,
     onClear: (DeviceQaCheckId) -> Unit,
@@ -935,23 +1271,15 @@ private fun DeviceQaSection(
                                 when (check.id) {
                                     DeviceQaCheckId.NOTIFICATION_PERMISSION,
                                     DeviceQaCheckId.NOTIFICATION_CHANNELS,
-                                    DeviceQaCheckId.NOTIFICATION_ANDROID13_FLOW,
-                                    DeviceQaCheckId.NOTIFICATION_MEDIA_SESSION,
-                                    DeviceQaCheckId.MUSIC_LOCKSCREEN_CONTROLS -> onOpenNotifications()
+                                    DeviceQaCheckId.NOTIFICATION_ANDROID13_FLOW -> onOpenNotifications()
                                     DeviceQaCheckId.NOTIFICATION_TAP_ROUTING -> onTestNotification()
-                                    DeviceQaCheckId.BATTERY_OPTIMIZATION,
-                                    DeviceQaCheckId.MUSIC_SCREEN_OFF -> onOpenBattery()
-                                    DeviceQaCheckId.WIDGET_LAUNCHER_COLD,
-                                    DeviceQaCheckId.WIDGET_MEDIA_CONTROLS,
+                                    DeviceQaCheckId.BATTERY_OPTIMIZATION -> onOpenBattery()
                                     DeviceQaCheckId.THEME_VISUAL_PASS,
                                     DeviceQaCheckId.GADGET_PROTOCOL_SCHEMA,
                                     DeviceQaCheckId.GADGET_SERVER_LOCAL_BINDING,
                                     DeviceQaCheckId.GADGET_MESH_OUTBOX_WORKER,
                                     DeviceQaCheckId.GADGET_READ_ONLY_COMMAND_WORKER,
-                                    DeviceQaCheckId.GADGET_MANUAL_WRITE_FLOW,
-                                    DeviceQaCheckId.MUSIC_AUDIO_FOCUS -> onRefresh()
-                                    DeviceQaCheckId.NFC_OWNED_TAGS,
-                                    DeviceQaCheckId.NFC_ACCESS_FOB_DIAGNOSTIC -> onOpenNfc()
+                                    DeviceQaCheckId.GADGET_MANUAL_WRITE_FLOW -> onRefresh()
                                 }
                             },
                             onPassed = { onPassed(check.id) },

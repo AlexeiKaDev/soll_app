@@ -44,10 +44,143 @@ data class SollAndroidSyncStatus(
     val tasks: SollTaskBoard,
     val device: SollDevice?,
     val briefing: SollBriefing?,
+    val chat: SollAndroidChatSync = SollAndroidChatSync(),
     val protocol: SollProtocolBootstrap?,
     val warnings: List<String>,
     val fromCache: Boolean = false,
     val cachedAtMillis: Long? = null,
+)
+
+data class SollAndroidChatSync(
+    val primarySessionId: String = "soll-main",
+    val recentSessions: List<SollChatSession> = emptyList(),
+    val recentMessages: List<SollChatMessage> = emptyList(),
+    val lastMessageId: Long? = null,
+    val unreadCount: Int = 0,
+    val pendingActionsCount: Int = 0,
+    val encryptionRequired: Boolean = false,
+    val streamEndpoint: String = "",
+    val endpoints: Map<String, String> = emptyMap(),
+)
+
+data class SollAndroidPushRegistration(
+    val success: Boolean,
+    val provider: String,
+    val enabled: Boolean,
+    val tokenCount: Int,
+    val reason: String?,
+)
+
+data class SollChatSession(
+    val sessionId: String,
+    val title: String,
+    val updatedAt: String,
+    val messageCount: Int,
+)
+
+data class SollChatMessage(
+    val id: Long,
+    val sessionId: String,
+    val role: String,
+    val content: String,
+    val createdAt: String,
+    val metadata: Map<String, Any?> = emptyMap(),
+) {
+    val isFromUser: Boolean
+        get() = role == "user"
+}
+
+data class SollTaskGraph(
+    val nodes: List<SollTaskGraphNode> = emptyList(),
+    val edges: List<SollTaskGraphEdge> = emptyList(),
+    val totalTasks: Int = 0,
+    val truncated: Boolean = false,
+)
+
+data class SollTaskGraphNode(
+    val id: String,
+    val kind: String,
+    val label: String,
+    val status: String = "",
+    val priority: String = "",
+    val projectId: String? = null,
+    val taskId: String? = null,
+    val sourceRef: String = "",
+    val count: Int = 0,
+)
+
+data class SollTaskGraphEdge(
+    val id: String,
+    val source: String,
+    val target: String,
+    val kind: String,
+    val label: String = "",
+)
+
+data class SollLearningItem(
+    val id: String,
+    val title: String,
+    val status: String,
+    val nextAction: String,
+    val sourceRef: String,
+    val seenCount: Int,
+    val tags: List<String> = emptyList(),
+)
+
+data class SollRoadmap(
+    val currentStage: String,
+    val stages: List<SollRoadmapStage> = emptyList(),
+    val readiness: List<SollRoadmapReadiness> = emptyList(),
+    val updated: String? = null,
+)
+
+data class SollRoadmapStage(
+    val id: String,
+    val label: String,
+    val status: String,
+    val lines: List<SollRoadmapLine> = emptyList(),
+)
+
+data class SollRoadmapLine(
+    val line: String,
+    val text: String,
+)
+
+data class SollRoadmapReadiness(
+    val area: String,
+    val percent: Int,
+    val gap: String,
+)
+
+data class SollMonitoredSource(
+    val id: String,
+    val name: String,
+    val sourceType: String,
+    val target: String,
+    val description: String,
+    val tags: List<String>,
+    val enabled: Boolean,
+    val lastResult: String,
+    val itemsSeen: Int,
+    val newItemsLastCheck: Int,
+)
+
+data class SollSourceItem(
+    val itemId: String,
+    val title: String,
+    val sourceUrl: String,
+    val contentPreview: String,
+    val summary: String,
+    val usefulness: String,
+    val linkPreview: Map<String, Any?> = emptyMap(),
+)
+
+data class SollChatActionResult(
+    val actionId: String,
+    val action: String,
+    val taskId: String?,
+    val status: String,
+    val task: SollTask?,
 )
 
 data class SollMeshStatus(
@@ -76,12 +209,52 @@ data class SollMeshOutboxItem(
 
 data class SollTaskBoard(
     val today: List<SollTask>,
+    val blocked: List<SollTask> = emptyList(),
     val inbox: List<SollTask>,
     val stale: List<SollTask>,
+    val deferred: List<SollTask> = emptyList(),
     val doneRecent: List<SollTask>,
+    val counts: SollTaskBoardCounts? = null,
+    val limitPerSection: Int? = null,
 ) {
     val openCount: Int
-        get() = today.size + inbox.size + stale.size
+        get() = counts?.openCount ?: displayedOpenCount
+
+    val displayedOpenCount: Int
+        get() = today.size + blocked.size + inbox.size + stale.size + deferred.size
+
+    val doneCount: Int
+        get() = counts?.doneRecent ?: displayedDoneCount
+
+    val displayedDoneCount: Int
+        get() = doneRecent.size
+
+    val totalCount: Int
+        get() = openCount + doneCount
+
+    val displayedTotalCount: Int
+        get() = displayedOpenCount + displayedDoneCount
+
+    val hasLimitedOpenSections: Boolean
+        get() = counts?.let { displayedOpenCount < it.openCount } == true
+
+    val hasLimitedDoneSection: Boolean
+        get() = counts?.let { displayedDoneCount < it.doneRecent } == true
+
+    val hasLimitedSections: Boolean
+        get() = hasLimitedOpenSections || hasLimitedDoneSection
+}
+
+data class SollTaskBoardCounts(
+    val today: Int = 0,
+    val blocked: Int = 0,
+    val inbox: Int = 0,
+    val stale: Int = 0,
+    val deferred: Int = 0,
+    val doneRecent: Int = 0,
+) {
+    val openCount: Int
+        get() = today + blocked + inbox + stale + deferred
 }
 
 data class SollTask(
@@ -94,6 +267,13 @@ data class SollTask(
     val priority: String,
     val dueDate: String?,
     val tags: List<String>,
+    val approvalId: String? = null,
+    val toolJobId: String? = null,
+    val executionState: String = "",
+    val outcomeArtifacts: List<String> = emptyList(),
+    val valueMetric: String = "",
+    val branch: String = "innovation",
+    val pairId: String? = null,
 )
 
 data class SollRawNote(
@@ -234,10 +414,36 @@ data class SollBookDownloadedFile(
 
 interface SollGateway {
     suspend fun getHealth(): Result<SollHealth>
-    suspend fun getTaskBoard(): Result<SollTaskBoard>
+    suspend fun getTaskBoard(limitPerSection: Int? = null): Result<SollTaskBoard>
     suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus>
+    suspend fun listChatSessions(limit: Int = 50): Result<List<SollChatSession>>
+    suspend fun createChatSession(title: String, sessionId: String? = null): Result<SollChatSession>
+    suspend fun getChatSession(
+        sessionId: String,
+        limit: Int? = null,
+        beforeId: Long? = null,
+        afterId: Long? = null,
+    ): Result<List<SollChatMessage>>
+    suspend fun sendChatTurn(
+        content: String,
+        sessionId: String? = null,
+        runAssistant: Boolean = true,
+    ): Result<Pair<SollChatMessage, SollChatMessage?>>
+
+    suspend fun executeChatAction(
+        actionId: String,
+        action: String,
+        taskId: String? = null,
+        sessionId: String? = null,
+    ): Result<SollChatActionResult>
+
     suspend fun issueDeviceToken(deviceId: String, pairingSecret: String): Result<SollDeviceToken>
     suspend fun refreshDeviceToken(): Result<SollDeviceToken>
+    suspend fun registerAndroidPushToken(
+        token: String,
+        provider: String = "fcm",
+    ): Result<SollAndroidPushRegistration>
+
     suspend fun createRawNote(
         title: String,
         content: String,
@@ -250,6 +456,32 @@ interface SollGateway {
     suspend fun completeTask(taskId: String): Result<SollTask>
     suspend fun deferTask(taskId: String): Result<SollTask>
     suspend fun rejectTask(taskId: String): Result<SollTask>
+    suspend fun getTaskGraph(includeDone: Boolean = false): Result<SollTaskGraph>
+    suspend fun getLearningItems(status: String? = "pending", limit: Int = 80): Result<List<SollLearningItem>>
+    suspend fun updateLearningItemStatus(itemId: String, status: String): Result<SollLearningItem?>
+    suspend fun createTaskFromLearningItem(itemId: String): Result<SollTask?>
+    suspend fun getRoadmap(): Result<SollRoadmap>
+    suspend fun addRoadmapLine(stageId: String, line: String, text: String): Result<SollRoadmap>
+    suspend fun updateRoadmapLine(stageId: String, line: String, newLine: String, text: String): Result<SollRoadmap>
+    suspend fun deleteRoadmapLine(stageId: String, line: String): Result<SollRoadmap>
+    suspend fun createTaskFromRoadmapLine(stageId: String, line: String): Result<SollTask?>
+    suspend fun listSources(): Result<List<SollMonitoredSource>>
+    suspend fun listSourceItems(sourceId: String, limit: Int = 20): Result<List<SollSourceItem>>
+    suspend fun createSource(
+        name: String,
+        target: String,
+        sourceType: String = "web",
+    ): Result<SollMonitoredSource>
+    suspend fun updateSource(
+        sourceId: String,
+        name: String,
+        description: String,
+        tags: List<String>,
+        enabled: Boolean,
+    ): Result<SollMonitoredSource>
+    suspend fun deleteSource(sourceId: String): Result<Boolean>
+    suspend fun checkSource(sourceId: String): Result<Boolean>
+    suspend fun createTaskFromSourceItem(sourceId: String, itemId: String): Result<SollTask?>
     suspend fun getBookStatus(): Result<SollBookStatus>
     suspend fun getCurrentBookResults(): Result<SollBookCurrentResults>
     suspend fun selectBook(number: Int): Result<SollBookSelection>

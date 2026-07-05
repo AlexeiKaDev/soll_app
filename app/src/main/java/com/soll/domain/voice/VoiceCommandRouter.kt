@@ -132,7 +132,7 @@ class VoiceCommandRouter @Inject constructor(
         }
 
     private fun SollTaskBoard.summaryText(): String =
-        "На сегодня ${today.size}, входящих ${inbox.size}, зависших ${stale.size}."
+        "На сегодня ${today.size}, входящих ${inbox.size}, блок ${blocked.size}, отложенных ${deferred.size}, зависших ${stale.size}."
 
     private fun SollTaskBoard.detailText(): String = buildString {
         append(summaryText())

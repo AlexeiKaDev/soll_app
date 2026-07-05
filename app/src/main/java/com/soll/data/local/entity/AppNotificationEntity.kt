@@ -16,6 +16,7 @@ import com.soll.domain.notification.SollNotificationStatus
         Index(value = ["status"]),
         Index(value = ["channel_id"]),
         Index(value = ["source"]),
+        Index(value = ["dedupe_key"], unique = true),
     ],
 )
 data class AppNotificationEntity(
@@ -60,6 +61,9 @@ data class AppNotificationEntity(
 
     @ColumnInfo(name = "system_notification_id")
     val systemNotificationId: Int?,
+
+    @ColumnInfo(name = "dedupe_key")
+    val dedupeKey: String?,
 ) {
     fun toDomain(): SollNotification = SollNotification(
         id = id,
@@ -79,6 +83,7 @@ data class AppNotificationEntity(
         readAt = readAt,
         dismissedAt = dismissedAt,
         systemNotificationId = systemNotificationId,
+        dedupeKey = dedupeKey,
     )
 
     companion object {
@@ -97,6 +102,7 @@ data class AppNotificationEntity(
             readAt = notification.readAt,
             dismissedAt = notification.dismissedAt,
             systemNotificationId = notification.systemNotificationId,
+            dedupeKey = notification.dedupeKey,
         )
     }
 }

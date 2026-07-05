@@ -4,7 +4,7 @@
 
     <!-- Уведомления -->
     <string name="notification_title">Soll работает</string>
-    <string name="notification_text">Ожидаю сообщения Telegram</string>
+    <string name="notification_text">Ожидаю события Soll</string>
 
     <!-- Виджеты -->
     <string name="widget_music_name">Soll Музыка</string>

@@ -36,6 +36,26 @@ data class TaskCacheEntity(
     @ColumnInfo(name = "tags_json")
     val tagsJson: String,
 
+    @ColumnInfo(name = "approval_id")
+    val approvalId: String?,
+
+    @ColumnInfo(name = "tool_job_id")
+    val toolJobId: String?,
+
+    @ColumnInfo(name = "execution_state")
+    val executionState: String,
+
+    @ColumnInfo(name = "outcome_artifacts_json")
+    val outcomeArtifactsJson: String,
+
+    @ColumnInfo(name = "value_metric")
+    val valueMetric: String,
+
+    val branch: String,
+
+    @ColumnInfo(name = "pair_id")
+    val pairId: String?,
+
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long,
 ) {
@@ -50,6 +70,13 @@ data class TaskCacheEntity(
             priority = priority,
             dueDate = dueDate,
             tags = JSONArray(tagsJson).toStringList(),
+            approvalId = approvalId,
+            toolJobId = toolJobId,
+            executionState = executionState,
+            outcomeArtifacts = JSONArray(outcomeArtifactsJson).toStringList(),
+            valueMetric = valueMetric,
+            branch = branch,
+            pairId = pairId,
         )
 
     companion object {
@@ -64,6 +91,13 @@ data class TaskCacheEntity(
                 priority = task.priority,
                 dueDate = task.dueDate,
                 tagsJson = JSONArray(task.tags).toString(),
+                approvalId = task.approvalId,
+                toolJobId = task.toolJobId,
+                executionState = task.executionState,
+                outcomeArtifactsJson = JSONArray(task.outcomeArtifacts).toString(),
+                valueMetric = task.valueMetric,
+                branch = task.branch,
+                pairId = task.pairId,
                 updatedAt = updatedAt,
             )
     }

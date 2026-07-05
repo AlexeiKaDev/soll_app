@@ -91,21 +91,14 @@ class VoiceViewModel @Inject constructor(
                 session = VoiceCommandSession(),
             )
         }
-        sttAdapter.startListening(preferOffline = settingsRepository.voiceLocalOnly)
+        sttAdapter.startListening(
+            preferOffline = settingsRepository.voiceLocalOnly,
+            holdUntilStop = true,
+        )
     }
 
     fun stopListening() {
         sttAdapter.stopListening()
-        _uiState.update { state ->
-            val session = state.session
-            state.copy(
-                session = if (session?.status == VoiceCommandSessionStatus.LISTENING) {
-                    session.cancelled()
-                } else {
-                    session
-                },
-            )
-        }
     }
 
     fun speakResponse() {

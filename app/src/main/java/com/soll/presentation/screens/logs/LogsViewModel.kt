@@ -2,13 +2,14 @@ package com.soll.presentation.screens.logs
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.soll.data.local.dao.CommandLogDao
+import com.soll.data.local.dao.MessageLogDao
 import com.soll.data.local.entity.CommandLogEntity
 import com.soll.data.local.entity.MessageLogEntity
 import com.soll.data.repository.AssistantEventRepository
 import com.soll.data.repository.AssistantMemoryRepository
 import com.soll.domain.notification.SollNotification
 import com.soll.domain.notification.SollNotificationCenter
-import com.soll.data.repository.TelegramRepository
 import com.soll.domain.assistant.memory.AssistantMemory
 import com.soll.domain.tool.ToolJob
 import com.soll.domain.tool.ToolJobRunner
@@ -42,7 +43,8 @@ data class LogsUiState(
 
 @HiltViewModel
 class LogsViewModel @Inject constructor(
-    private val telegramRepository: TelegramRepository,
+    private val messageLogDao: MessageLogDao,
+    private val commandLogDao: CommandLogDao,
     private val toolJobStore: ToolJobStore,
     private val toolJobRunner: ToolJobRunner,
     private val notificationCenter: SollNotificationCenter,
@@ -62,13 +64,13 @@ class LogsViewModel @Inject constructor(
 
     private fun loadLogs() {
         viewModelScope.launch {
-            telegramRepository.getMessageLogs(100).collect { messages ->
+            messageLogDao.getRecentLogs(100).collect { messages ->
                 _uiState.update { it.copy(messageLogs = messages, isLoading = false) }
             }
         }
 
         viewModelScope.launch {
-            telegramRepository.getCommandLogs(100).collect { commands ->
+            commandLogDao.getRecentLogs(100).collect { commands ->
                 _uiState.update { it.copy(commandLogs = commands) }
             }
         }
@@ -156,7 +158,8 @@ class LogsViewModel @Inject constructor(
 
     fun clearLogs() {
         viewModelScope.launch {
-            telegramRepository.clearLogs()
+            messageLogDao.deleteAll()
+            commandLogDao.deleteAll()
             toolJobStore.deleteFinishedJobs()
             notificationCenter.deleteAll()
         }

@@ -6,11 +6,41 @@ import android.view.Window
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+
+private val SollLightColorScheme = lightColorScheme(
+    primary = SollLightPrimary,
+    onPrimary = SollLightOnPrimary,
+    primaryContainer = SollLightPrimaryContainer,
+    onPrimaryContainer = SollLightOnPrimaryContainer,
+    secondary = SollLightSecondary,
+    onSecondary = SollLightOnSecondary,
+    secondaryContainer = SollLightSecondaryContainer,
+    onSecondaryContainer = SollLightOnSecondaryContainer,
+    tertiary = SollLightTertiary,
+    onTertiary = SollLightOnTertiary,
+    tertiaryContainer = SollLightTertiaryContainer,
+    onTertiaryContainer = SollLightOnTertiaryContainer,
+    error = SollLightError,
+    errorContainer = SollLightErrorContainer,
+    onError = SollLightOnError,
+    onErrorContainer = SollLightOnErrorContainer,
+    background = SollLightBackground,
+    onBackground = SollLightOnBackground,
+    surface = SollLightSurface,
+    onSurface = SollLightOnSurface,
+    surfaceVariant = SollLightSurfaceVariant,
+    onSurfaceVariant = SollLightOnSurfaceVariant,
+    outline = SollLightOutline,
+    inverseOnSurface = SollLightInverseOnSurface,
+    inverseSurface = SollLightInverseSurface,
+    inversePrimary = SollLightInversePrimary
+)
 
 private val ClassicDarkColorScheme = darkColorScheme(
     primary = md_theme_dark_primary,
@@ -105,6 +135,7 @@ fun SollTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = when (variant) {
+        SollThemeVariant.SOLL -> SollLightColorScheme
         SollThemeVariant.CLASSIC -> ClassicDarkColorScheme
         SollThemeVariant.AURORA -> AuroraDarkColorScheme
         SollThemeVariant.AQUIK -> AquikDarkColorScheme
@@ -133,13 +164,15 @@ private fun applySystemBarColors(
     colorScheme: ColorScheme
 ) {
     window.statusBarColor = when (variant) {
+        SollThemeVariant.SOLL -> colorScheme.background.toArgb()
         SollThemeVariant.CLASSIC -> colorScheme.primary.toArgb()
         SollThemeVariant.AURORA -> colorScheme.background.toArgb()
         SollThemeVariant.AQUIK -> colorScheme.primary.toArgb()
     }
     val insets = WindowCompat.getInsetsController(window, view)
-    insets.isAppearanceLightStatusBars = false
+    val useLightSystemBars = variant == SollThemeVariant.SOLL
+    insets.isAppearanceLightStatusBars = useLightSystemBars
     // Системная навигация (жесты): тот же фон, что и контент / нижняя панель - без серой полосы.
     window.navigationBarColor = colorScheme.background.toArgb()
-    insets.isAppearanceLightNavigationBars = false
+    insets.isAppearanceLightNavigationBars = useLightSystemBars
 }

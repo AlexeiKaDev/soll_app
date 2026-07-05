@@ -124,7 +124,7 @@ class FieldMapRepository @Inject constructor(
 
     suspend fun importTaskPoints(): Int = withContext(Dispatchers.IO) {
         val board = taskCacheRepository.getCachedBoard()
-        val tasks = (board.today + board.inbox + board.stale + board.doneRecent)
+        val tasks = (board.today + board.blocked + board.inbox + board.stale + board.deferred + board.doneRecent)
             .distinctBy { it.id }
         val now = System.currentTimeMillis()
         val imported = tasks.mapNotNull { task ->

@@ -54,7 +54,7 @@ class SyncHandler(
 
     private fun SollTaskBoard.format(): String = buildString {
         append("<b>Доска задач:</b>\n")
-        append("Сегодня: ${today.size}, входящих: ${inbox.size}, зависших: ${stale.size}, открытых всего: $openCount")
+        append("Сегодня: ${today.size}, входящих: ${inbox.size}, блок: ${blocked.size}, отложено: ${deferred.size}, зависших: ${stale.size}, открытых всего: $openCount")
         if (today.isNotEmpty()) {
             append("\n\n<b>Сегодня:</b>")
             today.take(5).forEach { task ->

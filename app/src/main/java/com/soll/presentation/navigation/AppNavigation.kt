@@ -18,21 +18,19 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.soll.presentation.screens.assistant.AssistantDashboardScreen
+import com.soll.data.notification.AppForegroundState
+import com.soll.presentation.screens.chat.ChatScreen
 import com.soll.presentation.screens.devices.DevicesScreen
 import com.soll.presentation.screens.logs.LogsScreen
+import com.soll.presentation.screens.settings.DeviceQaScreen
 import com.soll.presentation.screens.settings.SettingsScreen
 import com.soll.presentation.screens.tasks.TaskBoardScreen
 import com.soll.presentation.screens.tools.ToolsScreen
-import com.soll.presentation.screens.tools.asksoll.AskSollScreen
 import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
 import com.soll.presentation.screens.tools.fieldmap.FieldMapScreen
 import com.soll.presentation.screens.tools.music.MusicScreen
-import com.soll.presentation.screens.tools.nfc.NfcToolsScreen
-import com.soll.presentation.screens.tools.rawnote.RawNoteScreen
-import com.soll.presentation.screens.tools.scanner.ScannerScreen
-import com.soll.presentation.screens.voice.VoiceScreen
+import com.soll.presentation.screens.tools.portablessd.PortableSsdScreen
 
 @Composable
 fun AppNavigation(
@@ -46,9 +44,25 @@ fun AppNavigation(
     val currentRoute = navBackStackEntry?.destination?.route
     var pendingLogsTab by remember { mutableStateOf<Int?>(null) }
 
+    LaunchedEffect(currentRoute) {
+        AppForegroundState.updateCurrentRoute(currentRoute)
+    }
+
     LaunchedEffect(launchCommand?.nonce) {
         val command = launchCommand ?: return@LaunchedEffect
         when (command.section) {
+            AppLaunchTargets.SECTION_CHAT -> {
+                navController.navigate(AppDestinations.Chat.route) {
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            AppLaunchTargets.SECTION_TASKS -> {
+                navController.navigate(AppDestinations.Tasks.route) {
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
             AppLaunchTargets.SECTION_LOGS -> {
                 pendingLogsTab = when (command.logsTab) {
                     AppLaunchTargets.LOGS_TAB_NOTIFICATIONS -> LOGS_TAB_NOTIFICATIONS
@@ -59,8 +73,8 @@ fun AppNavigation(
                     restoreState = true
                 }
             }
-            AppLaunchTargets.SECTION_BOOK_READER -> {
-                navController.navigate(Routes.BOOK_READER) {
+            AppLaunchTargets.SECTION_PORTABLE_SSD -> {
+                navController.navigate(Routes.PORTABLE_SSD) {
                     launchSingleTop = true
                 }
             }
@@ -69,8 +83,8 @@ fun AppNavigation(
                     launchSingleTop = true
                 }
             }
-            AppLaunchTargets.SECTION_NOTES -> {
-                navController.navigate(Routes.RAW_NOTE) {
+            AppLaunchTargets.SECTION_BOOK_READER -> {
+                navController.navigate(Routes.BOOK_READER) {
                     launchSingleTop = true
                 }
             }
@@ -114,13 +128,19 @@ fun AppNavigation(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = AppDestinations.Home.route,
+            startDestination = AppDestinations.Chat.route,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            composable(AppDestinations.Home.route) {
-                AssistantDashboardScreen()
+            composable(AppDestinations.Chat.route) {
+                ChatScreen(
+                    onOpenSettings = {
+                        navController.navigate(AppDestinations.Settings.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                )
             }
             composable(AppDestinations.Tasks.route) {
                 TaskBoardScreen()
@@ -142,7 +162,28 @@ fun AppNavigation(
                 )
             }
             composable(AppDestinations.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(
+                    onOpenDeviceQa = {
+                        navController.navigate(Routes.DEVICE_QA) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+            composable(Routes.DEVICE_QA) {
+                DeviceQaScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.PORTABLE_SSD) {
+                PortableSsdScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.MUSIC) {
+                MusicScreen(
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Routes.BOOK_READER) {
                 BookReaderScreen(
@@ -154,39 +195,10 @@ fun AppNavigation(
                     onBack = { navController.popBackStack() }
                 )
             }
-            composable(Routes.RAW_NOTE) {
-                RawNoteScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(Routes.MUSIC) {
-                MusicScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(Routes.SCANNER) {
-                ScannerScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(Routes.NFC) {
-                NfcToolsScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(Routes.FIELD_MAP) {
+            composable(Routes.ACTIVITY_HISTORY) {
                 FieldMapScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(Routes.VOICE) {
-                VoiceScreen(
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable(Routes.ASK_SOLL) {
-                AskSollScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    initialActivityFocus = true,
                 )
             }
         }

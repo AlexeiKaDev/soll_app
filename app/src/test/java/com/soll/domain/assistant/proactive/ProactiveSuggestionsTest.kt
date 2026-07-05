@@ -21,7 +21,7 @@ class ProactiveSuggestionsTest {
         )
 
         val ids = scenarios.map { it.id }.toSet()
-        assertTrue(ids.contains("bot_stopped"))
+        assertTrue(ids.contains("soll_server_url_missing"))
         assertTrue(ids.contains("battery_optimization_blocks_background"))
         assertTrue(ids.contains("notifications_disabled"))
         assertTrue(ids.contains("tasks_pending_today"))

@@ -12,13 +12,14 @@ data class SttAdapterState(
     val finalText: String? = null,
     val errorMessage: String? = null,
     val preferOffline: Boolean = false,
+    val holdUntilStop: Boolean = false,
     val isOnDeviceRecognitionAvailable: Boolean = false,
     val activeMode: SttRecognitionMode = SttRecognitionMode.SYSTEM,
 )
 
 interface SttAdapter {
     val state: kotlinx.coroutines.flow.StateFlow<SttAdapterState>
-    fun startListening(preferOffline: Boolean = false)
+    fun startListening(preferOffline: Boolean = false, holdUntilStop: Boolean = false)
     fun stopListening()
     fun clearFinalResult()
     fun destroy()

@@ -14,7 +14,7 @@ object AssistantEventSummaryExporter {
         return buildString {
             appendLine("# Summary событий Soll App")
             appendLine()
-            appendLine("Это безопасная сводка событий ассистента. Payload JSON, Telegram-сообщения, медиа и сырые логи не включены.")
+            appendLine("Это безопасная сводка событий ассистента. Payload JSON, сырые тексты чата, медиа и сырые логи не включены.")
             appendLine()
             appendLine("## Счетчики")
             appendLine()

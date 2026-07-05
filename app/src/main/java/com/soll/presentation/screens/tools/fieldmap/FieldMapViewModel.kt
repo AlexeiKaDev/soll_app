@@ -1,14 +1,19 @@
 package com.soll.presentation.screens.tools.fieldmap
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.soll.data.repository.ActivityTrackingRepository
 import com.soll.data.repository.FieldMapRepository
+import com.soll.data.service.ActivityTrackingService
 import com.soll.domain.assistant.CapabilityRegistry
+import com.soll.domain.activity.ActivityTrackingSummary
 import com.soll.domain.field.FieldDistance
 import com.soll.domain.field.FieldLocationSnapshot
 import com.soll.domain.field.FieldPoint
 import com.soll.domain.field.FieldPointStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +29,8 @@ data class FieldMapUiState(
     val actionPointId: String? = null,
     val message: String? = null,
     val isError: Boolean = false,
+    val activitySummary: ActivityTrackingSummary = ActivityTrackingSummary(),
+    val isActivityTrackerRunning: Boolean = false,
 ) {
     val plannedCount: Int = points.count { it.status == FieldPointStatus.PLANNED }
     val activeCount: Int = points.count { it.status == FieldPointStatus.ACTIVE }
@@ -32,7 +39,9 @@ data class FieldMapUiState(
 
 @HiltViewModel
 class FieldMapViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: FieldMapRepository,
+    private val activityTrackingRepository: ActivityTrackingRepository,
     private val capabilityRegistry: CapabilityRegistry,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(FieldMapUiState())
@@ -50,6 +59,20 @@ class FieldMapViewModel @Inject constructor(
                     )
                 }
             }
+        }
+        viewModelScope.launch {
+            combine(
+                activityTrackingRepository.observeSummary(),
+                ActivityTrackingService.isRunning,
+            ) { summary, running -> summary to running }
+                .collect { (summary, running) ->
+                    _uiState.update {
+                        it.copy(
+                            activitySummary = summary,
+                            isActivityTrackerRunning = running,
+                        )
+                    }
+                }
         }
     }
 
@@ -202,6 +225,33 @@ class FieldMapViewModel @Inject constructor(
                         it.copy(actionPointId = null, message = error.message ?: "Не удалось создать заметку", isError = true)
                     }
                 }
+        }
+    }
+
+    fun startActivityTracking() {
+        if (!ensureFieldMapCapability()) return
+        activityTrackingRepository.setEnabled(true)
+        val started = ActivityTrackingService.start(context)
+        if (!started) {
+            activityTrackingRepository.setEnabled(false)
+        }
+        _uiState.update {
+            it.copy(
+                message = if (started) "Фоновый трекер активности запущен" else "Android заблокировал старт фонового трекера",
+                isError = !started,
+            )
+        }
+    }
+
+    fun stopActivityTracking() {
+        activityTrackingRepository.setEnabled(false)
+        ActivityTrackingService.stop(context)
+        _uiState.update {
+            it.copy(
+                isActivityTrackerRunning = false,
+                message = "Фоновый трекер активности остановлен",
+                isError = false,
+            )
         }
     }
 

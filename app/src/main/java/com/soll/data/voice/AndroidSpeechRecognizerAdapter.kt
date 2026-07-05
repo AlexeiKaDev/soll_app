@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -20,13 +22,28 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : SttAdapter {
 
+    private var recognizer: SpeechRecognizer? = null
+    private var activeMode: SttRecognitionMode = SttRecognitionMode.SYSTEM
+    private val handler = Handler(Looper.getMainLooper())
+    private var holdUntilStop: Boolean = false
+    private var stopRequested: Boolean = false
+    private var lastPreferOffline: Boolean = false
+    private var manualFinalEmitted: Boolean = false
+    private val manualSegments = mutableListOf<String>()
+
     private val _state = MutableStateFlow(currentAvailability())
     override val state: StateFlow<SttAdapterState> = _state.asStateFlow()
 
-    private var recognizer: SpeechRecognizer? = null
-    private var activeMode: SttRecognitionMode = SttRecognitionMode.SYSTEM
+    override fun startListening(preferOffline: Boolean, holdUntilStop: Boolean) {
+        this.holdUntilStop = holdUntilStop
+        this.stopRequested = false
+        this.lastPreferOffline = preferOffline
+        this.manualFinalEmitted = false
+        manualSegments.clear()
+        startRecognizer(preferOffline = preferOffline, resetText = true)
+    }
 
-    override fun startListening(preferOffline: Boolean) {
+    private fun startRecognizer(preferOffline: Boolean, resetText: Boolean) {
         val availability = currentAvailability(preferOffline = preferOffline)
         if (!availability.isAvailable) {
             _state.value = availability.copy(
@@ -49,27 +66,24 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         _state.value = availability.copy(
             isAvailable = true,
             isListening = true,
-            partialText = "",
+            partialText = if (resetText) "" else _state.value.partialText,
             finalText = null,
             errorMessage = null,
+            holdUntilStop = holdUntilStop,
             activeMode = desiredMode,
         )
 
-        speechRecognizer.startListening(
-            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            }
-        )
+        speechRecognizer.startListening(buildIntent(preferOffline))
     }
 
     override fun stopListening() {
+        stopRequested = true
         recognizer?.stopListening()
-        _state.value = _state.value.copy(isListening = false)
+        if (holdUntilStop) {
+            handler.postDelayed({ emitManualFinalIfNeeded(fallbackError = null) }, STOP_RESULT_GRACE_MS)
+        } else {
+            _state.value = _state.value.copy(isListening = false)
+        }
     }
 
     override fun clearFinalResult() {
@@ -77,9 +91,23 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     }
 
     override fun destroy() {
+        handler.removeCallbacksAndMessages(null)
         recognizer?.destroy()
         recognizer = null
     }
+
+    private fun buildIntent(preferOffline: Boolean): Intent =
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L)
+        }
 
     private fun recognizerFor(mode: SttRecognitionMode): SpeechRecognizer {
         val current = recognizer
@@ -106,6 +134,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         return SttAdapterState(
             isAvailable = systemAvailable || onDeviceAvailable,
             preferOffline = preferOffline,
+            holdUntilStop = holdUntilStop,
             isOnDeviceRecognitionAvailable = onDeviceAvailable,
             activeMode = activeMode,
         )
@@ -124,18 +153,34 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() {
-            _state.value = _state.value.copy(isListening = false)
+            if (!holdUntilStop) {
+                _state.value = _state.value.copy(isListening = false)
+            }
         }
 
         override fun onError(error: Int) {
-            _state.value = _state.value.copy(
-                isListening = false,
-                errorMessage = error.toUserMessage(),
-            )
+            if (holdUntilStop && !stopRequested && error.isManualRetryable()) {
+                restartManualRecognition()
+                return
+            }
+            if (holdUntilStop && stopRequested) {
+                emitManualFinalIfNeeded(fallbackError = error.toUserMessage())
+                return
+            }
+            _state.value = _state.value.copy(isListening = false, errorMessage = error.toUserMessage())
         }
 
         override fun onResults(results: Bundle?) {
             val text = results.bestText()
+            if (holdUntilStop) {
+                rememberManualSegment(text)
+                if (stopRequested) {
+                    emitManualFinalIfNeeded(fallbackError = if (text.isNullOrBlank()) "Речь не распознана" else null)
+                } else {
+                    restartManualRecognition()
+                }
+                return
+            }
             _state.value = _state.value.copy(
                 isListening = false,
                 partialText = "",
@@ -157,6 +202,49 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             ?.trim()
             ?.takeIf { it.isNotBlank() }
 
+    private fun restartManualRecognition() {
+        if (!holdUntilStop || stopRequested) return
+        _state.value = _state.value.copy(isListening = true, partialText = "", errorMessage = null)
+        handler.postDelayed(
+            {
+                if (holdUntilStop && !stopRequested) {
+                    startRecognizer(preferOffline = lastPreferOffline, resetText = false)
+                }
+            },
+            MANUAL_RESTART_DELAY_MS,
+        )
+    }
+
+    private fun rememberManualSegment(text: String?) {
+        val clean = text?.trim()?.replace(Regex("\\s+"), " ").orEmpty()
+        if (clean.isBlank()) return
+        if (manualSegments.lastOrNull() != clean) {
+            manualSegments += clean
+        }
+    }
+
+    private fun emitManualFinalIfNeeded(fallbackError: String?) {
+        if (!holdUntilStop || manualFinalEmitted) return
+        manualFinalEmitted = true
+        val finalText = manualSegments.joinToString(" ").trim().takeIf { it.isNotBlank() }
+        holdUntilStop = false
+        stopRequested = false
+        manualSegments.clear()
+        _state.value = _state.value.copy(
+            isListening = false,
+            partialText = "",
+            finalText = finalText,
+            errorMessage = if (finalText == null) fallbackError ?: "Речь не распознана" else null,
+            holdUntilStop = false,
+        )
+    }
+
+    private fun Int.isManualRetryable(): Boolean =
+        this == SpeechRecognizer.ERROR_NO_MATCH ||
+            this == SpeechRecognizer.ERROR_SPEECH_TIMEOUT ||
+            this == SpeechRecognizer.ERROR_CLIENT ||
+            this == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+
     private fun Int.toUserMessage(): String =
         when (this) {
             SpeechRecognizer.ERROR_AUDIO -> "Ошибка записи микрофона"
@@ -171,3 +259,6 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             else -> "Ошибка распознавания речи: $this"
         }
 }
+
+private const val MANUAL_RESTART_DELAY_MS = 300L
+private const val STOP_RESULT_GRACE_MS = 800L

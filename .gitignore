@@ -21,6 +21,15 @@ local.properties
 *.apk
 *.aab
 
+# Firebase local configs
+/app/google-services.json
+/app/src/*/google-services.json
+!/app/src/*/google-services.example.json
+
+# Local QA artifacts
+/task_counts_window.xml
+/task_screen_*.png
+
 # Python tooling
 __pycache__/
 *.pyc

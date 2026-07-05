@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -26,10 +27,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -66,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.soll.domain.activity.ActivityTrackingSummary
 import com.soll.domain.field.FieldLocationSnapshot
 import com.soll.domain.field.FieldPoint
 import com.soll.domain.field.FieldPointStatus
@@ -80,6 +85,7 @@ import java.util.Locale
 fun FieldMapScreen(
     onBack: () -> Unit,
     viewModel: FieldMapViewModel = hiltViewModel(),
+    initialActivityFocus: Boolean = false,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -97,6 +103,15 @@ fun FieldMapScreen(
             viewModel.refreshLocation()
         } else {
             viewModel.showMessage("Без разрешения геолокации можно добавлять только ручные координаты", isError = true)
+        }
+    }
+    val activityPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        if (context.hasActivityTrackingMinimumPermission()) {
+            viewModel.startActivityTracking()
+        } else {
+            viewModel.showMessage("Для трекера активности нужно разрешить шаги или текущую геолокацию", isError = true)
         }
     }
 
@@ -121,11 +136,21 @@ fun FieldMapScreen(
         }
     }
 
+    fun runWithActivityTrackingPermission() {
+        if (!viewModel.ensureFieldMapCapability()) return
+        val missing = context.activityTrackingPermissionsToRequest()
+        if (missing.isEmpty()) {
+            viewModel.startActivityTracking()
+        } else {
+            activityPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Карта") },
+                title = { Text(if (initialActivityFocus) "Активность" else "Карта") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -148,6 +173,15 @@ fun FieldMapScreen(
         ) {
             item {
                 FieldHeader(uiState)
+            }
+
+            item {
+                ActivityHistoryCard(
+                    summary = uiState.activitySummary,
+                    isRunning = uiState.isActivityTrackerRunning,
+                    onStart = { runWithActivityTrackingPermission() },
+                    onStop = viewModel::stopActivityTracking,
+                )
             }
 
             item {
@@ -279,6 +313,89 @@ private fun FieldHeader(uiState: FieldMapUiState) {
                 PassiveChip(text = "В плане: ${uiState.plannedCount}")
                 PassiveChip(text = "В работе: ${uiState.activeCount}")
                 PassiveChip(text = "Готово: ${uiState.doneCount}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityHistoryCard(
+    summary: ActivityTrackingSummary,
+    isRunning: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.DirectionsWalk, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Активность", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (isRunning) "Фоновый демон работает" else "Фоновый демон остановлен",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text = "Шагомер пишет историю экономно: GPS запрашивается редко, чаще только при движении; на низкой батарее интервал увеличивается.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PassiveChip(text = "Шаги сегодня: ${summary.todaySteps}")
+                PassiveChip(text = "Точек сегодня: ${summary.samplesToday}")
+                PassiveChip(text = "Дистанция: ${distanceLabel(summary.todayDistanceMeters)}")
+            }
+            summary.lastSample?.let { sample ->
+                val locationText = if (sample.latitude != null && sample.longitude != null) {
+                    GeoCoordinate(sample.latitude, sample.longitude).formatted()
+                } else {
+                    "без GPS"
+                }
+                Text(
+                    text = "Последний замер: ${formatTime(sample.capturedAt)} • $locationText • +${sample.stepDelta} шагов • ${sample.reason}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } ?: Text(
+                text = "История пока пустая. Запусти демон и пройдись несколько минут.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Трекер работает через foreground service: оставьте уведомление включенным; GPS используется только при выданной текущей геолокации.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (isRunning) {
+                    OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Остановить")
+                    }
+                } else {
+                    Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Запустить демон")
+                    }
+                }
             }
         }
     }
@@ -669,6 +786,30 @@ private fun Context.hasLocationPermission(): Boolean {
     val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
     return fine || coarse
+}
+
+private fun Context.hasActivityRecognitionPermission(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
+        PackageManager.PERMISSION_GRANTED
+
+private fun Context.hasActivityTrackingMinimumPermission(): Boolean =
+    hasActivityRecognitionPermission() || hasLocationPermission()
+
+private fun Context.activityTrackingPermissionsToRequest(): List<String> {
+    val permissions = mutableListOf<String>()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !hasActivityRecognitionPermission()) {
+        permissions += Manifest.permission.ACTIVITY_RECOGNITION
+    }
+    val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    if (!fine && !coarse) {
+        permissions += Manifest.permission.ACCESS_FINE_LOCATION
+        permissions += Manifest.permission.ACCESS_COARSE_LOCATION
+    }
+    return permissions.distinct()
 }
 
 private fun openPointInMaps(context: Context, point: FieldPoint): Boolean {

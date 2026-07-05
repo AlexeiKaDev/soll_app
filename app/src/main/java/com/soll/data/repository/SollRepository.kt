@@ -4,8 +4,12 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import com.squareup.moshi.Moshi
+import com.soll.BuildConfig
 import com.soll.data.api.AndroidProtocolBootstrapResponse
+import com.soll.data.api.AndroidPushTokenRequest
+import com.soll.data.api.AndroidPushTokenResponse
 import com.soll.data.api.AndroidSyncStatusResponse
 import com.soll.data.api.AssistantAskRequest
 import com.soll.data.api.AssistantAskResponse
@@ -26,6 +30,13 @@ import com.soll.data.api.BookResultResponse
 import com.soll.data.api.BookSelectRequest
 import com.soll.data.api.BookSelectResponse
 import com.soll.data.api.BookStatusSessionResponse
+import com.soll.data.api.ChatActionExecuteRequest
+import com.soll.data.api.ChatActionExecuteResponse
+import com.soll.data.api.ChatMessageResponse
+import com.soll.data.api.ChatSessionCreateRequest
+import com.soll.data.api.ChatSessionCreateResponse
+import com.soll.data.api.ChatSessionSummaryResponse
+import com.soll.data.api.ChatTurnRequest
 import com.soll.data.api.CreateRawFileRequest
 import com.soll.data.api.DeviceTokenRequest
 import com.soll.data.api.GadgetCommandAckRequest
@@ -38,11 +49,24 @@ import com.soll.data.api.GadgetEventResponse
 import com.soll.data.api.GadgetHistoryPointResponse
 import com.soll.data.api.GadgetHistoryResponse
 import com.soll.data.api.GadgetSnapshotResponse
+import com.soll.data.api.LearningItemResponse
+import com.soll.data.api.LearningItemStatusRequest
+import com.soll.data.api.LearningItemTaskRequest
 import com.soll.data.api.MeshOutboxAttemptRequest
 import com.soll.data.api.MeshOutboxItemResponse
 import com.soll.data.api.MeshStatusResponse
+import com.soll.data.api.MonitoredSourceCreateRequest
+import com.soll.data.api.MonitoredSourceResponse
+import com.soll.data.api.MonitoredSourceUpdateRequest
 import com.soll.data.api.RawFileResponse
 import com.soll.data.api.RawUploadResponse
+import com.soll.data.api.RoadmapLineRequest
+import com.soll.data.api.RoadmapLineTaskRequest
+import com.soll.data.api.RoadmapLineUpdateRequest
+import com.soll.data.api.RoadmapResponse
+import com.soll.data.api.RoadmapStageResponse
+import com.soll.data.api.RoadmapLineResponse
+import com.soll.data.api.RoadmapReadinessResponse
 import com.soll.data.api.SollApiService
 import com.soll.data.api.SollBookStatusResponse
 import com.soll.data.api.SollBriefingResponse
@@ -53,7 +77,14 @@ import com.soll.data.api.SollProtocolAuthResponse
 import com.soll.data.api.SollProtocolTransportResponse
 import com.soll.data.api.SollProtocolWorkerContractResponse
 import com.soll.data.api.SollTaskBoardResponse
+import com.soll.data.api.SollTaskBoardCountsResponse
 import com.soll.data.api.SollTaskResponse
+import com.soll.data.api.SecurePayloadEnvelopeRequest
+import com.soll.data.api.SourceItemResponse
+import com.soll.data.api.SourceItemTaskRequest
+import com.soll.data.api.TaskGraphEdgeResponse
+import com.soll.data.api.TaskGraphNodeResponse
+import com.soll.data.api.TaskGraphResponse
 import com.soll.domain.metacoordinator.MetaCoordinatorFallback
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
@@ -65,6 +96,8 @@ import com.soll.domain.device.GadgetCloudHistoryPoint
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollAndroidSyncStatus
+import com.soll.domain.soll.SollAndroidChatSync
+import com.soll.domain.soll.SollAndroidPushRegistration
 import com.soll.domain.soll.SollBookActionResult
 import com.soll.domain.soll.SollBookAlternative
 import com.soll.domain.soll.SollBookBatchDownload
@@ -80,9 +113,19 @@ import com.soll.domain.soll.SollBookSelection
 import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
 import com.soll.domain.soll.SollBriefing
+import com.soll.domain.soll.SollChatActionResult
+import com.soll.domain.soll.SollChatMessage
+import com.soll.domain.soll.SollChatSession
 import com.soll.domain.soll.SollDevice
 import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
+import com.soll.domain.soll.SollLearningItem
+import com.soll.domain.soll.SollMonitoredSource
+import com.soll.domain.soll.SollRoadmap
+import com.soll.domain.soll.SollRoadmapLine
+import com.soll.domain.soll.SollRoadmapReadiness
+import com.soll.domain.soll.SollRoadmapStage
+import com.soll.domain.soll.SollSourceItem
 import com.soll.domain.soll.SollGadgetDiscoverySchema
 import com.soll.domain.soll.SollMeshOutboxItem
 import com.soll.domain.soll.SollMeshStatus
@@ -95,20 +138,32 @@ import com.soll.domain.soll.SollRawNote
 import com.soll.domain.soll.SollRawUpload
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
+import com.soll.domain.soll.SollTaskBoardCounts
+import com.soll.domain.soll.SollTaskGraph
+import com.soll.domain.soll.SollTaskGraphEdge
+import com.soll.domain.soll.SollTaskGraphNode
 import com.soll.domain.soll.buildSollDeviceTokenSignature
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.TimeZone
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Interceptor
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okio.BufferedSink
 import okio.source
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -128,8 +183,32 @@ class SollRepository @Inject constructor(
         service().getHealth(readAuthorizationHeader()).toDomain()
     }
 
-    override suspend fun getTaskBoard(): Result<SollTaskBoard> = runSuspendCatching {
-        service().getTaskBoard(readAuthorizationHeader()).toDomain()
+    override suspend fun getTaskBoard(limitPerSection: Int?): Result<SollTaskBoard> {
+        val sectionLimit = limitPerSection
+            ?.coerceIn(TASK_BOARD_MIN_SECTION_LIMIT, TASK_BOARD_MAX_SECTION_LIMIT)
+            ?: TASK_BOARD_SECTION_LIMIT
+        val boardResult = runSuspendCatching {
+            service().getTaskBoard(
+                authorization = readAuthorizationHeader(),
+                limitPerSection = sectionLimit,
+                includeCounts = true,
+            ).toDomain()
+        }
+        if (boardResult.isSuccess) {
+            val board = boardResult.getOrThrow()
+            if (board.openCount > 0 || board.doneRecent.isNotEmpty()) {
+                return boardResult
+            }
+        }
+
+        val syncStatusResult = runSuspendCatching {
+            val response = service().getAndroidSyncStatus(readAuthorizationHeader())
+            cacheAndroidSyncStatus(response)
+            response.tasks.toDomain()
+        }
+        if (syncStatusResult.isSuccess) return syncStatusResult
+
+        return boardResult
     }
 
     override suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus> {
@@ -142,6 +221,102 @@ class SollRepository @Inject constructor(
 
         val cached = cachedAndroidSyncStatusOrNull(liveResult.exceptionOrNull())
         return cached?.let { Result.success(it) } ?: liveResult
+    }
+
+    override suspend fun listChatSessions(limit: Int): Result<List<SollChatSession>> = runSuspendCatching {
+        service().getChatSessions(
+            authorization = readAuthorizationHeader(),
+            limit = limit.coerceIn(1, 100),
+        ).sessions.map { it.toDomain() }
+    }
+
+    override suspend fun createChatSession(title: String, sessionId: String?): Result<SollChatSession> =
+        runSuspendCatching {
+            val cleanTitle = title.trim().ifBlank { "Soll Android" }
+            service().createChatSession(
+                authorization = readAuthorizationHeader(),
+                request = ChatSessionCreateRequest(
+                    title = cleanTitle,
+                    sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
+                ),
+            ).toDomain()
+        }
+
+    override suspend fun getChatSession(
+        sessionId: String,
+        limit: Int?,
+        beforeId: Long?,
+        afterId: Long?,
+    ): Result<List<SollChatMessage>> = runSuspendCatching {
+        val cleanSessionId = sessionId.trim()
+        require(cleanSessionId.isNotBlank()) { "ID чата не задан" }
+        service().getChatSession(
+            authorization = readAuthorizationHeader(),
+            sessionId = cleanSessionId,
+            limit = limit?.coerceIn(1, 500),
+            beforeId = beforeId,
+            afterId = afterId,
+        ).messages.map { it.toDomain() }
+    }
+
+    override suspend fun sendChatTurn(
+        content: String,
+        sessionId: String?,
+        runAssistant: Boolean,
+    ): Result<Pair<SollChatMessage, SollChatMessage?>> = runSuspendCatching {
+        val cleanContent = content.trim()
+        require(cleanContent.isNotBlank()) { "Сообщение пустое" }
+        val metadata = mapOf("source" to "android_app")
+        val encrypted = encryptedEnvelopeOrNull(
+            content = cleanContent,
+            metadata = metadata,
+            aad = "POST /api/v1/chat/turn",
+        )
+        val response = service().sendChatTurn(
+            authorization = readAuthorizationHeader(),
+            request = ChatTurnRequest(
+                sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
+                content = if (encrypted == null) cleanContent else null,
+                metadata = if (encrypted == null) metadata else null,
+                encrypted = encrypted,
+                runAssistant = runAssistant,
+                taskIntake = true,
+            ),
+        )
+        response.message.toDomain() to response.assistant?.toDomain()
+    }
+
+    override suspend fun executeChatAction(
+        actionId: String,
+        action: String,
+        taskId: String?,
+        sessionId: String?,
+    ): Result<SollChatActionResult> = runSuspendCatching {
+        val cleanActionId = actionId.trim()
+        val cleanAction = action.trim()
+        require(cleanActionId.isNotBlank()) { "ID действия не задан" }
+        require(cleanAction.isNotBlank()) { "Тип действия не задан" }
+        val payload = mapOf(
+            "action" to cleanAction,
+            "task_id" to taskId?.trim().orEmpty(),
+            "session_id" to sessionId?.trim().orEmpty(),
+        )
+        val encrypted = encryptedEnvelopeOrNull(
+            content = "",
+            metadata = emptyMap(),
+            aad = "POST /api/v1/chat/actions/$cleanActionId/execute",
+            extra = payload,
+        )
+        service().executeChatAction(
+            authorization = readAuthorizationHeader(),
+            actionId = cleanActionId,
+            request = ChatActionExecuteRequest(
+                action = if (encrypted == null) cleanAction else null,
+                taskId = if (encrypted == null) taskId?.trim()?.takeIf { it.isNotBlank() } else null,
+                sessionId = if (encrypted == null) sessionId?.trim()?.takeIf { it.isNotBlank() } else null,
+                encrypted = encrypted,
+            ),
+        ).toDomain()
     }
 
     override suspend fun issueDeviceToken(deviceId: String, pairingSecret: String): Result<SollDeviceToken> =
@@ -174,6 +349,24 @@ class SollRepository @Inject constructor(
         val authorization = deviceAuthorizationHeader()
         require(authorization != null) { "Device bearer не настроен" }
         service().refreshDeviceToken(authorization).toDomain()
+    }
+
+    override suspend fun registerAndroidPushToken(
+        token: String,
+        provider: String,
+    ): Result<SollAndroidPushRegistration> = runSuspendCatching {
+        val cleanToken = token.trim()
+        require(cleanToken.isNotBlank()) { "Push token не задан" }
+        service().registerAndroidPushToken(
+            authorization = readAuthorizationHeader(),
+            request = AndroidPushTokenRequest(
+                token = cleanToken,
+                provider = provider.trim().ifBlank { "fcm" },
+                deviceId = settingsRepository.sollDeviceId.takeIf { it.isNotBlank() },
+                appId = context.packageName,
+                appVersion = BuildConfig.VERSION_NAME,
+            ),
+        ).toDomain()
     }
 
     override suspend fun createRawNote(
@@ -228,6 +421,192 @@ class SollRepository @Inject constructor(
     override suspend fun rejectTask(taskId: String): Result<SollTask> = runSuspendCatching {
         service().rejectTask(authorizationHeader(), taskId).toDomain()
     }
+
+    override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> = runSuspendCatching {
+        service().getTaskGraph(
+            authorization = readAuthorizationHeader(),
+            includeDone = includeDone,
+            maxNodes = 700,
+        ).toDomain()
+    }.recoverCatching { error ->
+        if (!error.isHttpStatus(404)) throw error
+        val syncStatus = getAndroidSyncStatus().getOrThrow()
+        buildTaskGraphFromBoard(syncStatus.tasks, includeDone = includeDone)
+    }
+
+    override suspend fun getLearningItems(status: String?, limit: Int): Result<List<SollLearningItem>> =
+        runSuspendCatching {
+            service().getLearningItems(
+                authorization = readAuthorizationHeader(),
+                status = status?.takeIf { it.isNotBlank() },
+                limit = limit.coerceIn(1, 200),
+            ).items.map { it.toDomain() }
+        }.recoverCatching { error ->
+            if (!error.isHttpStatus(404)) throw error
+            emptyList()
+        }
+
+    override suspend fun updateLearningItemStatus(itemId: String, status: String): Result<SollLearningItem?> =
+        runSuspendCatching {
+            service().updateLearningItemStatus(
+                authorization = authorizationHeader(),
+                itemId = itemId.trim(),
+                request = LearningItemStatusRequest(status = status.trim()),
+            ).item?.toDomain()
+        }
+
+    override suspend fun createTaskFromLearningItem(itemId: String): Result<SollTask?> = runSuspendCatching {
+        service().createTaskFromLearningItem(
+            authorization = authorizationHeader(),
+            itemId = itemId.trim(),
+            request = LearningItemTaskRequest(priority = "B", markDone = true),
+        ).task?.toDomain()
+    }
+
+    override suspend fun getRoadmap(): Result<SollRoadmap> =
+        runSuspendCatching {
+            service().getRoadmap(readAuthorizationHeader()).toDomain()
+        }.recoverCatching { error ->
+            if (!error.isHttpStatus(404)) throw error
+            SollRoadmap(currentStage = "Relay без roadmap")
+        }
+
+    override suspend fun addRoadmapLine(stageId: String, line: String, text: String): Result<SollRoadmap> =
+        runSuspendCatching {
+            service().addRoadmapLine(
+                authorization = authorizationHeader(),
+                stageId = stageId.trim(),
+                request = RoadmapLineRequest(line = line.trim(), text = text.trim()),
+            ).toDomain()
+        }
+
+    override suspend fun updateRoadmapLine(
+        stageId: String,
+        line: String,
+        newLine: String,
+        text: String,
+    ): Result<SollRoadmap> = runSuspendCatching {
+        val cleanStageId = stageId.trim()
+        val cleanLine = line.trim()
+        val cleanNewLine = newLine.trim().ifBlank { cleanLine }
+        val cleanText = text.trim()
+        require(cleanStageId.isNotBlank()) { "ID этапа roadmap не задан" }
+        require(cleanLine.isNotBlank()) { "Строка roadmap не задана" }
+        require(cleanText.isNotBlank()) { "Текст roadmap не задан" }
+        service().updateRoadmapLine(
+            authorization = authorizationHeader(),
+            stageId = cleanStageId,
+            line = cleanLine,
+            request = RoadmapLineUpdateRequest(line = cleanNewLine, text = cleanText),
+        ).toDomain()
+    }
+
+    override suspend fun deleteRoadmapLine(stageId: String, line: String): Result<SollRoadmap> =
+        runSuspendCatching {
+            service().deleteRoadmapLine(
+                authorization = authorizationHeader(),
+                stageId = stageId.trim(),
+                line = line.trim(),
+            ).toDomain()
+        }
+
+    override suspend fun createTaskFromRoadmapLine(stageId: String, line: String): Result<SollTask?> =
+        runSuspendCatching {
+            val cleanStageId = stageId.trim()
+            val cleanLine = line.trim()
+            require(cleanStageId.isNotBlank()) { "ID этапа roadmap не задан" }
+            require(cleanLine.isNotBlank()) { "Строка roadmap не задана" }
+            service().createTaskFromRoadmapLine(
+                authorization = authorizationHeader(),
+                stageId = cleanStageId,
+                line = cleanLine,
+                request = RoadmapLineTaskRequest(priority = "B"),
+            ).task?.toDomain()
+        }
+
+    override suspend fun listSources(): Result<List<SollMonitoredSource>> =
+        runSuspendCatching {
+            service().listSources(readAuthorizationHeader()).map { it.toDomain() }
+        }.recoverCatching { error ->
+            if (!error.isHttpStatus(404)) throw error
+            emptyList()
+        }
+
+    override suspend fun listSourceItems(sourceId: String, limit: Int): Result<List<SollSourceItem>> =
+        runSuspendCatching {
+            service().listSourceItems(
+                authorization = readAuthorizationHeader(),
+                sourceId = sourceId.trim(),
+                limit = limit.coerceIn(1, 100),
+            ).map { it.toDomain() }
+        }
+
+    override suspend fun createSource(
+        name: String,
+        target: String,
+        sourceType: String,
+    ): Result<SollMonitoredSource> = runSuspendCatching {
+        val cleanTarget = target.trim()
+        val cleanSourceType = sourceType.trim().lowercase().takeIf { it in SOURCE_TYPES }
+            ?: SOURCE_TYPE_WEB
+        require(cleanTarget.isNotBlank()) { "URL источника не задан" }
+        service().createSource(
+            authorization = authorizationHeader(),
+            request = MonitoredSourceCreateRequest(
+                name = name.trim().takeIf { it.isNotBlank() },
+                sourceType = cleanSourceType,
+                target = cleanTarget,
+                tags = listOf("android"),
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun updateSource(
+        sourceId: String,
+        name: String,
+        description: String,
+        tags: List<String>,
+        enabled: Boolean,
+    ): Result<SollMonitoredSource> = runSuspendCatching {
+        val cleanSourceId = sourceId.trim()
+        require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
+        service().updateSource(
+            authorization = authorizationHeader(),
+            sourceId = cleanSourceId,
+            request = MonitoredSourceUpdateRequest(
+                name = name.trim().takeIf { it.isNotBlank() },
+                description = description.trim(),
+                tags = tags
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct(),
+                enabled = enabled,
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun deleteSource(sourceId: String): Result<Boolean> = runSuspendCatching {
+        service().deleteSource(authorizationHeader(), sourceId.trim())
+        true
+    }
+
+    override suspend fun checkSource(sourceId: String): Result<Boolean> = runSuspendCatching {
+        service().checkSource(authorizationHeader(), sourceId.trim()).changed
+    }
+
+    override suspend fun createTaskFromSourceItem(sourceId: String, itemId: String): Result<SollTask?> =
+        runSuspendCatching {
+            val cleanSourceId = sourceId.trim()
+            val cleanItemId = itemId.trim()
+            require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
+            require(cleanItemId.isNotBlank()) { "ID материала не задан" }
+            service().createTaskFromSourceItem(
+                authorization = authorizationHeader(),
+                sourceId = cleanSourceId,
+                itemId = cleanItemId,
+                request = SourceItemTaskRequest(priority = "B"),
+            ).task?.toDomain()
+        }
 
     override suspend fun getBookStatus(): Result<SollBookStatus> = runSuspendCatching {
         service().getBookStatus(authorizationHeader()).toDomain()
@@ -515,10 +894,11 @@ class SollRepository @Inject constructor(
     private fun service(): SollApiService {
         val baseUrl = normalizeSollBaseUrl(settingsRepository.sollServerUrl)
         require(baseUrl.isNotBlank()) { "URL сервера Soll не задан" }
+        val apiPrefix = normalizeSollApiPathPrefix(settingsRepository.sollApiPathPrefix)
 
         return Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(okHttpClient)
+            .client(okHttpClient.withSollApiPrefix(apiPrefix))
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(SollApiService::class.java)
@@ -536,6 +916,42 @@ class SollRepository @Inject constructor(
     private fun authorizationHeader(): String? {
         val token = settingsRepository.sollAccessToken.trim()
         return token.takeIf { it.isNotBlank() }?.let { "Bearer $it" }
+    }
+
+    private fun encryptedEnvelopeOrNull(
+        content: String,
+        metadata: Map<String, Any?>,
+        aad: String,
+        extra: Map<String, Any?> = emptyMap(),
+    ): SecurePayloadEnvelopeRequest? {
+        val pairingSecret = settingsRepository.sollDevicePairingSecret.trim()
+        if (pairingSecret.isBlank()) return null
+        val key = MessageDigest.getInstance("SHA-256").digest(pairingSecret.toByteArray(Charsets.UTF_8))
+        val nonce = ByteArray(12)
+        SecureRandom().nextBytes(nonce)
+        val plaintext = org.json.JSONObject().apply {
+            if (content.isNotBlank()) put("content", content)
+            if (metadata.isNotEmpty()) put("metadata", org.json.JSONObject(metadata))
+            extra.forEach { (key, value) ->
+                if (value != null && value.toString().isNotBlank()) put(key, value)
+            }
+        }.toString().toByteArray(Charsets.UTF_8)
+
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(
+            Cipher.ENCRYPT_MODE,
+            SecretKeySpec(key, "AES"),
+            GCMParameterSpec(128, nonce),
+        )
+        val aadBytes = aad.toByteArray(Charsets.UTF_8)
+        cipher.updateAAD(aadBytes)
+        val ciphertext = cipher.doFinal(plaintext)
+        return SecurePayloadEnvelopeRequest(
+            nonce = Base64.encodeToString(nonce, Base64.NO_WRAP),
+            ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
+            aad = aad,
+            keyId = settingsRepository.sollDeviceId.trim(),
+        )
     }
 
     private fun cacheAndroidSyncStatus(response: AndroidSyncStatusResponse) {
@@ -586,10 +1002,147 @@ class SollRepository @Inject constructor(
             tasks = tasks.toDomain(),
             device = device?.toDomain(),
             briefing = briefing?.toDomain(),
+            chat = chat.toDomain(),
             protocol = protocol?.toDomain(),
             warnings = (warnings + extraWarnings).distinct(),
             fromCache = fromCache,
             cachedAtMillis = cachedAtMillis,
+        )
+
+    private fun com.soll.data.api.AndroidChatSyncResponse.toDomain(): SollAndroidChatSync =
+        SollAndroidChatSync(
+            primarySessionId = primarySessionId,
+            recentSessions = recentSessions.map { it.toDomain() },
+            recentMessages = recentMessages.map { it.toDomain() },
+            lastMessageId = lastMessageId,
+            unreadCount = unreadCount,
+            pendingActionsCount = pendingActionsCount,
+            encryptionRequired = encryptionRequired,
+            streamEndpoint = streamEndpoint,
+            endpoints = endpoints,
+        )
+
+    private fun ChatSessionSummaryResponse.toDomain(): SollChatSession =
+        SollChatSession(
+            sessionId = sessionId,
+            title = title,
+            updatedAt = updatedAt,
+            messageCount = messageCount,
+        )
+
+    private fun ChatSessionCreateResponse.toDomain(): SollChatSession =
+        SollChatSession(
+            sessionId = sessionId,
+            title = title,
+            updatedAt = "",
+            messageCount = 0,
+        )
+
+    private fun ChatMessageResponse.toDomain(): SollChatMessage =
+        SollChatMessage(
+            id = id,
+            sessionId = sessionId,
+            role = role,
+            content = content,
+            createdAt = createdAt,
+            metadata = metadata,
+        )
+
+    private fun ChatActionExecuteResponse.toDomain(): SollChatActionResult =
+        SollChatActionResult(
+            actionId = actionId,
+            action = action,
+            taskId = taskId,
+            status = status,
+            task = task?.toDomain(),
+        )
+
+    private fun TaskGraphResponse.toDomain(): SollTaskGraph =
+        SollTaskGraph(
+            nodes = nodes.map { it.toDomain() },
+            edges = edges.map { it.toDomain() },
+            totalTasks = totalTasks,
+            truncated = truncated,
+        )
+
+    private fun TaskGraphNodeResponse.toDomain(): SollTaskGraphNode =
+        SollTaskGraphNode(
+            id = id,
+            kind = kind,
+            label = label,
+            status = status,
+            priority = priority,
+            projectId = projectId,
+            taskId = taskId,
+            sourceRef = sourceRef,
+            count = count,
+        )
+
+    private fun TaskGraphEdgeResponse.toDomain(): SollTaskGraphEdge =
+        SollTaskGraphEdge(
+            id = id,
+            source = source,
+            target = target,
+            kind = kind,
+            label = label,
+        )
+
+    private fun LearningItemResponse.toDomain(): SollLearningItem =
+        SollLearningItem(
+            id = id,
+            title = title,
+            status = status,
+            nextAction = nextAction,
+            sourceRef = sourceRef,
+            seenCount = seenCount,
+            tags = tags,
+        )
+
+    private fun RoadmapResponse.toDomain(): SollRoadmap =
+        SollRoadmap(
+            currentStage = currentStage,
+            stages = stages.map { it.toDomain() },
+            readiness = readiness.map { it.toDomain() },
+            updated = updated,
+        )
+
+    private fun RoadmapStageResponse.toDomain(): SollRoadmapStage =
+        SollRoadmapStage(
+            id = id,
+            label = label,
+            status = status,
+            lines = lines.map { it.toDomain() },
+        )
+
+    private fun RoadmapLineResponse.toDomain(): SollRoadmapLine =
+        SollRoadmapLine(line = line, text = text)
+
+    private fun RoadmapReadinessResponse.toDomain(): SollRoadmapReadiness =
+        SollRoadmapReadiness(area = area, percent = percent, gap = gap)
+
+    private fun MonitoredSourceResponse.toDomain(): SollMonitoredSource =
+        SollMonitoredSource(
+            id = id,
+            name = name,
+            sourceType = sourceType,
+            target = target,
+            description = description,
+            tags = tags,
+            enabled = enabled,
+            lastResult = lastResult,
+            itemsSeen = itemsSeen,
+            newItemsLastCheck = newItemsLastCheck,
+        )
+
+    private fun SourceItemResponse.toDomain(): SollSourceItem =
+        SollSourceItem(
+            itemId = itemId,
+            title = title,
+            sourceUrl = sourceUrl,
+            contentPreview = contentPreview,
+            summary = summary,
+            usefulness = usefulness,
+            linkPreview = linkPreview,
         )
 
     private fun SollDeviceResponse.toDomain(): SollDevice =
@@ -620,9 +1173,23 @@ class SollRepository @Inject constructor(
     private fun SollTaskBoardResponse.toDomain(): SollTaskBoard =
         SollTaskBoard(
             today = today.map { it.toDomain() },
+            blocked = blocked.map { it.toDomain() },
             inbox = inbox.map { it.toDomain() },
             stale = stale.map { it.toDomain() },
+            deferred = deferred.map { it.toDomain() },
             doneRecent = doneRecent.map { it.toDomain() },
+            counts = counts?.toDomain(),
+            limitPerSection = limitPerSection,
+        )
+
+    private fun SollTaskBoardCountsResponse.toDomain(): SollTaskBoardCounts =
+        SollTaskBoardCounts(
+            today = today,
+            blocked = blocked,
+            inbox = inbox,
+            stale = stale,
+            deferred = deferred,
+            doneRecent = doneRecent,
         )
 
     private fun SollTaskResponse.toDomain(): SollTask =
@@ -636,6 +1203,13 @@ class SollRepository @Inject constructor(
             priority = priority,
             dueDate = dueDate,
             tags = tags,
+            approvalId = approvalId,
+            toolJobId = toolJobId,
+            executionState = executionState,
+            outcomeArtifacts = outcomeArtifacts,
+            valueMetric = valueMetric,
+            branch = branch,
+            pairId = pairId,
         )
 
     private fun RawFileResponse.toDomain(): SollRawNote =
@@ -777,6 +1351,15 @@ class SollRepository @Inject constructor(
             auth = auth.toDomain(),
             transport = transport.toDomain(),
             workerContracts = workerContracts.mapValues { (_, contract) -> contract.toDomain() },
+        )
+
+    private fun AndroidPushTokenResponse.toDomain(): SollAndroidPushRegistration =
+        SollAndroidPushRegistration(
+            success = success,
+            provider = provider,
+            enabled = enabled,
+            tokenCount = tokenCount,
+            reason = reason,
         )
 
     private fun SollProtocolAuthResponse.toDomain(): SollProtocolAuth =
@@ -994,9 +1577,130 @@ private data class RawUploadMetadata(
     val mimeType: String?,
 )
 
+private fun Throwable.isHttpStatus(statusCode: Int): Boolean =
+    this is HttpException && code() == statusCode
+
+private fun buildTaskGraphFromBoard(
+    board: SollTaskBoard,
+    includeDone: Boolean,
+): SollTaskGraph {
+    val tasks = buildList {
+        addAll(board.today)
+        addAll(board.blocked)
+        addAll(board.inbox)
+        addAll(board.stale)
+        addAll(board.deferred)
+        if (includeDone) addAll(board.doneRecent)
+    }.distinctBy { it.id }
+
+    val nodes = linkedMapOf<String, SollTaskGraphNode>()
+    val edges = linkedMapOf<String, SollTaskGraphEdge>()
+    val projectCounts = tasks.groupingBy { it.projectLabel() }.eachCount()
+    val subprojectCounts = tasks.groupingBy { "${it.projectLabel()}/${it.subprojectLabel()}" }.eachCount()
+
+    tasks.forEach { task ->
+        val projectLabel = task.projectLabel()
+        val projectNodeId = graphNodeId("project", projectLabel)
+        nodes.putIfAbsent(
+            projectNodeId,
+            SollTaskGraphNode(
+                id = projectNodeId,
+                kind = "project",
+                label = projectLabel,
+                count = projectCounts[projectLabel] ?: 0,
+            ),
+        )
+
+        val parentNodeId = task.subprojectLabel().takeIf { it.isNotBlank() }?.let { subprojectLabel ->
+            val subprojectNodeId = graphNodeId("subproject", "$projectLabel/$subprojectLabel")
+            nodes.putIfAbsent(
+                subprojectNodeId,
+                SollTaskGraphNode(
+                    id = subprojectNodeId,
+                    kind = "subproject",
+                    label = subprojectLabel,
+                    projectId = projectNodeId,
+                    count = subprojectCounts["$projectLabel/$subprojectLabel"] ?: 0,
+                ),
+            )
+            edges.putIfAbsent(
+                "$projectNodeId->$subprojectNodeId",
+                SollTaskGraphEdge(
+                    id = "$projectNodeId->$subprojectNodeId",
+                    source = projectNodeId,
+                    target = subprojectNodeId,
+                    kind = "project_subproject",
+                ),
+            )
+            subprojectNodeId
+        } ?: projectNodeId
+
+        val taskNodeId = "task:${task.id}"
+        nodes[taskNodeId] = SollTaskGraphNode(
+            id = taskNodeId,
+            kind = "task",
+            label = task.title,
+            status = task.status,
+            priority = task.priority,
+            projectId = projectNodeId,
+            taskId = task.id,
+            sourceRef = task.sourceRef,
+        )
+        edges["$parentNodeId->$taskNodeId"] = SollTaskGraphEdge(
+            id = "$parentNodeId->$taskNodeId",
+            source = parentNodeId,
+            target = taskNodeId,
+            kind = "contains",
+        )
+
+        task.sourceRef.takeIf { it.isNotBlank() }?.let { sourceRef ->
+            val sourceNodeId = graphNodeId("source", sourceRef)
+            nodes.putIfAbsent(
+                sourceNodeId,
+                SollTaskGraphNode(
+                    id = sourceNodeId,
+                    kind = "source",
+                    label = sourceRef,
+                    sourceRef = sourceRef,
+                ),
+            )
+            edges.putIfAbsent(
+                "$sourceNodeId->$taskNodeId",
+                SollTaskGraphEdge(
+                    id = "$sourceNodeId->$taskNodeId",
+                    source = sourceNodeId,
+                    target = taskNodeId,
+                    kind = "source_task",
+                ),
+            )
+        }
+    }
+
+    return SollTaskGraph(
+        nodes = nodes.values.toList(),
+        edges = edges.values.toList(),
+        totalTasks = tasks.size,
+        truncated = false,
+    )
+}
+
+private fun SollTask.projectLabel(): String =
+    projectName?.trim()?.takeIf { it.isNotBlank() } ?: "Без проекта"
+
+private fun SollTask.subprojectLabel(): String =
+    branch.trim().takeIf { it.isNotBlank() && it != "innovation" } ?: ""
+
+private fun graphNodeId(kind: String, label: String): String =
+    "$kind:${label.hashCode() and Int.MAX_VALUE}"
+
 private const val SOLL_CACHE_PREFS = "soll_server_cache"
 private const val KEY_ANDROID_SYNC_STATUS_JSON = "android_sync_status_json"
 private const val KEY_ANDROID_SYNC_STATUS_CACHED_AT = "android_sync_status_cached_at"
+private const val TASK_BOARD_SECTION_LIMIT = 80
+private const val TASK_BOARD_MIN_SECTION_LIMIT = 20
+private const val TASK_BOARD_MAX_SECTION_LIMIT = 500
+private const val SOURCE_TYPE_WEB = "web"
+private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")
 
 fun normalizeSollBaseUrl(rawUrl: String): String {
     val trimmed = rawUrl.trim()
@@ -1009,6 +1713,52 @@ fun normalizeSollBaseUrl(rawUrl: String): String {
     }
 
     return if (withScheme.endsWith("/")) withScheme else "$withScheme/"
+}
+
+fun normalizeSollApiPathPrefix(rawPrefix: String): String {
+    val normalized = rawPrefix
+        .trim()
+        .trim('/')
+        .replace(Regex("/+"), "/")
+    return normalized
+}
+
+internal fun rewriteSollApiUrl(url: HttpUrl, apiPathPrefix: String): HttpUrl {
+    val prefixSegments = normalizeSollApiPathPrefix(apiPathPrefix)
+        .split("/")
+        .filter { it.isNotBlank() }
+    if (prefixSegments.isEmpty()) {
+        return url
+    }
+    val currentSegments = url.pathSegments
+    if (currentSegments.take(prefixSegments.size) == prefixSegments) {
+        return url
+    }
+    val legacyPrefix = listOf("api", "v1")
+    if (currentSegments.take(legacyPrefix.size) != legacyPrefix) {
+        return url
+    }
+    val nextSegments = prefixSegments + currentSegments.drop(legacyPrefix.size)
+    return url.newBuilder()
+        .encodedPath("/${nextSegments.joinToString("/")}")
+        .build()
+}
+
+private fun OkHttpClient.withSollApiPrefix(apiPathPrefix: String): OkHttpClient {
+    val normalized = normalizeSollApiPathPrefix(apiPathPrefix)
+    if (normalized.isBlank() || normalized == "api/v1") return this
+    return newBuilder()
+        .addInterceptor(Interceptor { chain ->
+            val request = chain.request()
+            val rewrittenUrl = rewriteSollApiUrl(request.url, normalized)
+            val nextRequest = if (rewrittenUrl == request.url) {
+                request
+            } else {
+                request.newBuilder().url(rewrittenUrl).build()
+            }
+            chain.proceed(nextRequest)
+        })
+        .build()
 }
 
 fun buildRawNoteFilename(

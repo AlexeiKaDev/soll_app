@@ -19,6 +19,7 @@ class SollProtocolSchemaTest {
                 "GET /api/v1/mesh/outbox",
                 "GET /api/v1/mesh/outbox/next",
                 "POST /api/v1/mesh/outbox/{outbound_id}/ack",
+                "POST /api/v1/mesh/outbox/{outbound_id}/attempt",
                 "POST /api/v1/mesh/outbox/{outbound_id}/retry",
             ),
             androidTransport = compatibleAndroidTransport(),
@@ -103,6 +104,7 @@ class SollProtocolSchemaTest {
         assertTrue(bootstrap.warnings.any { it.contains("token_refresh") })
         assertTrue(bootstrap.warnings.any { it.contains("android_mesh_outbox_worker") })
         assertTrue(bootstrap.warnings.any { it.contains("gadget_command_worker") })
+        assertTrue(bootstrap.warnings.any { it.contains("chat_stream_worker") })
     }
 
     @Test
@@ -140,6 +142,9 @@ class SollProtocolSchemaTest {
                 "POST /api/v1/gadgets/{device_id}/commands/claim",
             ),
             push = listOf(
+                "POST /api/v1/android/push-token",
+                "POST /api/v1/chat/turn",
+                "POST /api/v1/chat/actions/{action_id}/execute",
                 "POST /api/v1/mesh/simulate",
                 "POST /api/v1/gadgets/{device_id}/telemetry",
             ),
@@ -162,6 +167,14 @@ class SollProtocolSchemaTest {
                 leaseSecondsDefault = 60,
                 pollIntervalSeconds = 10,
                 lifecycle = listOf("pending", "claimed", "acked", "done", "failed", "expired"),
+            ),
+            "chat_stream_worker" to SollProtocolWorkerContract(
+                owner = "soll_app",
+                auth = "device bearer",
+                requiredScopes = listOf("chat:read"),
+                leaseSecondsDefault = 60,
+                pollIntervalSeconds = 15,
+                lifecycle = listOf("queued", "sent", "acked", "failed"),
             ),
         )
 }

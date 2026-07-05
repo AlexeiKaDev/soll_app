@@ -39,7 +39,7 @@ class NotifyHandler(
                     .put("username", message.from?.username)
                     .toString(),
                 priority = SollNotificationPriority.HIGH,
-                systemNotificationId = SollNotificationChannels.TELEGRAM_COMMAND_NOTIFICATION_ID,
+                systemNotificationId = SollNotificationChannels.CHAT_NOTIFICATION_ID,
             )
         )
         val systemResult = if (notification.shownAt != null) {

@@ -3,6 +3,8 @@ package com.soll.data.repository
 import android.content.SharedPreferences
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.entity.BotConfigEntity
+import com.soll.data.notification.SystemNotificationImportanceMode
+import com.soll.data.notification.SystemNotificationPreferences
 import com.soll.domain.assistant.Capability
 import com.soll.domain.assistant.CapabilitySettings
 import com.soll.domain.assistant.proactive.ProactiveSuggestionFeedback
@@ -10,6 +12,7 @@ import com.soll.domain.deviceqa.DeviceQaCheckId
 import com.soll.domain.deviceqa.DeviceQaManualResult
 import com.soll.domain.deviceqa.DeviceQaStatus
 import com.soll.domain.music.MusicRepeatMode
+import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.music.MusicSettings
 import com.soll.domain.notes.NoteSettings
 import com.soll.domain.scanner.ScannerDuplicatePolicy
@@ -62,6 +65,8 @@ class SettingsRepository @Inject constructor(
         private const val KEY_RISKY_CAPABILITIES_ENABLED = "risky_capabilities_enabled"
         private const val KEY_CAPABILITY_ENABLED_PREFIX = "capability_enabled_"
         private const val KEY_SOLL_SERVER_URL = "soll_server_url"
+        private const val KEY_SOLL_API_PATH_PREFIX = "soll_api_path_prefix"
+        private const val KEY_SOLL_RECOMMENDED_ENDPOINT_SEEDED = "soll_recommended_endpoint_seeded"
         private const val KEY_SOLL_ACCESS_TOKEN = "soll_access_token"
         private const val KEY_SOLL_DEVICE_ID = "soll_device_id"
         private const val KEY_SOLL_DEVICE_PAIRING_SECRET = "soll_device_pairing_secret"
@@ -69,6 +74,15 @@ class SettingsRepository @Inject constructor(
         private const val KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT = "soll_device_token_expires_at"
         private const val KEY_SOLL_SYNC_INTERVAL_MINUTES = "soll_sync_interval_minutes"
         private const val KEY_SOLL_WIFI_ONLY_UPLOAD = "soll_wifi_only_upload"
+        private const val KEY_SOLL_CHAT_LAST_SEEN_MESSAGE_ID = "soll_chat_last_seen_message_id"
+        private const val KEY_SOLL_TASK_BOARD_SIGNATURE = "soll_task_board_signature"
+        private const val KEY_SOLL_PUSH_TOKEN = "soll_push_token"
+        private const val KEY_SOLL_PUSH_TOKEN_REGISTERED_AT = "soll_push_token_registered_at"
+        private const val KEY_SOLL_PUSH_TOKEN_LAST_ERROR = "soll_push_token_last_error"
+        private const val KEY_SYSTEM_NOTIFICATION_IMPORTANCE_MODE = "system_notification_importance_mode"
+        private const val KEY_SYSTEM_NOTIFICATION_CHANNEL_PREFIX = "system_notification_channel_"
+        private const val KEY_PORTABLE_SSD_TREE_URI = "portable_ssd_tree_uri"
+        private const val KEY_PORTABLE_SSD_LAST_ATTACH_NOTICE_AT = "portable_ssd_last_attach_notice_at"
         private const val KEY_VOICE_REQUIRES_UNLOCKED_DEVICE = "voice_requires_unlocked_device"
         private const val KEY_VOICE_REQUIRES_HEADSET = "voice_requires_headset"
         private const val KEY_VOICE_LOCAL_ONLY = "voice_local_only"
@@ -101,9 +115,18 @@ class SettingsRepository @Inject constructor(
         private const val KEY_DEVICE_QA_CHECKED_AT_PREFIX = "device_qa_checked_at_"
         private const val KEY_DEVICE_QA_DEVICE_PREFIX = "device_qa_device_"
         private const val KEY_APP_THEME_VARIANT = "app_theme_variant"
-        private const val DEFAULT_APP_THEME_VARIANT = "classic"
+        private const val KEY_APP_THEME_DEFAULT_MIGRATED = "app_theme_default_migrated_to_soll_v2"
+        private const val DEFAULT_APP_THEME_VARIANT = "soll"
+        const val RECOMMENDED_SOLL_SERVER_URL = "https://sales.monolith-ost.com/"
+        const val RECOMMENDED_SOLL_API_PATH_PREFIX = "api/v1/soll"
+        private const val KEY_ACTIVITY_TRACKER_ENABLED = "activity_tracker_enabled"
         private const val SUGGESTION_SNOOZE_MS = 2 * 60 * 60_000L
         private const val DAY_MS = 24 * 60 * 60_000L
+    }
+
+    init {
+        migrateDefaultThemeVariant()
+        seedRecommendedSollEndpoint()
     }
 
     private val _appThemeVariantFlow = MutableStateFlow(readAppThemeVariant())
@@ -116,6 +139,11 @@ class SettingsRepository @Inject constructor(
             sharedPreferences.edit().putString(KEY_APP_THEME_VARIANT, normalized).apply()
             _appThemeVariantFlow.value = normalized
         }
+
+    var activityTrackerEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_ACTIVITY_TRACKER_ENABLED, false)
+        set(value) = sharedPreferences.edit().putBoolean(KEY_ACTIVITY_TRACKER_ENABLED, value).apply()
+
 
     // Bot Token (encrypted storage)
     var botToken: String?
@@ -316,8 +344,17 @@ class SettingsRepository @Inject constructor(
         KEY_CAPABILITY_ENABLED_PREFIX + capabilityId.lowercase()
 
     var sollServerUrl: String
-        get() = sharedPreferences.getString(KEY_SOLL_SERVER_URL, "") ?: ""
+        get() = sharedPreferences.getString(KEY_SOLL_SERVER_URL, "")
+            ?.trim()
+            ?: ""
         set(value) = sharedPreferences.edit().putString(KEY_SOLL_SERVER_URL, value.trim()).apply()
+
+    var sollApiPathPrefix: String
+        get() = sharedPreferences.getString(KEY_SOLL_API_PATH_PREFIX, "")
+            ?.trim()
+            ?.trim('/')
+            ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_API_PATH_PREFIX, value.trim().trim('/')).apply()
 
     var sollAccessToken: String
         get() = sharedPreferences.getString(KEY_SOLL_ACCESS_TOKEN, "") ?: ""
@@ -348,6 +385,86 @@ class SettingsRepository @Inject constructor(
     var sollWifiOnlyUpload: Boolean
         get() = sharedPreferences.getBoolean(KEY_SOLL_WIFI_ONLY_UPLOAD, true)
         set(value) = sharedPreferences.edit().putBoolean(KEY_SOLL_WIFI_ONLY_UPLOAD, value).apply()
+
+    var sollChatLastSeenMessageId: Long
+        get() = sharedPreferences.getLong(KEY_SOLL_CHAT_LAST_SEEN_MESSAGE_ID, 0L)
+        set(value) = sharedPreferences.edit().putLong(KEY_SOLL_CHAT_LAST_SEEN_MESSAGE_ID, value.coerceAtLeast(0L)).apply()
+
+    fun advanceSollChatLastSeenMessageId(messageId: Long) {
+        if (messageId > sollChatLastSeenMessageId) {
+            sollChatLastSeenMessageId = messageId
+        }
+    }
+
+    var sollTaskBoardSignature: String
+        get() = sharedPreferences.getString(KEY_SOLL_TASK_BOARD_SIGNATURE, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_TASK_BOARD_SIGNATURE, value).apply()
+
+    var sollPushToken: String
+        get() = sharedPreferences.getString(KEY_SOLL_PUSH_TOKEN, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_PUSH_TOKEN, value.trim()).apply()
+
+    var sollPushTokenRegisteredAt: Long
+        get() = sharedPreferences.getLong(KEY_SOLL_PUSH_TOKEN_REGISTERED_AT, 0L)
+        set(value) = sharedPreferences.edit().putLong(KEY_SOLL_PUSH_TOKEN_REGISTERED_AT, value.coerceAtLeast(0L)).apply()
+
+    var sollPushTokenLastError: String
+        get() = sharedPreferences.getString(KEY_SOLL_PUSH_TOKEN_LAST_ERROR, "") ?: ""
+        set(value) = sharedPreferences.edit().putString(KEY_SOLL_PUSH_TOKEN_LAST_ERROR, value.take(300)).apply()
+
+    var systemNotificationImportanceMode: SystemNotificationImportanceMode
+        get() = SystemNotificationImportanceMode.fromStorage(
+            sharedPreferences.getString(KEY_SYSTEM_NOTIFICATION_IMPORTANCE_MODE, null),
+        )
+        set(value) = sharedPreferences.edit()
+            .putString(KEY_SYSTEM_NOTIFICATION_IMPORTANCE_MODE, value.storageKey)
+            .apply()
+
+    fun isSystemNotificationChannelEnabled(channel: SollNotificationChannel): Boolean =
+        sharedPreferences.getBoolean(
+            systemNotificationChannelKey(channel),
+            channel in SystemNotificationPreferences.DEFAULT_ALLOWED_CHANNELS,
+        )
+
+    fun setSystemNotificationChannelEnabled(channel: SollNotificationChannel, enabled: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean(systemNotificationChannelKey(channel), enabled)
+            .apply()
+    }
+
+    fun systemNotificationPreferences(): SystemNotificationPreferences =
+        SystemNotificationPreferences(
+            importanceMode = systemNotificationImportanceMode,
+            allowedChannels = SystemNotificationPreferences.FILTERABLE_CHANNELS
+                .filter { isSystemNotificationChannelEnabled(it) }
+                .toSet(),
+        )
+
+    private fun systemNotificationChannelKey(channel: SollNotificationChannel): String =
+        KEY_SYSTEM_NOTIFICATION_CHANNEL_PREFIX + channel.name.lowercase()
+
+    fun shouldRegisterSollPushToken(token: String, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val cleanToken = token.trim()
+        if (cleanToken.isBlank()) return false
+        if (cleanToken != sollPushToken) return true
+        return nowMillis - sollPushTokenRegisteredAt > DAY_MS
+    }
+
+    fun markSollPushTokenRegistered(token: String, nowMillis: Long = System.currentTimeMillis()) {
+        sharedPreferences.edit()
+            .putString(KEY_SOLL_PUSH_TOKEN, token.trim())
+            .putLong(KEY_SOLL_PUSH_TOKEN_REGISTERED_AT, nowMillis)
+            .putString(KEY_SOLL_PUSH_TOKEN_LAST_ERROR, "")
+            .apply()
+    }
+
+    var portableSsdTreeUri: String?
+        get() = sharedPreferences.getString(KEY_PORTABLE_SSD_TREE_URI, null)
+        set(value) = sharedPreferences.edit().putString(KEY_PORTABLE_SSD_TREE_URI, value).apply()
+
+    var portableSsdLastAttachNoticeAt: Long
+        get() = sharedPreferences.getLong(KEY_PORTABLE_SSD_LAST_ATTACH_NOTICE_AT, 0L)
+        set(value) = sharedPreferences.edit().putLong(KEY_PORTABLE_SSD_LAST_ATTACH_NOTICE_AT, value).apply()
 
     var voiceRequiresUnlockedDevice: Boolean
         get() = sharedPreferences.getBoolean(KEY_VOICE_REQUIRES_UNLOCKED_DEVICE, true)
@@ -634,12 +751,48 @@ class SettingsRepository @Inject constructor(
     private fun deviceQaDeviceKey(id: DeviceQaCheckId): String =
         KEY_DEVICE_QA_DEVICE_PREFIX + id.storageKey
 
+    private fun migrateDefaultThemeVariant() {
+        if (sharedPreferences.getBoolean(KEY_APP_THEME_DEFAULT_MIGRATED, false)) {
+            return
+        }
+        val current = sharedPreferences.getString(KEY_APP_THEME_VARIANT, null)
+        sharedPreferences.edit().apply {
+            if (current == null || current in setOf("classic", "aurora", "aquik")) {
+                putString(KEY_APP_THEME_VARIANT, DEFAULT_APP_THEME_VARIANT)
+            }
+            putBoolean(KEY_APP_THEME_DEFAULT_MIGRATED, true)
+            apply()
+        }
+    }
+
+    fun resetSollEndpointToRecommended() {
+        sharedPreferences.edit()
+            .putString(KEY_SOLL_SERVER_URL, RECOMMENDED_SOLL_SERVER_URL)
+            .putString(KEY_SOLL_API_PATH_PREFIX, RECOMMENDED_SOLL_API_PATH_PREFIX)
+            .putBoolean(KEY_SOLL_RECOMMENDED_ENDPOINT_SEEDED, true)
+            .apply()
+    }
+
+    private fun seedRecommendedSollEndpoint() {
+        if (sharedPreferences.getBoolean(KEY_SOLL_RECOMMENDED_ENDPOINT_SEEDED, false)) {
+            return
+        }
+        val editor = sharedPreferences.edit()
+        if (!sharedPreferences.contains(KEY_SOLL_SERVER_URL)) {
+            editor.putString(KEY_SOLL_SERVER_URL, RECOMMENDED_SOLL_SERVER_URL)
+        }
+        if (!sharedPreferences.contains(KEY_SOLL_API_PATH_PREFIX)) {
+            editor.putString(KEY_SOLL_API_PATH_PREFIX, RECOMMENDED_SOLL_API_PATH_PREFIX)
+        }
+        editor.putBoolean(KEY_SOLL_RECOMMENDED_ENDPOINT_SEEDED, true).apply()
+    }
+
     private fun readAppThemeVariant(): String =
         normalizeAppThemeVariant(sharedPreferences.getString(KEY_APP_THEME_VARIANT, DEFAULT_APP_THEME_VARIANT))
 
     private fun normalizeAppThemeVariant(value: String?): String =
         when (value) {
-            "classic", "aurora", "aquik" -> value
+            "soll", "classic", "aurora", "aquik" -> value
             else -> DEFAULT_APP_THEME_VARIANT
         }
 

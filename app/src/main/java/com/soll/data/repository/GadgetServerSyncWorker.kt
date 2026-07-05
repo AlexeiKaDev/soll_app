@@ -17,8 +17,13 @@ import com.soll.domain.device.DeviceEvent
 import com.soll.domain.device.GadgetCloudCommand
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.device.KnownDevice
+import com.soll.domain.notification.SollNotificationChannel
+import com.soll.domain.notification.SollNotificationCenter
+import com.soll.domain.notification.SollNotificationPriority
+import com.soll.domain.notification.SollNotificationRequest
 import com.soll.domain.soll.SollMeshOutboxItem
 import com.soll.domain.soll.SollGateway
+import com.soll.presentation.navigation.AppLaunchTargets
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -44,12 +49,14 @@ class GadgetServerSyncWorker(
         val gateway = entryPoint.sollGateway()
         val deviceRepository = entryPoint.deviceRepository()
         val commandExecutor = entryPoint.gadgetReadOnlyCommandExecutor()
+        val notificationCenter = entryPoint.notificationCenter()
         refreshDeviceBearerIfConfigured(settings, gateway)
         val snapshotSync = syncServerSnapshots(gateway, deviceRepository)
         val meshSummary = if (settings.sollDeviceAccessToken.isNotBlank()) {
             syncMeshOutboxOnce(
                 gateway = gateway,
                 deviceRepository = deviceRepository,
+                notificationCenter = notificationCenter,
                 toPeer = settings.sollDeviceId.takeIf { it.isNotBlank() },
             )
         } else {
@@ -109,6 +116,7 @@ class GadgetServerSyncWorker(
     private suspend fun syncMeshOutboxOnce(
         gateway: SollGateway,
         deviceRepository: DeviceRepository,
+        notificationCenter: SollNotificationCenter,
         toPeer: String?,
     ): MeshOutboxWorkerSummary {
         val item = gateway.claimNextMeshOutbox(toPeer = toPeer).getOrElse {
@@ -118,6 +126,7 @@ class GadgetServerSyncWorker(
         val decision = meshOutboxDeliveryDecision(item)
         return when (decision.action) {
             MeshOutboxDeliveryAction.ACK -> {
+                deliverMeshOutboxLocally(item, notificationCenter)
                 gateway.ackMeshOutbox(item.outboundId).fold(
                     onSuccess = {
                         deviceRepository.logEvent(item.toMeshDeliveryEvent(decision))
@@ -136,7 +145,7 @@ class GadgetServerSyncWorker(
                         deviceRepository.logEvent(item.toMeshDeliveryEvent(decision))
                         MeshOutboxWorkerSummary(claimed = 1, failed = 1, unsupported = 1)
                     },
-                    onFailure = { MeshOutboxWorkerSummary(claimed = 1, failed = 1, unsupported = 1) },
+                    onFailure = { MeshOutboxWorkerSummary(claimed = 1, failed = 1) },
                 )
             }
         }
@@ -347,7 +356,10 @@ internal fun meshOutboxDeliveryDecision(item: SollMeshOutboxItem): MeshOutboxDel
         "status",
         "brief",
         "note",
-        "task" -> MeshOutboxDeliveryDecision(MeshOutboxDeliveryAction.ACK)
+        "task",
+        "chat_message",
+        "chat_action",
+        "chat_notification" -> MeshOutboxDeliveryDecision(MeshOutboxDeliveryAction.ACK)
         "command" -> MeshOutboxDeliveryDecision(
             action = MeshOutboxDeliveryAction.FAIL,
             error = "Command mesh delivery is not enabled in Android worker yet",
@@ -419,6 +431,38 @@ private fun meshPayloadType(text: String): String? =
     runCatching {
         JSONObject(text.trim()).optString("type").trim().takeIf { it.isNotBlank() }
     }.getOrNull()
+
+private suspend fun deliverMeshOutboxLocally(
+    item: SollMeshOutboxItem,
+    notificationCenter: SollNotificationCenter,
+) {
+    val payload = runCatching { JSONObject(item.text.trim()) }.getOrNull() ?: return
+    val type = payload.optString("type").trim()
+    if (type !in setOf("chat_message", "chat_action", "chat_notification")) return
+
+    val title = payload.optString("title").trim().ifBlank { "Soll" }
+    val message = payload.optString("message").trim().ifBlank { item.text.take(180) }
+    val priority = when (payload.optJSONObject("metadata")?.optString("priority")?.lowercase()) {
+        "high", "alert" -> SollNotificationPriority.HIGH
+        "low" -> SollNotificationPriority.LOW
+        else -> SollNotificationPriority.DEFAULT
+    }
+    notificationCenter.post(
+        SollNotificationRequest(
+            channel = SollNotificationChannel.CHAT,
+            type = type,
+            source = "soll_server",
+            title = title,
+            message = message,
+            payloadJson = payload.toString(),
+            priority = priority,
+            showSystem = true,
+            onlyAlertOnce = true,
+            systemNotificationId = item.outboundId.hashCode() and Int.MAX_VALUE,
+            launchSection = AppLaunchTargets.SECTION_CHAT,
+        )
+    )
+}
 
 private data class ServerGadgetEndpointHint(
     val host: String,
@@ -574,4 +618,5 @@ interface GadgetServerSyncWorkerEntryPoint {
     fun sollGateway(): SollGateway
     fun deviceRepository(): DeviceRepository
     fun gadgetReadOnlyCommandExecutor(): GadgetReadOnlyCommandExecutor
+    fun notificationCenter(): SollNotificationCenter
 }

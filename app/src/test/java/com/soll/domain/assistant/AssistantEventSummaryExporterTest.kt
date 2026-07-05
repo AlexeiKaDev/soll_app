@@ -11,7 +11,7 @@ class AssistantEventSummaryExporterTest {
                 AssistantEvent(
                     type = "proactive_suggestion_accepted",
                     source = "home",
-                    summary = "Принято предложение запустить бота",
+                    summary = "Принято предложение настроить сервер Soll",
                     payloadJson = """{"private":"raw payload should stay local"}""",
                     createdAt = 1_700_000_000_000L,
                 )
@@ -19,9 +19,9 @@ class AssistantEventSummaryExporterTest {
         )
 
         assertTrue(markdown.contains("Summary событий Soll App"))
-        assertTrue(markdown.contains("Payload JSON, Telegram-сообщения, медиа и сырые логи не включены"))
+        assertTrue(markdown.contains("Payload JSON, сырые тексты чата, медиа и сырые логи не включены"))
         assertTrue(markdown.contains("proactive_suggestion_accepted"))
-        assertTrue(markdown.contains("Принято предложение запустить бота"))
+        assertTrue(markdown.contains("Принято предложение настроить сервер Soll"))
         assertTrue(!markdown.contains("raw payload should stay local"))
     }
 

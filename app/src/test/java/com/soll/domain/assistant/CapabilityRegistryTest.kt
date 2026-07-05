@@ -7,27 +7,19 @@ import org.junit.Test
 
 class CapabilityRegistryTest {
     @Test
-    fun `registry covers all current telegram commands`() {
+    fun `registry covers current Soll core capabilities`() {
         val registry = CapabilityRegistry(FakeCapabilitySettings())
 
         assertEquals(
             setOf(
+                "chat",
                 "start",
                 "help",
                 "ping",
                 "status",
                 "info",
                 "logs",
-                "jobs",
-                "sync",
                 "storage",
-                "ask_soll",
-                "raw",
-                "scanner",
-                "devices",
-                "nfc",
-                "music",
-                "field_map",
                 "files",
                 "download",
                 "sms",
@@ -38,6 +30,14 @@ class CapabilityRegistryTest {
                 "location",
                 "photo",
                 "record",
+                "tasks",
+                "sync",
+                "jobs",
+                "raw",
+                "server_action",
+                "devices",
+                "field_map",
+                "portable_ssd",
                 "notify",
                 "vibrate",
                 "flashlight",
@@ -65,18 +65,18 @@ class CapabilityRegistryTest {
     fun `risky commands are blocked by global risky switch`() {
         val registry = CapabilityRegistry(FakeCapabilitySettings(riskyCapabilitiesEnabled = false))
 
-        val decision = registry.checkCommand("photo")
+        val decision = registry.checkCommand("server_action")
 
         assertFalse(decision.allowed)
         assertEquals(CapabilityBlockReason.RISKY_CAPABILITIES_DISABLED, decision.reason)
-        assertEquals(RiskTier.FILE_MEDIA, decision.capability?.riskTier)
+        assertEquals(RiskTier.MONEY_OR_EXTERNAL_ACTION, decision.capability?.riskTier)
     }
 
     @Test
     fun `individual disabled command is blocked`() {
-        val registry = CapabilityRegistry(FakeCapabilitySettings(disabledCapabilities = setOf("ping")))
+        val registry = CapabilityRegistry(FakeCapabilitySettings(disabledCapabilities = setOf("chat")))
 
-        val decision = registry.checkCommand("ping")
+        val decision = registry.checkCommand("chat")
 
         assertFalse(decision.allowed)
         assertEquals(CapabilityBlockReason.CAPABILITY_DISABLED, decision.reason)
@@ -86,27 +86,35 @@ class CapabilityRegistryTest {
     fun `communication and media commands require confirmation metadata`() {
         val registry = CapabilityRegistry(FakeCapabilitySettings())
 
+        assertTrue(registry.get("server_action")!!.requiresConfirmation)
         assertTrue(registry.get("sms_send")!!.requiresConfirmation)
-        assertTrue(registry.get("download")!!.auditRequired)
+        assertTrue(registry.get("photo")!!.requiresConfirmation)
+        assertTrue(registry.get("server_action")!!.auditRequired)
     }
 
     @Test
-    fun `ask soll sends personal request to server and is audited`() {
+    fun `chat is safe information channel`() {
         val capability = CapabilityRegistry.CURRENT_COMMAND_CAPABILITIES
-            .single { it.id == "ask_soll" }
+            .single { it.id == "chat" }
 
-        assertEquals(RiskTier.PERSONAL_DATA, capability.riskTier)
-        assertTrue(capability.auditRequired)
+        assertEquals(RiskTier.SAFE_INFO, capability.riskTier)
+        assertFalse(capability.auditRequired)
         assertFalse(capability.requiresConfirmation)
     }
 
     @Test
-    fun `scanner capability uses camera permission and personal data tier`() {
+    fun `activity capability uses location permission and personal data tier`() {
         val capability = CapabilityRegistry.CURRENT_COMMAND_CAPABILITIES
-            .single { it.id == "scanner" }
+            .single { it.id == "field_map" }
 
         assertEquals(RiskTier.PERSONAL_DATA, capability.riskTier)
-        assertEquals(listOf(android.Manifest.permission.CAMERA), capability.requiredAndroidPermissions)
+        assertEquals(
+            listOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            ),
+            capability.requiredAndroidPermissions,
+        )
         assertTrue(capability.enabledByDefault)
         assertFalse(capability.requiresConfirmation)
     }

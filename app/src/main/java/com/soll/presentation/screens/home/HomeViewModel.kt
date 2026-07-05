@@ -18,9 +18,7 @@ import com.soll.data.repository.AssistantMemoryRepository
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.data.repository.TaskCacheRepository
-import com.soll.data.repository.TelegramRepository
 import com.soll.data.repository.ToolJobRepository
-import com.soll.data.service.BotService
 import com.soll.domain.assistant.AssistantEvent
 import com.soll.domain.assistant.proactive.ProactiveSignalSnapshot
 import com.soll.domain.assistant.proactive.ProactiveSuggestion
@@ -33,10 +31,6 @@ import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.notification.SollNotificationPriority
 import com.soll.domain.notification.SollNotificationRequest
 import com.soll.domain.tool.ToolJob
-import com.soll.domain.tool.ToolHandler
-import com.soll.domain.tool.ToolJobProgressSink
-import com.soll.domain.tool.ToolJobResult
-import com.soll.domain.tool.ToolJobRunner
 import com.soll.domain.tool.ToolJobStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -89,13 +83,11 @@ enum class HealthAction {
 class HomeViewModel @Inject constructor(
     private val application: Application,
     private val settingsRepository: SettingsRepository,
-    private val telegramRepository: TelegramRepository,
     private val assistantEventRepository: AssistantEventRepository,
     private val assistantMemoryRepository: AssistantMemoryRepository,
     private val taskCacheRepository: TaskCacheRepository,
     private val syncQueueRepository: SollSyncQueueRepository,
     private val toolJobRepository: ToolJobRepository,
-    private val toolJobRunner: ToolJobRunner,
     private val notificationCenter: SollNotificationCenter,
 ) : AndroidViewModel(application) {
 
@@ -114,30 +106,24 @@ class HomeViewModel @Inject constructor(
     private fun observeServiceState() {
         viewModelScope.launch {
             while (isActive) {
-                val isRunning = BotService.isRunning.value
-                val messagesProcessed = BotService.messagesProcessed
-                val startTime = BotService.startTime
-                val lastError = BotService.lastError
+                val serverConfigured = settingsRepository.sollServerUrl.isNotBlank()
+                val hasServerAuth = settingsRepository.sollDeviceAccessToken.isNotBlank() ||
+                    settingsRepository.sollAccessToken.isNotBlank()
                 val activeToolJobs = toolJobRepository.countActiveJobs()
                 val pendingTasks = runCatching { taskCacheRepository.getCachedBoard().openCount }
                     .getOrDefault(_uiState.value.pendingTasks)
 
-                val uptime = if (isRunning && startTime > 0) {
-                    val uptimeMs = System.currentTimeMillis() - startTime
-                    formatUptime(uptimeMs)
-                } else ""
-
                 _uiState.update { state ->
                     state.copy(
-                        isRunning = isRunning,
-                        messagesProcessed = messagesProcessed,
-                        uptime = uptime,
-                        lastError = lastError,
+                        isRunning = serverConfigured,
+                        hasToken = hasServerAuth,
+                        messagesProcessed = pendingTasks.toLong(),
+                        uptime = if (serverConfigured) "sync active" else "",
                         activeToolJobs = activeToolJobs,
                         pendingTasks = pendingTasks,
                         healthItems = buildHealthItems(
-                            isRunning = isRunning,
-                            hasToken = state.hasToken,
+                            isRunning = serverConfigured,
+                            hasToken = hasServerAuth,
                             activeToolJobs = activeToolJobs,
                         )
                     ).withProactiveSuggestions()
@@ -150,7 +136,8 @@ class HomeViewModel @Inject constructor(
 
     private fun checkToken() {
         viewModelScope.launch {
-            val hasToken = settingsRepository.hasValidToken()
+            val hasToken = settingsRepository.sollDeviceAccessToken.isNotBlank() ||
+                settingsRepository.sollAccessToken.isNotBlank()
             _uiState.update {
                 it.copy(
                     hasToken = hasToken,
@@ -162,13 +149,6 @@ class HomeViewModel @Inject constructor(
                 ).withProactiveSuggestions()
             }
             deliverProactiveSuggestionsIfEnabled()
-
-            if (hasToken) {
-                // Try to get bot info
-                telegramRepository.getMe().onSuccess { botInfo ->
-                    _uiState.update { it.copy(botUsername = "@${botInfo.username}") }
-                }
-            }
         }
     }
 
@@ -201,63 +181,14 @@ class HomeViewModel @Inject constructor(
     }
 
     fun startBot() {
-        if (!settingsRepository.hasValidToken()) {
-            _uiState.update { it.copy(lastError = "Укажите токен бота в настройках") }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val job = toolJobRunner.run(
-                toolId = ASSISTANT_BOT_START_TOOL_ID,
-                handler = object : ToolHandler {
-                    override val toolId: String = ASSISTANT_BOT_START_TOOL_ID
-
-                    override suspend fun execute(job: ToolJob, progress: ToolJobProgressSink): ToolJobResult {
-                        progress.updateProgress(25, "Проверяю токен Telegram")
-                        if (!settingsRepository.hasValidToken()) {
-                            error("Токен бота не задан")
-                        }
-                        progress.updateProgress(60, "Запускаю фонового бота")
-                        BotService.start(application)
-                        delay(500)
-                        progress.updateProgress(90, "Проверяю состояние сервиса")
-                        return ToolJobResult(logText = "Фоновый бот запущен")
-                    }
-                },
-            )
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    lastError = job.logText.takeIf { _ -> job.status == ToolJobStatus.FAILED },
-                )
-            }
+        openAppSettings()
+        _uiState.update {
+            it.copy(lastError = "Старый Android-бот перенесен в архив. Используйте сервер Soll и чат приложения.")
         }
     }
 
     fun stopBot() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val job = toolJobRunner.run(
-                toolId = ASSISTANT_BOT_STOP_TOOL_ID,
-                handler = object : ToolHandler {
-                    override val toolId: String = ASSISTANT_BOT_STOP_TOOL_ID
-
-                    override suspend fun execute(job: ToolJob, progress: ToolJobProgressSink): ToolJobResult {
-                        progress.updateProgress(50, "Останавливаю фонового бота")
-                        BotService.stop(application)
-                        delay(500)
-                        return ToolJobResult(logText = "Фоновый бот остановлен")
-                    }
-                },
-            )
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    lastError = job.logText.takeIf { _ -> job.status == ToolJobStatus.FAILED },
-                )
-            }
-        }
+        _uiState.update { it.copy(lastError = "Старый фоновый бот уже отключен в Android.") }
     }
 
     fun runHealthAction(action: HealthAction) {
@@ -304,7 +235,7 @@ class HomeViewModel @Inject constructor(
     private fun performSuggestionAction(action: ProactiveSuggestionAction) {
         when (action) {
             ProactiveSuggestionAction.NONE -> Unit
-            ProactiveSuggestionAction.START_BOT -> startBot()
+            ProactiveSuggestionAction.START_BOT -> openAppSettings()
             ProactiveSuggestionAction.OPEN_APP_SETTINGS -> openAppSettings()
             ProactiveSuggestionAction.OPEN_BATTERY_SETTINGS -> openBatterySettings()
         }
@@ -375,10 +306,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun deliverProactiveSuggestionsIfEnabled() {
-        if (
-            !settingsRepository.proactiveSystemDeliveryEnabled &&
-            !settingsRepository.proactiveTelegramDeliveryEnabled
-        ) {
+        if (!settingsRepository.proactiveSystemDeliveryEnabled) {
             return
         }
 
@@ -407,21 +335,6 @@ class HomeViewModel @Inject constructor(
                     )
                 )
             }
-
-            if (
-                settingsRepository.proactiveTelegramDeliveryEnabled &&
-                settingsRepository.hasValidToken() &&
-                settingsRepository.shouldDeliverProactiveSuggestion(suggestion.id, DELIVERY_TELEGRAM)
-            ) {
-                val chatId = telegramRepository.getLastChatId() ?: return@forEach
-                settingsRepository.recordProactiveSuggestionDelivered(suggestion.id, DELIVERY_TELEGRAM)
-                telegramRepository.sendMessage(
-                    chatId = chatId,
-                    text = suggestion.toTelegramText(),
-                    parseMode = null,
-                    replyToMessageId = null,
-                )
-            }
         }
     }
 
@@ -433,30 +346,30 @@ class HomeViewModel @Inject constructor(
         val items = mutableListOf<HealthItemUiState>()
 
         items += HealthItemUiState(
-            title = "Токен Telegram",
-            detail = if (hasToken) "Настроен" else "Токен бота не задан",
+            title = "Доступ к серверу",
+            detail = if (hasToken) "Device/API token настроен" else "Нужен device-token или API token",
             level = if (hasToken) HealthLevel.OK else HealthLevel.ERROR,
             action = if (hasToken) null else HealthAction.APP_SETTINGS,
         )
 
         items += HealthItemUiState(
-            title = "Фоновый бот",
-            detail = if (isRunning) "Получает обновления Telegram" else "Остановлен",
+            title = "Сервер Soll",
+            detail = if (isRunning) "URL сервера настроен" else "URL сервера не задан",
             level = if (isRunning) HealthLevel.OK else HealthLevel.WARNING,
         )
 
         items += HealthItemUiState(
             title = "Оптимизация батареи",
-            detail = if (isBatteryOptimizationIgnored()) "Отключена для Soll" else "Может остановить фонового бота",
+            detail = if (isBatteryOptimizationIgnored()) "Отключена для Soll" else "Может задерживать sync и уведомления",
             level = if (isBatteryOptimizationIgnored()) HealthLevel.OK else HealthLevel.WARNING,
             action = if (isBatteryOptimizationIgnored()) null else HealthAction.BATTERY_SETTINGS,
         )
 
         items += HealthItemUiState(
-            title = "Автозапуск",
-            detail = if (settingsRepository.autoStartEnabled) "Включен" else "Отключен",
-            level = if (settingsRepository.autoStartEnabled) HealthLevel.OK else HealthLevel.WARNING,
-            action = if (settingsRepository.autoStartEnabled) null else HealthAction.APP_SETTINGS,
+            title = "Фоновая синхронизация",
+            detail = if (isRunning) "WorkManager активен для сервера" else "Включится после настройки сервера",
+            level = if (isRunning) HealthLevel.OK else HealthLevel.WARNING,
+            action = if (isRunning) null else HealthAction.APP_SETTINGS,
         )
 
         val missingPermissions = missingRuntimePermissionLabels()
@@ -581,20 +494,6 @@ class HomeViewModel @Inject constructor(
         application.startActivity(intent)
     }
 
-    private fun formatUptime(ms: Long): String {
-        val seconds = ms / 1000
-        val minutes = seconds / 60
-        val hours = minutes / 60
-        val days = hours / 24
-
-        return when {
-            days > 0 -> "${days}d ${hours % 24}h ${minutes % 60}m"
-            hours > 0 -> "${hours}h ${minutes % 60}m ${seconds % 60}s"
-            minutes > 0 -> "${minutes}m ${seconds % 60}s"
-            else -> "${seconds}s"
-        }
-    }
-
     fun refreshToken() {
         checkToken()
     }
@@ -607,10 +506,7 @@ class HomeViewModel @Inject constructor(
         }
 
     private companion object {
-        const val ASSISTANT_BOT_START_TOOL_ID = "assistant_bot_start"
-        const val ASSISTANT_BOT_STOP_TOOL_ID = "assistant_bot_stop"
         const val DELIVERY_SYSTEM = "system"
-        const val DELIVERY_TELEGRAM = "telegram"
     }
 }
 
@@ -619,14 +515,4 @@ private fun com.soll.domain.assistant.proactive.ProactiveSuggestionPriority.toNo
         com.soll.domain.assistant.proactive.ProactiveSuggestionPriority.HIGH -> SollNotificationPriority.HIGH
         com.soll.domain.assistant.proactive.ProactiveSuggestionPriority.MEDIUM -> SollNotificationPriority.DEFAULT
         com.soll.domain.assistant.proactive.ProactiveSuggestionPriority.LOW -> SollNotificationPriority.LOW
-    }
-
-private fun ProactiveSuggestion.toTelegramText(): String =
-    buildString {
-        appendLine("Предложение Soll")
-        appendLine()
-        appendLine(title)
-        appendLine(detail)
-        appendLine()
-        append("Управление предложениями доступно в приложении: Настройки -> Предложения.")
     }

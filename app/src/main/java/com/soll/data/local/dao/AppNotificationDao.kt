@@ -18,6 +18,12 @@ interface AppNotificationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(notification: AppNotificationEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(notification: AppNotificationEntity): Long
+
+    @Query("SELECT * FROM app_notifications WHERE dedupe_key = :dedupeKey LIMIT 1")
+    suspend fun findByDedupeKey(dedupeKey: String): AppNotificationEntity?
+
     @Query(
         """
         UPDATE app_notifications

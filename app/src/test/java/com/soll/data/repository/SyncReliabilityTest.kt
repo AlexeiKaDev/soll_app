@@ -101,6 +101,16 @@ class SyncReliabilityTest {
     }
 
     @Test
+    fun `gadget server sync retries when unsupported mesh failure report is not delivered`() {
+        val summary = GadgetServerSyncSummary(
+            snapshotsSynced = true,
+            meshSummary = MeshOutboxWorkerSummary(claimed = 1, failed = 1),
+        )
+
+        assertEquals(SyncWorkDecision.RETRY, gadgetServerSyncWorkDecision(summary))
+    }
+
+    @Test
     fun `gadget server sync retries command transport failures`() {
         val summary = GadgetServerSyncSummary(
             snapshotsSynced = true,
@@ -123,6 +133,13 @@ class SyncReliabilityTest {
     @Test
     fun `mesh worker acks allowlisted status payload`() {
         val decision = meshOutboxDeliveryDecision(meshItem("""{"type":"status","message":"ok"}"""))
+
+        assertEquals(MeshOutboxDeliveryAction.ACK, decision.action)
+    }
+
+    @Test
+    fun `mesh worker acks server chat payloads`() {
+        val decision = meshOutboxDeliveryDecision(meshItem("""{"type":"chat_message","message":"Новая задача"}"""))
 
         assertEquals(MeshOutboxDeliveryAction.ACK, decision.action)
     }

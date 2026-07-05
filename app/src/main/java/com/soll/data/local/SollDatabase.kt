@@ -72,7 +72,7 @@ import com.soll.data.local.entity.ToolJobEntity
         NoteAttachmentEntity::class,
         FieldPointEntity::class,
     ],
-    version = 19,
+    version = 21,
     exportSchema = true,
 )
 abstract class SollDatabase : RoomDatabase() {

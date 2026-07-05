@@ -64,6 +64,16 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+private val hasGoogleServicesConfig = listOf(
+    "google-services.json",
+    "src/debug/google-services.json",
+    "src/release/google-services.json",
+).any { relativePath -> file(relativePath).exists() }
+
+if (hasGoogleServicesConfig) {
+    pluginManager.apply("com.google.gms.google-services")
+}
+
 private val onnxRuntimeAndroidVersion = "1.24.3"
 
 private val onnxRuntimeAndroidBase: Configuration =
@@ -256,6 +266,8 @@ dependencies {
 
     // Google Play Services
     implementation(libs.play.services.location)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     // EPUB parsing
     implementation(libs.jsoup)

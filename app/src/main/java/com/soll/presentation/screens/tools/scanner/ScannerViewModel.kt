@@ -224,7 +224,7 @@ class ScannerViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val board = taskCacheRepository.getCachedBoard()
-            val tasks = (board.today + board.inbox + board.stale)
+            val tasks = (board.today + board.blocked + board.inbox + board.stale + board.deferred)
                 .distinctBy { it.id }
                 .take(12)
             _uiState.update {

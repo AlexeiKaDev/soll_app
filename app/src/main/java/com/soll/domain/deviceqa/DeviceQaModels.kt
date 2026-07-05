@@ -3,11 +3,8 @@ package com.soll.domain.deviceqa
 enum class DeviceQaCategory(val title: String) {
     NOTIFICATIONS("Уведомления"),
     BACKGROUND("Фон"),
-    MUSIC("Музыка"),
-    WIDGETS("Виджеты"),
     THEME("Тема"),
     GADGETS("Гаджеты"),
-    NFC("NFC"),
 }
 
 enum class DeviceQaCheckId(val storageKey: String) {
@@ -15,21 +12,13 @@ enum class DeviceQaCheckId(val storageKey: String) {
     NOTIFICATION_CHANNELS("notification_channels"),
     NOTIFICATION_ANDROID13_FLOW("notification_android13_flow"),
     NOTIFICATION_TAP_ROUTING("notification_tap_routing"),
-    NOTIFICATION_MEDIA_SESSION("notification_media_session"),
     BATTERY_OPTIMIZATION("battery_optimization"),
-    MUSIC_SCREEN_OFF("music_screen_off"),
-    MUSIC_LOCKSCREEN_CONTROLS("music_lockscreen_controls"),
-    MUSIC_AUDIO_FOCUS("music_audio_focus"),
-    WIDGET_LAUNCHER_COLD("widget_launcher_cold"),
-    WIDGET_MEDIA_CONTROLS("widget_media_controls"),
     THEME_VISUAL_PASS("theme_visual_pass"),
     GADGET_PROTOCOL_SCHEMA("gadget_protocol_schema"),
     GADGET_SERVER_LOCAL_BINDING("gadget_server_local_binding"),
     GADGET_MESH_OUTBOX_WORKER("gadget_mesh_outbox_worker"),
     GADGET_READ_ONLY_COMMAND_WORKER("gadget_read_only_command_worker"),
-    GADGET_MANUAL_WRITE_FLOW("gadget_manual_write_flow"),
-    NFC_OWNED_TAGS("nfc_owned_tags"),
-    NFC_ACCESS_FOB_DIAGNOSTIC("nfc_access_fob_diagnostic");
+    GADGET_MANUAL_WRITE_FLOW("gadget_manual_write_flow");
 
     companion object {
         fun fromStorage(value: String): DeviceQaCheckId? =

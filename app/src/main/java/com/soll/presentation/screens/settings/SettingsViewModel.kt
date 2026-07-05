@@ -8,16 +8,20 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.soll.data.notification.SystemNotificationImportanceMode
+import com.soll.data.notification.SystemNotificationPreferences
 import com.soll.data.repository.DeviceQaRepository
 import com.soll.data.repository.GadgetServerSyncScheduler
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollRepository
-import com.soll.data.repository.TelegramRepository
+import com.soll.data.repository.SollServerSyncScheduler
+import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.domain.assistant.CapabilityRegistry
 import com.soll.domain.assistant.RiskTier
 import com.soll.domain.assistant.isRisky
 import com.soll.domain.deviceqa.DeviceQaCheck
 import com.soll.domain.deviceqa.DeviceQaCheckId
+import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollTaskBoard
@@ -31,16 +35,11 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class SettingsUiState(
-    val token: String = "",
-    val tokenMasked: String = "",
-    val isTokenValid: Boolean = false,
-    val isTokenVerified: Boolean = false,
-    val botUsername: String? = null,
-    val autoStartEnabled: Boolean = true,
     val isBatteryOptimizationDisabled: Boolean = false,
     val riskyCapabilitiesEnabled: Boolean = true,
     val capabilityGroups: List<CapabilityGroupUiState> = emptyList(),
     val sollServerUrl: String = "",
+    val sollApiPathPrefix: String = "",
     val sollAccessToken: String = "",
     val sollSyncIntervalMinutes: String = "60",
     val sollWifiOnlyUpload: Boolean = true,
@@ -56,7 +55,11 @@ data class SettingsUiState(
     val proactiveSuggestionsEnabled: Boolean = true,
     val proactiveSuggestionsDailyLimit: Int = 3,
     val proactiveSystemDeliveryEnabled: Boolean = false,
-    val proactiveTelegramDeliveryEnabled: Boolean = false,
+    val systemNotificationImportanceMode: SystemNotificationImportanceMode = SystemNotificationImportanceMode.DEFAULT_AND_HIGH,
+    val systemNotificationChannels: List<SystemNotificationChannelUiState> = emptyList(),
+    val sollPushTokenRegisteredAt: Long = 0L,
+    val sollPushTokenLastError: String = "",
+    val isRetryingSollPushToken: Boolean = false,
     val assistantMemoryEnabled: Boolean = true,
     val deviceQaChecks: List<DeviceQaCheck> = emptyList(),
     val appThemeVariant: SollThemeVariant = SollThemeVariant.default,
@@ -84,11 +87,15 @@ data class CapabilityItemUiState(
     val permissions: List<String>,
 )
 
+data class SystemNotificationChannelUiState(
+    val channel: SollNotificationChannel,
+    val enabled: Boolean,
+)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val application: Application,
     private val settingsRepository: SettingsRepository,
-    private val telegramRepository: TelegramRepository,
     private val capabilityRegistry: CapabilityRegistry,
     private val sollRepository: SollRepository,
     private val deviceQaRepository: DeviceQaRepository,
@@ -102,19 +109,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun loadSettings() {
-        val token = settingsRepository.botToken ?: ""
-        val isValid = settingsRepository.validateToken(token)
-
         _uiState.update { state ->
             state.copy(
-                token = token,
-                tokenMasked = maskToken(token),
-                isTokenValid = isValid,
-                autoStartEnabled = settingsRepository.autoStartEnabled,
                 isBatteryOptimizationDisabled = checkBatteryOptimization(),
                 riskyCapabilitiesEnabled = settingsRepository.isRiskyCapabilitiesEnabled(),
                 capabilityGroups = buildCapabilityGroups(),
                 sollServerUrl = settingsRepository.sollServerUrl,
+                sollApiPathPrefix = settingsRepository.sollApiPathPrefix,
                 sollAccessToken = settingsRepository.sollAccessToken,
                 sollSyncIntervalMinutes = settingsRepository.sollSyncIntervalMinutes.toString(),
                 sollWifiOnlyUpload = settingsRepository.sollWifiOnlyUpload,
@@ -125,97 +126,15 @@ class SettingsViewModel @Inject constructor(
                 proactiveSuggestionsEnabled = settingsRepository.proactiveSuggestionsEnabled,
                 proactiveSuggestionsDailyLimit = settingsRepository.proactiveSuggestionsDailyLimit,
                 proactiveSystemDeliveryEnabled = settingsRepository.proactiveSystemDeliveryEnabled,
-                proactiveTelegramDeliveryEnabled = settingsRepository.proactiveTelegramDeliveryEnabled,
+                systemNotificationImportanceMode = settingsRepository.systemNotificationImportanceMode,
+                systemNotificationChannels = buildSystemNotificationChannels(),
+                sollPushTokenRegisteredAt = settingsRepository.sollPushTokenRegisteredAt,
+                sollPushTokenLastError = settingsRepository.sollPushTokenLastError,
                 assistantMemoryEnabled = settingsRepository.assistantMemoryEnabled,
                 deviceQaChecks = deviceQaRepository.checks(),
                 appThemeVariant = SollThemeVariant.fromStorage(settingsRepository.appThemeVariant),
             )
         }
-
-        if (isValid) {
-            verifyToken()
-        }
-    }
-
-    fun updateToken(newToken: String) {
-        val isValid = settingsRepository.validateToken(newToken)
-        _uiState.update { state ->
-            state.copy(
-                token = newToken,
-                tokenMasked = maskToken(newToken),
-                isTokenValid = isValid,
-                isTokenVerified = false,
-                botUsername = null
-            )
-        }
-    }
-
-    fun saveToken() {
-        val token = _uiState.value.token.trim()
-        if (!settingsRepository.validateToken(token)) {
-            _uiState.update { state ->
-                state.copy(
-                    message = "Неверный формат токена",
-                    isError = true
-                )
-            }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-
-            settingsRepository.botToken = token
-
-            // Verify token with Telegram
-            telegramRepository.getMe().fold(
-                onSuccess = { botInfo ->
-                    // Save bot config to database
-                    settingsRepository.saveBotConfig(
-                        name = botInfo.username,
-                        token = token
-                    )
-
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            isTokenVerified = true,
-                            botUsername = "@${botInfo.username}",
-                            message = "Токен проверен. Бот: @${botInfo.username}",
-                            isError = false
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            isTokenVerified = false,
-                            message = "Проверка токена не удалась: ${error.message}",
-                            isError = true
-                        )
-                    }
-                }
-            )
-        }
-    }
-
-    private fun verifyToken() {
-        viewModelScope.launch {
-            telegramRepository.getMe().onSuccess { botInfo ->
-                _uiState.update { state ->
-                    state.copy(
-                        isTokenVerified = true,
-                        botUsername = "@${botInfo.username}"
-                    )
-                }
-            }
-        }
-    }
-
-    fun setAutoStart(enabled: Boolean) {
-        settingsRepository.autoStartEnabled = enabled
-        _uiState.update { it.copy(autoStartEnabled = enabled) }
     }
 
     fun setRiskyCapabilitiesEnabled(enabled: Boolean) {
@@ -232,6 +151,17 @@ class SettingsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 sollServerUrl = value,
+                sollHealthStatus = null,
+                sollHealthMessage = null,
+                sollSyncSummary = null,
+            )
+        }
+    }
+
+    fun updateSollApiPathPrefix(value: String) {
+        _uiState.update {
+            it.copy(
+                sollApiPathPrefix = value,
                 sollHealthStatus = null,
                 sollHealthMessage = null,
                 sollSyncSummary = null,
@@ -297,9 +227,49 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(proactiveSystemDeliveryEnabled = enabled) }
     }
 
-    fun setProactiveTelegramDeliveryEnabled(enabled: Boolean) {
-        settingsRepository.proactiveTelegramDeliveryEnabled = enabled
-        _uiState.update { it.copy(proactiveTelegramDeliveryEnabled = enabled) }
+    fun setSystemNotificationImportanceMode(mode: SystemNotificationImportanceMode) {
+        settingsRepository.systemNotificationImportanceMode = mode
+        _uiState.update { it.copy(systemNotificationImportanceMode = mode) }
+    }
+
+    fun setSystemNotificationChannelEnabled(channel: SollNotificationChannel, enabled: Boolean) {
+        settingsRepository.setSystemNotificationChannelEnabled(channel, enabled)
+        _uiState.update { it.copy(systemNotificationChannels = buildSystemNotificationChannels()) }
+    }
+
+    fun retryAndroidPushTokenRegistration() {
+        settingsRepository.sollPushTokenLastError = ""
+        _uiState.update {
+            it.copy(
+                sollPushTokenLastError = "",
+                isRetryingSollPushToken = true,
+                message = "Запрошена повторная регистрация push-токена",
+                isError = false,
+            )
+        }
+        AndroidPushTokenRegistrar.registerCurrentToken(
+            application,
+            reason = "settings_manual_retry",
+            force = true,
+        ) {
+            viewModelScope.launch {
+                val lastError = settingsRepository.sollPushTokenLastError
+                val registeredAt = settingsRepository.sollPushTokenRegisteredAt
+                _uiState.update {
+                    it.copy(
+                        sollPushTokenRegisteredAt = registeredAt,
+                        sollPushTokenLastError = lastError,
+                        isRetryingSollPushToken = false,
+                        message = if (lastError.isBlank()) {
+                            "Push-токен проверен сервером"
+                        } else {
+                            "Push-токен не зарегистрирован"
+                        },
+                        isError = lastError.isNotBlank(),
+                    )
+                }
+            }
+        }
     }
 
     fun setAssistantMemoryEnabled(enabled: Boolean) {
@@ -403,14 +373,31 @@ class SettingsViewModel @Inject constructor(
         persistSollSettings(showMessage = true)
     }
 
+    fun resetSollEndpointToRecommended() {
+        settingsRepository.resetSollEndpointToRecommended()
+        _uiState.update {
+            it.copy(
+                sollServerUrl = settingsRepository.sollServerUrl,
+                sollApiPathPrefix = settingsRepository.sollApiPathPrefix,
+                sollHealthStatus = null,
+                sollHealthMessage = null,
+                sollSyncSummary = null,
+                message = "Рекомендованный адрес сервера подставлен в поля",
+                isError = false,
+            )
+        }
+    }
+
     private fun persistSollSettings(showMessage: Boolean) {
         val state = _uiState.value
         val interval = state.sollSyncIntervalMinutes.toIntOrNull()?.coerceIn(5, 1440) ?: 60
         settingsRepository.sollServerUrl = state.sollServerUrl
+        settingsRepository.sollApiPathPrefix = state.sollApiPathPrefix
         settingsRepository.sollAccessToken = state.sollAccessToken
         settingsRepository.sollSyncIntervalMinutes = interval
         settingsRepository.sollWifiOnlyUpload = state.sollWifiOnlyUpload
         GadgetServerSyncScheduler.schedule(application, settingsRepository)
+        SollServerSyncScheduler.schedule(application, settingsRepository)
         _uiState.update {
             val nextState = it.copy(
                 sollSyncIntervalMinutes = interval.toString(),
@@ -549,21 +536,6 @@ class SettingsViewModel @Inject constructor(
         application.startActivity(intent)
     }
 
-    fun openNfcSettings() {
-        val intent = Intent(Settings.ACTION_NFC_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        runCatching {
-            application.startActivity(intent)
-        }.recoverCatching {
-            application.startActivity(
-                Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            )
-        }
-    }
-
     fun openAutoStartSettings() {
         // Try to open auto-start settings for various OEMs
         val intents = listOf(
@@ -649,6 +621,14 @@ class SettingsViewModel @Inject constructor(
             }
     }
 
+    private fun buildSystemNotificationChannels(): List<SystemNotificationChannelUiState> =
+        SystemNotificationPreferences.FILTERABLE_CHANNELS.map { channel ->
+            SystemNotificationChannelUiState(
+                channel = channel,
+                enabled = settingsRepository.isSystemNotificationChannelEnabled(channel),
+            )
+        }
+
     private fun checkBatteryOptimization(): Boolean {
         val powerManager = application.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
         return powerManager.isIgnoringBatteryOptimizations(application.packageName)
@@ -677,7 +657,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun SollTaskBoard.syncSummary(): String = buildString {
-        append("Получены задачи: сегодня ${today.size}, входящих ${inbox.size}, зависших ${stale.size}, открытых всего $openCount.")
+        append("Получены задачи: сегодня ${today.size}, входящих ${inbox.size}, блок ${blocked.size}, отложенных ${deferred.size}, зависших ${stale.size}, открытых всего $openCount.")
         today.firstOrNull()?.let { task ->
             append(" Ближайшая задача: ${task.title}")
         }
@@ -694,13 +674,4 @@ class SettingsViewModel @Inject constructor(
         return tasks.syncSummary() + protocolSummary + cacheSummary
     }
 
-    private fun maskToken(token: String): String {
-        if (token.length < 10) return token
-        val parts = token.split(":")
-        return if (parts.size == 2) {
-            "${parts[0]}:${"*".repeat(minOf(parts[1].length, 10))}..."
-        } else {
-            "${token.take(5)}...${"*".repeat(10)}"
-        }
-    }
 }

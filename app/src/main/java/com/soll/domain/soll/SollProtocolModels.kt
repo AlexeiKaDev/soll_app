@@ -100,6 +100,7 @@ fun validateSollProtocolSchema(
         "GET /api/v1/mesh/outbox",
         "GET /api/v1/mesh/outbox/next",
         "POST /api/v1/mesh/outbox/{outbound_id}/ack",
+        "POST /api/v1/mesh/outbox/{outbound_id}/attempt",
         "POST /api/v1/mesh/outbox/{outbound_id}/retry",
     )
     val missingCommandRoutes = requiredGadgetCommandRoutes.filterNot(gadgetCommandRoutes::contains)
@@ -158,6 +159,15 @@ fun validateSollProtocolBootstrap(
             warnings += "Android transport не содержит poll маршрут: $route."
         }
     }
+    listOf(
+        "POST /api/v1/android/push-token",
+        "POST /api/v1/chat/turn",
+        "POST /api/v1/chat/actions/{action_id}/execute",
+    ).forEach { route ->
+        if (route !in transport.push) {
+            warnings += "Android transport не содержит push маршрут: $route."
+        }
+    }
     warnings += validateWorkerContract(
         name = "android_mesh_outbox_worker",
         contract = workerContracts["android_mesh_outbox_worker"],
@@ -169,6 +179,12 @@ fun validateSollProtocolBootstrap(
         contract = workerContracts["gadget_command_worker"],
         requiredScopes = listOf("gadget:commands"),
         lifecycle = listOf("pending", "claimed", "acked", "done", "failed", "expired"),
+    )
+    warnings += validateWorkerContract(
+        name = "chat_stream_worker",
+        contract = workerContracts["chat_stream_worker"],
+        requiredScopes = listOf("chat:read"),
+        lifecycle = listOf("queued", "sent", "acked", "failed"),
     )
     return warnings
 }

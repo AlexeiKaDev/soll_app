@@ -32,6 +32,7 @@ import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
 import com.soll.presentation.screens.tools.fieldmap.FieldMapScreen
 import com.soll.presentation.screens.tools.music.MusicScreen
 import com.soll.presentation.screens.tools.portablessd.PortableSsdScreen
+import com.soll.presentation.screens.tools.scanner.ScannerScreen
 
 @Composable
 fun AppNavigation(
@@ -168,7 +169,12 @@ fun AppNavigation(
                         navController.navigate(Routes.DEVICE_QA) {
                             launchSingleTop = true
                         }
-                    }
+                    },
+                    onScanSollPairingQr = {
+                        navController.navigate(Routes.SCANNER) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
             composable(Routes.DEVICE_QA) {
@@ -194,6 +200,12 @@ fun AppNavigation(
             composable(Routes.BREATHING) {
                 BreathingScreen(
                     onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Routes.SCANNER) {
+                ScannerScreen(
+                    onBack = { navController.popBackStack() },
+                    autoStartCamera = true,
                 )
             }
             composable(Routes.ACTIVITY_HISTORY) {

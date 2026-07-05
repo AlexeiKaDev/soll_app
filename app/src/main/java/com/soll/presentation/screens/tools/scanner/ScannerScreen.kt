@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +87,7 @@ import timber.log.Timber
 @Composable
 fun ScannerScreen(
     onBack: () -> Unit,
+    autoStartCamera: Boolean = false,
     viewModel: ScannerViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -104,6 +106,17 @@ fun ScannerScreen(
             viewModel.setCameraEnabled(true)
         } else {
             viewModel.showCameraPermissionDenied()
+        }
+    }
+    var autoStartRequested by remember { mutableStateOf(false) }
+
+    LaunchedEffect(autoStartCamera, hasCameraPermission, uiState.cameraEnabled) {
+        if (!autoStartCamera || autoStartRequested || uiState.cameraEnabled) return@LaunchedEffect
+        autoStartRequested = true
+        if (hasCameraPermission) {
+            viewModel.setCameraEnabled(true)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 

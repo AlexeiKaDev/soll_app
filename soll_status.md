@@ -1,15 +1,16 @@
 # soll_app Status
 
-Last updated: 2026-07-05 22:54 Europe/Chisinau
+Last updated: 2026-07-05 23:04 Europe/Chisinau
 
 ## Current Changes
 
 - 2026-07-05 QR pairing from Desktop:
   - Added `SollPairingPayloadParser` for `soll://pair?...` and JSON pairing codes.
   - `MainActivity` now handles `soll://pair` deep links, applies server settings through `SettingsRepository.applySollPairingPayload`, opens Settings, and force-runs `AndroidPushTokenRegistrar` with reason `deep_link_pairing`.
-  - Android Settings no longer has a manual `QR / pairing code` paste field or `Применить QR` action; pairing is QR-only through the camera-opened deep link.
-  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `196171579`, built at `2026-07-05 22:40 Europe/Chisinau`.
-  - Exported APK in `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` has sha256 `feac011d86ee82b5cdc0f1fe043c1589b47b73b2145f80ee49b12f426181ea3d`.
+  - Android Settings no longer has a manual `QR / pairing code` paste field or `Применить QR` action; pairing is QR-only through camera scanning. The `Сканировать QR` button now opens the in-app Scanner with camera auto-start.
+  - The Scanner recognizes Soll pairing QR payloads directly, applies the server settings, stops the camera, and force-runs `AndroidPushTokenRegistrar` with reason `scanner_qr_pairing`.
+  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `195864627`, built at `2026-07-05 23:04 Europe/Chisinau`.
+  - Exported APK in `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` has sha256 `cbdfc93b561a460553ad0e70a2c60d5f656a295312bdb8fe4c20a47156241485`.
   - Validation passed: `testDebugUnitTest` for `SollPairingPayloadParserTest` and `ProjectStabilizationGuardTest`; `compileDebugKotlin`; `assembleDebug`.
   - Phone smoke remains blocked locally because ADB currently lists no devices and server `android_push.token_count=0` until the phone scans the QR and opens Soll.
 

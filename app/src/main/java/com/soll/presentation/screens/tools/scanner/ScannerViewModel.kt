@@ -1,14 +1,18 @@
 package com.soll.presentation.screens.tools.scanner
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.local.entity.ScanItemEntity
 import com.soll.data.local.entity.ScanSessionEntity
 import com.soll.data.repository.DeviceRepository
+import com.soll.data.repository.GadgetServerSyncScheduler
 import com.soll.data.repository.ScanAddResult
 import com.soll.data.repository.ScannerRepository
 import com.soll.data.repository.SettingsRepository
+import com.soll.data.repository.SollServerSyncScheduler
 import com.soll.data.repository.TaskCacheRepository
+import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.domain.assistant.CapabilityRegistry
 import com.soll.domain.device.AquikDeviceProfile
 import com.soll.domain.device.BuiltInDeviceProfiles
@@ -17,6 +21,8 @@ import com.soll.domain.device.DeviceConnectionStatus
 import com.soll.domain.device.DeviceEvent
 import com.soll.domain.securitylab.SensitivePayloadRedactor
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.SollPairingPayload
+import com.soll.domain.soll.SollPairingPayloadParser
 import com.soll.domain.soll.SollTask
 import com.soll.domain.scanner.ScanConfirmationGate
 import com.soll.domain.scanner.ScannerDevicePairingParser
@@ -28,6 +34,7 @@ import com.soll.domain.tool.ToolJobResult
 import com.soll.domain.tool.ToolJobRunner
 import com.soll.domain.tool.ToolJobStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +63,7 @@ data class ScannerUiState(
 
 @HiltViewModel
 class ScannerViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val scannerRepository: ScannerRepository,
     private val settingsRepository: SettingsRepository,
     private val taskCacheRepository: TaskCacheRepository,
@@ -160,6 +168,12 @@ class ScannerViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            val pairingPayload = SollPairingPayloadParser.parse(result.value)
+            if (pairingPayload != null) {
+                applySollPairingPayload(pairingPayload, reason = "scanner_qr_pairing")
+                return@launch
+            }
+
             val settings = _uiState.value.settings
             runCatching {
                 scannerRepository.addScan(
@@ -182,6 +196,41 @@ class ScannerViewModel @Inject constructor(
                         cameraStatus = null,
                         message = error.message ?: "Не удалось добавить скан с камеры",
                         isError = true,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applySollPairingPayload(payload: SollPairingPayload, reason: String) {
+        settingsRepository.applySollPairingPayload(payload)
+        GadgetServerSyncScheduler.schedule(appContext, settingsRepository)
+        SollServerSyncScheduler.schedule(appContext, settingsRepository)
+        _uiState.update {
+            it.copy(
+                cameraEnabled = false,
+                cameraStatus = "Soll QR применен",
+                isActionRunning = true,
+                message = "Настройки Soll применены из QR. Регистрирую push-токен",
+                isError = false,
+            )
+        }
+        AndroidPushTokenRegistrar.registerCurrentToken(
+            appContext,
+            reason = reason,
+            force = true,
+        ) {
+            viewModelScope.launch {
+                val lastError = settingsRepository.sollPushTokenLastError
+                _uiState.update {
+                    it.copy(
+                        isActionRunning = false,
+                        message = if (lastError.isBlank()) {
+                            "Soll QR применен. Push-токен зарегистрирован"
+                        } else {
+                            "Soll QR применен, push-токен не зарегистрирован"
+                        },
+                        isError = lastError.isNotBlank(),
                     )
                 }
             }

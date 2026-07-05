@@ -40,6 +40,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onOpenDeviceQa: () -> Unit = {},
+    onScanSollPairingQr: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showSollToken by remember { mutableStateOf(false) }
@@ -104,6 +105,15 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    OutlinedButton(
+                        onClick = onScanSollPairingQr,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Сканировать QR")
+                    }
 
                     OutlinedTextField(
                         value = uiState.sollServerUrl,

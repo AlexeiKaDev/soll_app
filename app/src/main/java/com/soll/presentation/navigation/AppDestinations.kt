@@ -39,6 +39,7 @@ object Routes {
     const val MUSIC = "music"
     const val BOOK_READER = "book_reader"
     const val BREATHING = "guided_breathing"
+    const val SCANNER = "scanner"
     const val DEVICE_QA = "device_qa"
 }
 

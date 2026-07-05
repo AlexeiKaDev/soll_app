@@ -2,7 +2,10 @@ package com.soll.data.repository
 
 import com.soll.data.service.classifyFcmNotification
 import com.soll.data.service.fcmChatMessageIdForWatermark
+import com.soll.domain.soll.SollAndroidPushHealth
+import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollChatMessage
+import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
 import org.junit.Assert.assertEquals
@@ -142,6 +145,40 @@ class SollServerSyncWorkerTest {
         assertNotEquals(taskBoardSignature(first), taskBoardSignature(changed))
     }
 
+    @Test
+    fun `sync status recovers fcm registration when server has no tokens`() {
+        val status = syncStatus(
+            androidPush = SollAndroidPushHealth(
+                enabled = true,
+                configured = true,
+                tokenCount = 0,
+            ),
+        )
+
+        assertEquals(true, shouldRecoverAndroidPushRegistration(status))
+        assertEquals(false, shouldRecoverAndroidPushRegistration(status.copy(fromCache = true)))
+        assertEquals(
+            false,
+            shouldRecoverAndroidPushRegistration(
+                status.copy(
+                    health = status.health.copy(
+                        androidPush = status.health.androidPush.copy(tokenCount = 1),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(
+            false,
+            shouldRecoverAndroidPushRegistration(
+                status.copy(
+                    health = status.health.copy(
+                        androidPush = status.health.androidPush.copy(configured = false),
+                    ),
+                ),
+            ),
+        )
+    }
+
     private fun chatMessage(
         id: Long,
         role: String,
@@ -180,5 +217,22 @@ class SollServerSyncWorkerTest {
             inbox = listOf(task),
             stale = emptyList(),
             doneRecent = emptyList(),
+        )
+
+    private fun syncStatus(androidPush: SollAndroidPushHealth): SollAndroidSyncStatus =
+        SollAndroidSyncStatus(
+            serverTime = "2026-07-05T18:30:00Z",
+            health = SollHealth(
+                status = "healthy",
+                schedulerRunning = true,
+                vaultAccessible = true,
+                jobsCount = 14,
+                androidPush = androidPush,
+            ),
+            tasks = taskBoard(task(status = "inbox", executionState = "queued")),
+            device = null,
+            briefing = null,
+            protocol = null,
+            warnings = emptyList(),
         )
 }

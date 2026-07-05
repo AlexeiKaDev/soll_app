@@ -1,8 +1,15 @@
 # soll_app Status
 
-Last updated: 2026-07-05 21:19 Europe/Chisinau
+Last updated: 2026-07-05 21:34 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-05 Android notification recovery continuation:
+  - Startup FCM registration is now forced, so an existing local `sollPushTokenRegisteredAt` cannot suppress re-registration when the server token store is empty.
+  - `SollHealth` now carries server `android_push.enabled/configured/token_count`; `SollServerSyncWorker` forces FCM re-registration when live sync reports `token_count=0`.
+  - `AndroidPushTokenRegistrar` now fails visibly with `Soll auth missing: issue device token or set bearer` when there is no user bearer, device bearer, or saved `deviceId + pairingSecret`, instead of silently attempting an unauthenticated push-token POST.
+  - Validation passed: Android `compileDebugKotlin`; targeted `SollServerSyncWorkerTest`, `SollFirebaseMessagingServiceTest`, `AndroidPushTokenRegistrarTest`, `ProjectStabilizationGuardTest`; Android `assembleDebug`.
+  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `196171579`, built at `2026-07-05 21:32 Europe/Chisinau`.
 
 - 2026-07-05 Android notification recovery recheck:
   - GitHub `origin/master` is synced to `1bfaca1`, the commit with automatic device bearer refresh before Android sync and FCM token registration.

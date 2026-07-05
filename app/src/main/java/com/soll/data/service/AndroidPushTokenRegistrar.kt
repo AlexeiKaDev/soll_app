@@ -34,6 +34,12 @@ object AndroidPushTokenRegistrar {
             onFinished?.invoke()
             return
         }
+        if (!hasSollPushRegistrationAuth(settings)) {
+            settings.sollPushTokenLastError = PUSH_AUTH_MISSING_ERROR
+            Timber.w("Skipping FCM token registration: missing Soll auth material")
+            onFinished?.invoke()
+            return
+        }
 
         if (FirebaseApp.getApps(appContext).isEmpty()) {
             FirebaseApp.initializeApp(appContext)
@@ -88,6 +94,12 @@ object AndroidPushTokenRegistrar {
             onFinished?.invoke()
             return
         }
+        if (!hasSollPushRegistrationAuth(settings)) {
+            settings.sollPushTokenLastError = PUSH_AUTH_MISSING_ERROR
+            Timber.w("Skipping FCM token registration: missing Soll auth material")
+            onFinished?.invoke()
+            return
+        }
         if (!force && !settings.shouldRegisterSollPushToken(cleanToken)) {
             onFinished?.invoke()
             return
@@ -133,3 +145,24 @@ interface AndroidPushTokenRegistrationEntryPoint {
     fun settingsRepository(): SettingsRepository
     fun sollGateway(): SollGateway
 }
+
+internal const val PUSH_AUTH_MISSING_ERROR =
+    "Soll auth missing: issue device token or set bearer"
+
+internal fun hasSollPushRegistrationAuth(settings: SettingsRepository): Boolean =
+    hasSollPushRegistrationAuth(
+        userAccessToken = settings.sollAccessToken,
+        deviceAccessToken = settings.sollDeviceAccessToken,
+        deviceId = settings.sollDeviceId,
+        pairingSecret = settings.sollDevicePairingSecret,
+    )
+
+internal fun hasSollPushRegistrationAuth(
+    userAccessToken: String,
+    deviceAccessToken: String,
+    deviceId: String,
+    pairingSecret: String,
+): Boolean =
+    userAccessToken.isNotBlank() ||
+        deviceAccessToken.isNotBlank() ||
+        (deviceId.isNotBlank() && pairingSecret.isNotBlank())

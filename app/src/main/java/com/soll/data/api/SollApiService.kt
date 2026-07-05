@@ -432,8 +432,17 @@ data class SollHealthResponse(
     val vaultAccessible: Boolean = false,
     @Json(name = "jobs_count")
     val jobsCount: Int = 0,
+    @Json(name = "android_push")
+    val androidPush: AndroidPushHealthResponse = AndroidPushHealthResponse(),
     @Json(name = "checked_at")
     val checkedAt: String? = null,
+)
+
+data class AndroidPushHealthResponse(
+    val enabled: Boolean = false,
+    val configured: Boolean = false,
+    @Json(name = "token_count")
+    val tokenCount: Int = 0,
 )
 
 data class AndroidSyncStatusResponse(

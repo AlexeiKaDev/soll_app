@@ -15,6 +15,7 @@ import androidx.work.WorkerParameters
 import com.soll.BuildConfig
 import com.soll.data.notification.AppForegroundState
 import com.soll.data.notification.SollNotificationChannels
+import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.notification.SollNotificationPriority
@@ -52,6 +53,7 @@ class SollServerSyncWorker(
         return try {
             val appInForeground = AppForegroundState.isUserFacing()
             val status = entryPoint.sollGateway().getAndroidSyncStatus().getOrThrow()
+            recoverAndroidPushRegistrationIfNeeded(status)
             syncTaskCache(
                 status = status,
                 taskCacheRepository = entryPoint.taskCacheRepository(),
@@ -176,6 +178,16 @@ class SollServerSyncWorker(
         }
 
         settings.sollTaskBoardSignature = signature
+    }
+
+    private fun recoverAndroidPushRegistrationIfNeeded(status: SollAndroidSyncStatus) {
+        if (shouldRecoverAndroidPushRegistration(status)) {
+            AndroidPushTokenRegistrar.registerCurrentToken(
+                applicationContext,
+                reason = "server_token_count_zero",
+                force = true,
+            )
+        }
     }
 
     companion object {
@@ -310,6 +322,12 @@ internal fun taskBoardSignature(board: SollTaskBoard): String =
                 task.valueMetric,
             ).joinToString(":")
         }
+
+internal fun shouldRecoverAndroidPushRegistration(status: SollAndroidSyncStatus): Boolean =
+    !status.fromCache &&
+        status.health.androidPush.enabled &&
+        status.health.androidPush.configured &&
+        status.health.androidPush.tokenCount <= 0
 
 private fun allTasks(board: SollTaskBoard): List<SollTask> =
     board.today + board.blocked + board.inbox + board.stale + board.deferred + board.doneRecent

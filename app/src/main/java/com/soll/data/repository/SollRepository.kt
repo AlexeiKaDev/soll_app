@@ -97,6 +97,7 @@ import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollAndroidChatSync
+import com.soll.domain.soll.SollAndroidPushHealth
 import com.soll.domain.soll.SollAndroidPushRegistration
 import com.soll.domain.soll.SollBookActionResult
 import com.soll.domain.soll.SollBookAlternative
@@ -1042,6 +1043,11 @@ class SollRepository @Inject constructor(
             schedulerRunning = schedulerRunning,
             vaultAccessible = vaultAccessible,
             jobsCount = jobsCount,
+            androidPush = SollAndroidPushHealth(
+                enabled = androidPush.enabled,
+                configured = androidPush.configured,
+                tokenCount = androidPush.tokenCount,
+            ),
             checkedAt = checkedAt,
         )
 

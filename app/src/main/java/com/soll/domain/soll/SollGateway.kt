@@ -13,7 +13,14 @@ data class SollHealth(
     val schedulerRunning: Boolean,
     val vaultAccessible: Boolean,
     val jobsCount: Int,
+    val androidPush: SollAndroidPushHealth = SollAndroidPushHealth(),
     val checkedAt: String? = null,
+)
+
+data class SollAndroidPushHealth(
+    val enabled: Boolean = false,
+    val configured: Boolean = false,
+    val tokenCount: Int = 0,
 )
 
 data class SollBriefing(

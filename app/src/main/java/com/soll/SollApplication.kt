@@ -46,7 +46,11 @@ class SollApplication : Application() {
         GadgetServerSyncScheduler.schedule(this, settingsRepository)
         SollServerSyncScheduler.schedule(this, settingsRepository)
         SollServerSyncAlarmScheduler.scheduleNext(this)
-        AndroidPushTokenRegistrar.registerCurrentToken(this, reason = "startup")
+        AndroidPushTokenRegistrar.registerCurrentToken(
+            this,
+            reason = "startup",
+            force = true,
+        )
 
         Timber.d("SollApplication initialized")
     }

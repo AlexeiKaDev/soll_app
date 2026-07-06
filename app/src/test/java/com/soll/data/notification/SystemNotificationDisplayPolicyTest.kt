@@ -29,6 +29,30 @@ class SystemNotificationDisplayPolicyTest {
     }
 
     @Test
+    fun `foreground fcm chat notification can still alert`() {
+        assertTrue(
+            SystemNotificationDisplayPolicy.shouldShowSystemNotification(
+                request = request(showSystem = true, source = "fcm"),
+                appInForeground = true,
+            )
+        )
+    }
+
+    @Test
+    fun `foreground low priority fcm stays silent`() {
+        assertFalse(
+            SystemNotificationDisplayPolicy.shouldShowSystemNotification(
+                request = request(
+                    showSystem = true,
+                    source = "fcm",
+                    priority = SollNotificationPriority.LOW,
+                ),
+                appInForeground = true,
+            )
+        )
+    }
+
+    @Test
     fun `explicit non system notification stays silent in background`() {
         assertFalse(
             SystemNotificationDisplayPolicy.shouldShowSystemNotification(
@@ -110,11 +134,12 @@ class SystemNotificationDisplayPolicyTest {
         showSystem: Boolean,
         channel: SollNotificationChannel = SollNotificationChannel.CHAT,
         priority: SollNotificationPriority = SollNotificationPriority.DEFAULT,
+        source: String = "unit",
     ): SollNotificationRequest =
         SollNotificationRequest(
             channel = channel,
             type = "test",
-            source = "unit",
+            source = source,
             title = "Soll",
             message = "message",
             priority = priority,

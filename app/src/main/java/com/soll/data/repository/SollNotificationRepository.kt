@@ -172,7 +172,7 @@ class SollNotificationRepository @Inject constructor(
             .setAutoCancel(request.autoCancel)
             .setOnlyAlertOnce(request.onlyAlertOnce)
             .setGroup(groupKey)
-            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
+            .setGroupAlertBehavior(groupAlertBehavior(request.channel))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
         val summaryNotification = buildGroupSummaryNotification(
@@ -226,10 +226,17 @@ class SollNotificationRepository @Inject constructor(
         .setOnlyAlertOnce(true)
         .setGroup(groupKey)
         .setGroupSummary(true)
-        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
+        .setGroupAlertBehavior(groupAlertBehavior(request.channel))
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
         .build()
     }
+
+    private fun groupAlertBehavior(channel: SollNotificationChannel): Int =
+        when (channel) {
+            SollNotificationChannel.CHAT,
+            SollNotificationChannel.ALERTS -> NotificationCompat.GROUP_ALERT_CHILDREN
+            else -> NotificationCompat.GROUP_ALERT_SUMMARY
+        }
 
     private fun contentIntent(request: SollNotificationRequest, requestCode: Int): PendingIntent {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

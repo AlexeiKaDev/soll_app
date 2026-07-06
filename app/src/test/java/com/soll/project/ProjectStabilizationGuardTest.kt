@@ -365,6 +365,8 @@ class ProjectStabilizationGuardTest {
         assertTrue(settingsScreen.contains("Технические события фоновой синхронизации; выключено по умолчанию."))
         assertTrue(notificationRepository.contains(".setGroup(groupKey)"))
         assertTrue(notificationRepository.contains(".setGroupSummary(true)"))
+        assertTrue(notificationRepository.contains("SollNotificationChannel.CHAT,"))
+        assertTrue(notificationRepository.contains("SollNotificationChannel.ALERTS -> NotificationCompat.GROUP_ALERT_CHILDREN"))
         assertTrue(notificationRepository.contains("NotificationCompat.GROUP_ALERT_SUMMARY"))
         assertTrue(notificationRepository.contains("systemNotificationSummaryId(request.channel, groupKey)"))
         assertTrue(notificationDao.contains("getUnreadCountForChannel"))

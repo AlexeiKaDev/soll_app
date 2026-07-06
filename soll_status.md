@@ -1,8 +1,17 @@
 # soll_app Status
 
-Last updated: 2026-07-05 23:31 Europe/Chisinau
+Last updated: 2026-07-06 11:37 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-06 Android chat visible but no push banner:
+  - Root cause narrowed after live user confirmation: the message reaches the Android chat, so Desktop -> Monolith relay -> Android sync/chat is alive; the missing part is Android system notification display/alerting.
+  - `SystemNotificationDisplayPolicy` now still suppresses normal foreground journal noise, but allows foreground `fcm` chat/alert notifications to show a system notification.
+  - `SollNotificationRepository` now lets chat/alert child notifications alert (`GROUP_ALERT_CHILDREN`) while keeping summary-only alerting for quieter channels. This avoids a repeated chat message silently updating the same group summary without a banner/sound.
+  - Validation passed: `.\gradlew.bat :app:testDebugUnitTest --tests "com.soll.data.notification.SystemNotificationDisplayPolicyTest" --tests "com.soll.project.ProjectStabilizationGuardTest" --console=plain`; `.\gradlew.bat :app:assembleDebug --console=plain`.
+  - Fresh APK: `D:\Projects\soll_app\app\build\outputs\apk\debug\app-debug.apk`, size `195864627`, sha256 `1e207ac6400aefe399d5949b5b8a8b67646c23f029b2260cf0456e223b6266f3`.
+  - Exported APK in `D:\Projects\Soll\Soll\outputs\portable-ssd\android\soll-app-debug.apk` has matching sha256 `1e207ac6400aefe399d5949b5b8a8b67646c23f029b2260cf0456e223b6266f3`.
+  - Phone smoke remains blocked locally because ADB currently lists no devices. After installing this APK, the phone still must have Android app notifications enabled and the `Чат Soll` channel set to a visible/high importance mode.
 
 - 2026-07-05 QR pairing from Desktop:
   - Added `SollPairingPayloadParser` for `soll://pair?...` and JSON pairing codes.

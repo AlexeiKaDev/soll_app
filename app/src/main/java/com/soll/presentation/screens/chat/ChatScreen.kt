@@ -126,6 +126,9 @@ fun ChatScreen(
     val visibleMessages = remember(uiState.messages, uiState.searchQuery) {
         visibleChatMessages(uiState.messages, uiState.searchQuery)
     }
+    val completedActionIds = remember(uiState.messages, uiState.completedActionIds) {
+        completedChatActionIds(uiState.messages) + uiState.completedActionIds
+    }
     val hasHistoryLoader = uiState.hasMoreHistory || uiState.isLoadingOlder
     val showJumpToBottom by remember {
         derivedStateOf {
@@ -293,6 +296,7 @@ fun ChatScreen(
                                 message = message,
                                 isBusy = uiState.isSending,
                                 busyActionId = uiState.actionInFlightId,
+                                completedActionIds = completedActionIds,
                                 onAction = viewModel::executeAction,
                             )
                         }
@@ -624,6 +628,7 @@ private fun ChatMessageBubble(
     message: SollChatMessage,
     isBusy: Boolean,
     busyActionId: String?,
+    completedActionIds: Set<String>,
     onAction: (ChatActionUi) -> Unit,
 ) {
     val background = if (message.isFromUser) {
@@ -674,6 +679,7 @@ private fun ChatMessageBubble(
                     message = message,
                     isBusy = isBusy,
                     busyActionId = busyActionId,
+                    completedActionIds = completedActionIds,
                     foreground = foreground,
                     onAction = onAction,
                 )
@@ -687,6 +693,7 @@ private fun AssistantMessageContent(
     message: SollChatMessage,
     isBusy: Boolean,
     busyActionId: String?,
+    completedActionIds: Set<String>,
     foreground: androidx.compose.ui.graphics.Color,
     onAction: (ChatActionUi) -> Unit,
 ) {
@@ -731,7 +738,7 @@ private fun AssistantMessageContent(
             Text(if (expanded) "Свернуть" else "Развернуть")
         }
     }
-    val actions = message.actionUis()
+    val actions = message.actionUis().filterNot { it.id in completedActionIds }
     if (actions.isNotEmpty()) {
         CompactChatActionRow(
             actions = actions,

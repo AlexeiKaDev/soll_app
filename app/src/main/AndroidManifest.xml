@@ -81,6 +81,13 @@
         android:theme="@style/Theme.Soll"
         tools:targetApi="34">
 
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_ai_robot_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/ic_launcher_background" />
+
         <!-- Main Activity -->
         <activity
             android:name=".presentation.MainActivity"

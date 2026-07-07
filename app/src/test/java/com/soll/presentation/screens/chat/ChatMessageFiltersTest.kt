@@ -367,6 +367,40 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `completed chat action metadata hides stale action buttons`() {
+        val taskMessage = chatMessage(
+            content = "Registered task",
+            metadata = mapOf(
+                "actions" to listOf(
+                    mapOf(
+                        "id" to "task:task-1:today",
+                        "type" to "task.today",
+                        "task_id" to "task-1",
+                    ),
+                    mapOf(
+                        "id" to "task:task-1:reject",
+                        "type" to "task.reject",
+                        "task_id" to "task-1",
+                        "status" to "done",
+                    ),
+                ),
+            ),
+        )
+        val resultMessage = chatMessage(
+            content = "Action complete",
+            metadata = mapOf(
+                "action_result" to mapOf(
+                    "action_id" to "task:task-1:today",
+                    "status" to "done",
+                ),
+            ),
+        )
+
+        assertEquals(listOf("task:task-1:today"), taskMessage.actionUis().map { it.id })
+        assertEquals(setOf("task:task-1:today"), completedChatActionIds(listOf(taskMessage, resultMessage)))
+    }
+
+    @Test
     fun `assistant badges include server badge payload and hide duplicated server source`() {
         val message = chatMessage(
             content = "Нужен handoff в локальный агент",

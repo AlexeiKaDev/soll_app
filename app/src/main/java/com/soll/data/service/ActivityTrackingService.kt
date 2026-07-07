@@ -258,7 +258,7 @@ class ActivityTrackingService : Service(), SensorEventListener {
         NotificationCompat.Builder(this, SollApplication.ACTIVITY_TRACKING_NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Soll Активность")
             .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_ai_robot_notification)
             .setContentIntent(contentPendingIntent())
             .addAction(R.drawable.ic_stop, "Стоп", stopPendingIntent())
             .setOngoing(true)

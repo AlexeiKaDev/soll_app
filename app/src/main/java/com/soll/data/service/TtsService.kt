@@ -316,7 +316,7 @@ class TtsService : Service() {
         return NotificationCompat.Builder(this, SollApplication.TTS_NOTIFICATION_CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentSubtitle)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_ai_robot_notification)
             .setLargeIcon(WidgetArtworkLoader.decodeFileArtwork(currentCoverPath))
             .setContentIntent(contentIntent)
             .setOngoing(true)

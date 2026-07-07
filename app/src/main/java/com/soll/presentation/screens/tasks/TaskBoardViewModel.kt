@@ -247,6 +247,7 @@ class TaskBoardViewModel @Inject constructor(
                     }
                 }
             )
+            refreshSelectedWorkspace(showLoading = false)
         }
     }
 
@@ -414,9 +415,9 @@ class TaskBoardViewModel @Inject constructor(
         refresh(showLoading = true)
     }
 
-    fun loadInsights() {
+    fun loadInsights(showLoading: Boolean = true) {
         viewModelScope.launch {
-            _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
+            _uiState.update { it.copy(workspaceLoading = showLoading, message = null, isError = false) }
             val status = _uiState.value.selectedInsightStatus.apiStatus
             sollGateway.getLearningItems(status = status, limit = 100).fold(
                 onSuccess = { insights ->
@@ -495,9 +496,9 @@ class TaskBoardViewModel @Inject constructor(
         }
     }
 
-    fun loadRoadmap() {
+    fun loadRoadmap(showLoading: Boolean = true) {
         viewModelScope.launch {
-            _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
+            _uiState.update { it.copy(workspaceLoading = showLoading, message = null, isError = false) }
             sollGateway.getRoadmap().fold(
                 onSuccess = { roadmap ->
                     _uiState.update { it.copy(roadmap = roadmap, workspaceLoading = false) }
@@ -624,9 +625,9 @@ class TaskBoardViewModel @Inject constructor(
         }
     }
 
-    fun loadSources(sourceId: String? = _uiState.value.selectedSourceId) {
+    fun loadSources(sourceId: String? = _uiState.value.selectedSourceId, showLoading: Boolean = true) {
         viewModelScope.launch {
-            _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
+            _uiState.update { it.copy(workspaceLoading = showLoading, message = null, isError = false) }
             sollGateway.listSources().fold(
                 onSuccess = { sources ->
                     val sourceIds = sources.mapTo(mutableSetOf()) { it.id }
@@ -975,6 +976,16 @@ class TaskBoardViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    private fun refreshSelectedWorkspace(showLoading: Boolean) {
+        if (_uiState.value.workspaceLoading) return
+        when (_uiState.value.selectedMode) {
+            TaskWorkspaceMode.TASKS -> Unit
+            TaskWorkspaceMode.INSIGHTS -> loadInsights(showLoading = showLoading)
+            TaskWorkspaceMode.ROADMAP -> loadRoadmap(showLoading = showLoading)
+            TaskWorkspaceMode.SOURCES -> loadSources(showLoading = showLoading)
         }
     }
 

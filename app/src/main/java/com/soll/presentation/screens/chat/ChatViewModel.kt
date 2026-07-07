@@ -35,6 +35,7 @@ data class ChatUiState(
     val error: String? = null,
     val actionFeedback: String? = null,
     val actionInFlightId: String? = null,
+    val completedActionIds: Set<String> = emptySet(),
     val pendingActionsCount: Int = 0,
     val encrypted: Boolean = false,
 )
@@ -311,12 +312,14 @@ class ChatViewModel @Inject constructor(
                 taskId = action.taskId,
                 sessionId = _uiState.value.sessionId,
             ).fold(
-                onSuccess = {
+                onSuccess = { result ->
+                    val completedIds = result.completedActionIds(action.id)
                     _uiState.update {
                         it.copy(
                             isSending = false,
                             actionFeedback = "Готово: ${action.label}",
                             actionInFlightId = null,
+                            completedActionIds = it.completedActionIds + completedIds,
                         )
                     }
                     refresh(showLoading = false)
@@ -471,6 +474,9 @@ fun SollChatMessage.actionUis(): List<ChatActionUi> =
 
 fun SollChatMessage.actionUiOrNull(): ChatActionUi? = actionUis().firstOrNull()
 
+fun completedChatActionIds(messages: List<SollChatMessage>): Set<String> =
+    messages.flatMap { it.completedChatActionIds() }.toSet()
+
 private fun Any?.asActionMapOrNull(): Map<*, *>? = this as? Map<*, *>
 
 private fun Any?.asActionMaps(): List<Map<*, *>> =
@@ -480,6 +486,7 @@ private fun Any?.asActionMaps(): List<Map<*, *>> =
 
 private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
     val action = this
+    if (action.isCompletedActionMap()) return null
     val type = action["type"]?.toString().orEmpty().ifBlank {
         action["action"]?.toString().orEmpty()
     }
@@ -498,6 +505,32 @@ private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
         label = action["label"]?.toString()?.takeIf { it.isNotBlank() } ?: type.defaultActionLabel(),
     )
 }
+
+private fun SollChatMessage.completedChatActionIds(): List<String> =
+    listOfNotNull(
+        metadata["action_result"].asActionMapOrNull()?.completedActionIdOrNull(),
+        metadata["yii2_task_action"].asActionMapOrNull()?.completedActionIdOrNull(),
+    )
+
+private fun Map<*, *>.completedActionIdOrNull(): String? {
+    val status = this["status"]?.toString()?.trim()?.lowercase().orEmpty()
+    if (status !in COMPLETED_ACTION_STATUSES) return null
+    return this["action_id"]?.toString()?.takeIf { it.isNotBlank() }
+        ?: this["id"]?.toString()?.takeIf { it.isNotBlank() }
+}
+
+private fun Map<*, *>.isCompletedActionMap(): Boolean {
+    val status = this["status"]?.toString()?.trim()?.lowercase().orEmpty()
+    return status in COMPLETED_ACTION_STATUSES
+}
+
+private fun com.soll.domain.soll.SollChatActionResult.completedActionIds(requestedActionId: String): Set<String> {
+    if (status.trim().lowercase() in FAILED_ACTION_STATUSES) return emptySet()
+    return setOf(requestedActionId, actionId).filter { it.isNotBlank() }.toSet()
+}
+
+private val COMPLETED_ACTION_STATUSES = setOf("ack", "acked", "done", "completed", "executed", "success")
+private val FAILED_ACTION_STATUSES = setOf("failed", "error", "rejected")
 
 private fun String.defaultActionLabel(): String =
     when (this) {

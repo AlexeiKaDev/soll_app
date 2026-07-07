@@ -170,8 +170,8 @@ class ProjectStabilizationGuardTest {
 
     @Test
     fun `chat history pagination stays explicit to avoid runaway large chat loads`() {
-        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText()
-        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText()
+        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText().normalizeLineEndings()
+        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText().normalizeLineEndings()
 
         assertTrue(chatScreen.contains("HistoryLoader("))
         assertTrue(chatScreen.contains("onLoad = viewModel::loadOlderMessages"))
@@ -195,8 +195,8 @@ class ProjectStabilizationGuardTest {
 
     @Test
     fun `assistant chat messages keep structured header body badges and status colors`() {
-        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText()
-        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText()
+        val chatScreen = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").readText().normalizeLineEndings()
+        val chatViewModel = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").readText().normalizeLineEndings()
 
         assertTrue(chatScreen.contains("AssistantMessageContent("))
         assertTrue(chatScreen.contains("messageTitle(message)"))
@@ -248,6 +248,23 @@ class ProjectStabilizationGuardTest {
 
         assertTrue(chatScreen.contains("R.drawable.ic_ai_robot_notification"))
         assertTrue(chatScreen.contains("painterResource(R.drawable.ic_ai_robot_notification)"))
+    }
+
+    @Test
+    fun `android system notifications use only robot small icon`() {
+        val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
+        val ttsService = projectFile("app/src/main/java/com/soll/data/service/TtsService.kt").readText()
+        val musicService = projectFile("app/src/main/java/com/soll/data/service/MusicPlaybackService.kt").readText()
+        val activityService = projectFile("app/src/main/java/com/soll/data/service/ActivityTrackingService.kt").readText()
+        val notificationRepository = projectFile("app/src/main/java/com/soll/data/repository/SollNotificationRepository.kt").readText()
+        val serverSyncService = projectFile("app/src/main/java/com/soll/data/service/SollServerSyncForegroundService.kt").readText()
+
+        assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_icon"))
+        assertTrue(manifest.contains("@drawable/ic_ai_robot_notification"))
+        listOf(ttsService, musicService, activityService, notificationRepository, serverSyncService).forEach { source ->
+            assertTrue(source.contains("ic_ai_robot_notification"))
+            assertFalse(source.contains("R.drawable.ic_notification"))
+        }
     }
 
     @Test
@@ -381,8 +398,8 @@ class ProjectStabilizationGuardTest {
 
     @Test
     fun `task workspace keeps roadmap and source mutation controls`() {
-        val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt").readText()
-        val viewModel = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardViewModel.kt").readText()
+        val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt").readText().normalizeLineEndings()
+        val viewModel = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardViewModel.kt").readText().normalizeLineEndings()
         val api = projectFile("app/src/main/java/com/soll/data/api/SollApiService.kt").readText()
         val repository = projectFile("app/src/main/java/com/soll/data/repository/SollRepository.kt").readText()
         val destinations = projectFile("app/src/main/java/com/soll/presentation/navigation/AppDestinations.kt").readText()
@@ -856,6 +873,8 @@ class ProjectStabilizationGuardTest {
         }
         error("Project file not found: $path from ${System.getProperty("user.dir")}")
     }
+
+    private fun String.normalizeLineEndings(): String = replace("\r\n", "\n")
 
     private fun optionalProjectFile(path: String): File? {
         var current = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile

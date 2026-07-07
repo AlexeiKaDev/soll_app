@@ -122,6 +122,7 @@ import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollLearningItem
 import com.soll.domain.soll.SollMonitoredSource
+import com.soll.domain.soll.SollNodeIdentity
 import com.soll.domain.soll.SollRoadmap
 import com.soll.domain.soll.SollRoadmapLine
 import com.soll.domain.soll.SollRoadmapReadiness
@@ -1061,12 +1062,31 @@ class SollRepository @Inject constructor(
             health = health.toDomain(),
             tasks = tasks.toDomain(),
             device = device?.toDomain(),
+            node = node.toDomain(),
+            activeNodes = activeNodes.values
+                .map { it.toDomain() }
+                .sortedWith(compareByDescending<SollNodeIdentity> { it.active }
+                    .thenByDescending { it.isPrimary }
+                    .thenByDescending { it.priority }
+                    .thenBy { it.nodeId }),
             briefing = briefing?.toDomain(),
             chat = chat.toDomain(),
             protocol = protocol?.toDomain(),
             warnings = (warnings + extraWarnings).distinct(),
             fromCache = fromCache,
             cachedAtMillis = cachedAtMillis,
+        )
+
+    private fun com.soll.data.api.SollNodeIdentityResponse.toDomain(): SollNodeIdentity =
+        SollNodeIdentity(
+            nodeId = nodeId,
+            nodeName = nodeName,
+            nodeRole = nodeRole,
+            isPrimary = isPrimary,
+            priority = priority,
+            capabilities = capabilities,
+            active = active,
+            lastSeenAt = lastSeenAt,
         )
 
     private fun com.soll.data.api.AndroidChatSyncResponse.toDomain(): SollAndroidChatSync =

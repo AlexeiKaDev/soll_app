@@ -50,12 +50,25 @@ data class SollAndroidSyncStatus(
     val health: SollHealth,
     val tasks: SollTaskBoard,
     val device: SollDevice?,
+    val node: SollNodeIdentity = SollNodeIdentity(),
+    val activeNodes: List<SollNodeIdentity> = emptyList(),
     val briefing: SollBriefing?,
     val chat: SollAndroidChatSync = SollAndroidChatSync(),
     val protocol: SollProtocolBootstrap?,
     val warnings: List<String>,
     val fromCache: Boolean = false,
     val cachedAtMillis: Long? = null,
+)
+
+data class SollNodeIdentity(
+    val nodeId: String = "",
+    val nodeName: String = "",
+    val nodeRole: String = "",
+    val isPrimary: Boolean = false,
+    val priority: Int = 0,
+    val capabilities: List<String> = emptyList(),
+    val active: Boolean = false,
+    val lastSeenAt: String? = null,
 )
 
 data class SollAndroidChatSync(

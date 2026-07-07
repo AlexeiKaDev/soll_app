@@ -451,10 +451,29 @@ data class AndroidSyncStatusResponse(
     val health: SollHealthResponse = SollHealthResponse(status = "unknown"),
     val tasks: SollTaskBoardResponse = SollTaskBoardResponse(),
     val device: SollDeviceResponse? = null,
+    val node: SollNodeIdentityResponse = SollNodeIdentityResponse(),
+    @Json(name = "active_nodes")
+    val activeNodes: Map<String, SollNodeIdentityResponse> = emptyMap(),
     val briefing: SollBriefingResponse? = null,
     val chat: AndroidChatSyncResponse = AndroidChatSyncResponse(),
     val protocol: AndroidProtocolBootstrapResponse? = null,
     val warnings: List<String> = emptyList(),
+)
+
+data class SollNodeIdentityResponse(
+    @Json(name = "node_id")
+    val nodeId: String = "",
+    @Json(name = "node_name")
+    val nodeName: String = "",
+    @Json(name = "node_role")
+    val nodeRole: String = "",
+    @Json(name = "is_primary")
+    val isPrimary: Boolean = false,
+    val priority: Int = 0,
+    val capabilities: List<String> = emptyList(),
+    val active: Boolean = false,
+    @Json(name = "last_seen_at")
+    val lastSeenAt: String? = null,
 )
 
 data class AndroidChatSyncResponse(

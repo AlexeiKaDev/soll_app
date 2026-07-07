@@ -28,6 +28,7 @@ import com.soll.domain.deviceqa.DeviceQaCheckId
 import com.soll.domain.deviceqa.DeviceQaStatus
 import com.soll.domain.deviceqa.DeviceQaSummary
 import com.soll.domain.notification.SollNotificationChannel
+import com.soll.domain.soll.SollNodeIdentity
 import com.soll.ui.theme.SollThemeVariant
 import com.soll.ui.components.PassiveChip
 import java.text.SimpleDateFormat
@@ -209,6 +210,10 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                    }
+
+                    if (uiState.sollNodes.isNotEmpty()) {
+                        SollNodeList(nodes = uiState.sollNodes)
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -797,6 +802,56 @@ fun DeviceQaScreen(
             onShare = viewModel::shareDeviceQaReport,
             onDismiss = viewModel::dismissDeviceQaReport,
         )
+    }
+}
+
+@Composable
+private fun SollNodeList(nodes: List<SollNodeIdentity>) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Ноды Soll",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        nodes.forEach { node ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = node.nodeName.ifBlank { node.nodeId.ifBlank { "Soll node" } },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = listOf(
+                            node.nodeId,
+                            node.nodeRole,
+                            node.capabilities.joinToString(", ")
+                        ).filter { it.isNotBlank() }.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                PassiveChip(
+                    text = when {
+                        node.isPrimary -> "primary"
+                        node.active -> "active"
+                        else -> "stale"
+                    },
+                    icon = when {
+                        node.isPrimary -> Icons.Default.Cloud
+                        node.active -> Icons.Default.CheckCircle
+                        else -> Icons.Default.Warning
+                    },
+                )
+            }
+        }
     }
 }
 

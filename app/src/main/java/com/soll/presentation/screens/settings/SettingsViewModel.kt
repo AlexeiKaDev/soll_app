@@ -24,6 +24,7 @@ import com.soll.domain.deviceqa.DeviceQaCheckId
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollHealth
+import com.soll.domain.soll.SollNodeIdentity
 import com.soll.domain.soll.SollTaskBoard
 import com.soll.ui.theme.SollThemeVariant
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +49,7 @@ data class SettingsUiState(
     val isCheckingSollHealth: Boolean = false,
     val isSyncingSoll: Boolean = false,
     val sollSyncSummary: String? = null,
+    val sollNodes: List<SollNodeIdentity> = emptyList(),
     val voiceRequiresUnlockedDevice: Boolean = true,
     val voiceRequiresHeadset: Boolean = false,
     val voiceLocalOnly: Boolean = false,
@@ -473,6 +475,7 @@ class SettingsViewModel @Inject constructor(
                             sollHealthStatus = status.health.statusText(),
                             sollHealthMessage = status.health.statusMessage(status),
                             sollSyncSummary = status.syncSummary(),
+                            sollNodes = status.nodesForDisplay(),
                             message = if (status.fromCache) {
                                 "Сервер недоступен. Показан последний кэш Soll."
                             } else {
@@ -677,6 +680,22 @@ class SettingsViewModel @Inject constructor(
         }.orEmpty()
         val cacheSummary = if (fromCache) " Данные из локального кэша." else ""
         return tasks.syncSummary() + protocolSummary + cacheSummary
+    }
+
+    private fun SollAndroidSyncStatus.nodesForDisplay(): List<SollNodeIdentity> {
+        val byId = linkedMapOf<String, SollNodeIdentity>()
+        activeNodes.forEach { activeNode ->
+            if (activeNode.nodeId.isNotBlank()) byId[activeNode.nodeId] = activeNode
+        }
+        if (node.nodeId.isNotBlank()) {
+            byId.putIfAbsent(node.nodeId, node.copy(active = node.active || node.isPrimary))
+        }
+        return byId.values.sortedWith(
+            compareByDescending<SollNodeIdentity> { it.active }
+                .thenByDescending { it.isPrimary }
+                .thenByDescending { it.priority }
+                .thenBy { it.nodeId }
+        )
     }
 
 }

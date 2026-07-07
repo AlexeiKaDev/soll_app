@@ -117,6 +117,24 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `merge chat messages dedupes by id and prefers newest copy`() {
+        val cached = listOf(
+            chatMessage("Old copy", id = 10, metadata = mapOf("source" to "sync")),
+            chatMessage("Still current", id = 11),
+        )
+        val fetched = listOf(
+            chatMessage("Updated copy", id = 10, metadata = mapOf("source" to "session")),
+            chatMessage("Newest", id = 12),
+        )
+
+        val merged = mergeChatMessages(cached, fetched)
+
+        assertEquals(listOf(10L, 11L, 12L), merged.map { it.id })
+        assertEquals("Updated copy", merged.first { it.id == 10L }.content)
+        assertEquals("session", merged.first { it.id == 10L }.metadata["source"])
+    }
+
+    @Test
     fun `does not advance chat scroll when refresh returns same messages`() {
         val previous = listOf(
             chatMessage("Первое", id = 10),

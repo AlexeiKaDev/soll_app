@@ -382,9 +382,10 @@ class ChatViewModel @Inject constructor(
 private const val CHAT_REFRESH_INTERVAL_MS = 10_000L
 private const val CHAT_PAGE_SIZE = 80
 
-private fun mergeChatMessages(left: List<SollChatMessage>, right: List<SollChatMessage>): List<SollChatMessage> =
+internal fun mergeChatMessages(left: List<SollChatMessage>, right: List<SollChatMessage>): List<SollChatMessage> =
     (left + right)
-        .distinctBy { it.id }
+        .associateBy { it.id }
+        .values
         .sortedBy { it.id }
 
 internal fun chatMessagesWithSyncFallback(

@@ -86,7 +86,6 @@ fun FieldMapScreen(
     onBack: () -> Unit,
     viewModel: FieldMapViewModel = hiltViewModel(),
     initialActivityFocus: Boolean = false,
-    locationProcessorMode: Boolean = false,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -151,15 +150,7 @@ fun FieldMapScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        when {
-                            locationProcessorMode -> "Геопозиция"
-                            initialActivityFocus -> "Активность"
-                            else -> "Карта"
-                        }
-                    )
-                },
+                title = { Text(if (initialActivityFocus) "Активность" else "Карта") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
@@ -180,168 +171,108 @@ fun FieldMapScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (locationProcessorMode) {
-                item {
-                    LocationProcessorHeader()
-                }
-                item {
-                    CurrentLocationCard(
-                        currentLocation = uiState.currentLocation,
-                        isLoading = uiState.isLoadingLocation,
-                        title = currentTitle,
-                        note = currentNote,
-                        onTitleChange = { currentTitle = it },
-                        onNoteChange = { currentNote = it },
-                        onRefreshLocation = { runWithLocationPermission(viewModel::refreshLocation) },
-                        onPublishLocation = { runWithLocationPermission(viewModel::publishCurrentLocationToSoll) },
-                        onSaveCurrentPoint = {
-                            runWithLocationPermission {
-                                viewModel.saveCurrentPoint(currentTitle, currentNote)
-                                currentTitle = ""
-                                currentNote = ""
-                            }
-                        },
-                    )
-                }
-            } else {
-                item {
-                    FieldHeader(uiState)
-                }
-
-                item {
-                    ActivityHistoryCard(
-                        summary = uiState.activitySummary,
-                        isRunning = uiState.isActivityTrackerRunning,
-                        onStart = { runWithActivityTrackingPermission() },
-                        onStop = viewModel::stopActivityTracking,
-                    )
-                }
-
-                item {
-                    FieldMapPreview(
-                        points = uiState.points,
-                        currentLocation = uiState.currentLocation,
-                    )
-                }
-
-                item {
-                    CurrentLocationCard(
-                        currentLocation = uiState.currentLocation,
-                        isLoading = uiState.isLoadingLocation,
-                        title = currentTitle,
-                        note = currentNote,
-                        onTitleChange = { currentTitle = it },
-                        onNoteChange = { currentNote = it },
-                        onRefreshLocation = { runWithLocationPermission(viewModel::refreshLocation) },
-                        onPublishLocation = { runWithLocationPermission(viewModel::publishCurrentLocationToSoll) },
-                        onSaveCurrentPoint = {
-                            runWithLocationPermission {
-                                viewModel.saveCurrentPoint(currentTitle, currentNote)
-                                currentTitle = ""
-                                currentNote = ""
-                            }
-                        },
-                    )
-                }
-
-                item {
-                    ManualPointCard(
-                        title = manualTitle,
-                        note = manualNote,
-                        latitude = manualLatitude,
-                        longitude = manualLongitude,
-                        onTitleChange = { manualTitle = it },
-                        onNoteChange = { manualNote = it },
-                        onLatitudeChange = { manualLatitude = it },
-                        onLongitudeChange = { manualLongitude = it },
-                        onSave = {
-                            viewModel.saveManualPoint(
-                                title = manualTitle,
-                                note = manualNote,
-                                latitude = manualLatitude,
-                                longitude = manualLongitude,
-                            )
-                            manualTitle = ""
-                            manualNote = ""
-                            manualLatitude = ""
-                            manualLongitude = ""
-                        },
-                    )
-                }
-
-                item {
-                    ImportTasksCard(
-                        isImporting = uiState.isImportingTasks,
-                        onImport = viewModel::importTaskPoints,
-                    )
-                }
-
-                item {
-                    Text(
-                        text = "Точки",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-
-                if (uiState.points.isEmpty()) {
-                    item {
-                        EmptyFieldPoints()
-                    }
-                } else {
-                    items(uiState.points, key = { it.id }) { point ->
-                        FieldPointCard(
-                            point = point,
-                            isActionRunning = uiState.actionPointId == point.id,
-                            onOpenMaps = {
-                                if (viewModel.ensureFieldMapCapability() && !openPointInMaps(context, point)) {
-                                    viewModel.showMessage("Не удалось открыть карту на устройстве", isError = true)
-                                }
-                            },
-                            onStart = { viewModel.setStatus(point, FieldPointStatus.ACTIVE) },
-                            onDone = { viewModel.setStatus(point, FieldPointStatus.DONE) },
-                            onSkip = { viewModel.setStatus(point, FieldPointStatus.SKIPPED) },
-                            onExportNote = { viewModel.exportToNote(point) },
-                            onDelete = { viewModel.deletePoint(point) },
-                        )
-                    }
-                }
+            item {
+                FieldHeader(uiState)
             }
-        }
-    }
-}
 
-@Composable
-private fun LocationProcessorHeader() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.26f)),
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MyLocation,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+            item {
+                ActivityHistoryCard(
+                    summary = uiState.activitySummary,
+                    isRunning = uiState.isActivityTrackerRunning,
+                    onStart = { runWithActivityTrackingPermission() },
+                    onStop = viewModel::stopActivityTracking,
                 )
+            }
+
+            item {
+                FieldMapPreview(
+                    points = uiState.points,
+                    currentLocation = uiState.currentLocation,
+                )
+            }
+
+            item {
+                CurrentLocationCard(
+                    currentLocation = uiState.currentLocation,
+                    isLoading = uiState.isLoadingLocation,
+                    title = currentTitle,
+                    note = currentNote,
+                    onTitleChange = { currentTitle = it },
+                    onNoteChange = { currentNote = it },
+                    onRefreshLocation = { runWithLocationPermission(viewModel::refreshLocation) },
+                    onPublishLocation = { runWithLocationPermission(viewModel::publishCurrentLocationToSoll) },
+                    onSaveCurrentPoint = {
+                        runWithLocationPermission {
+                            viewModel.saveCurrentPoint(currentTitle, currentNote)
+                            currentTitle = ""
+                            currentNote = ""
+                        }
+                    },
+                )
+            }
+
+            item {
+                ManualPointCard(
+                    title = manualTitle,
+                    note = manualNote,
+                    latitude = manualLatitude,
+                    longitude = manualLongitude,
+                    onTitleChange = { manualTitle = it },
+                    onNoteChange = { manualNote = it },
+                    onLatitudeChange = { manualLatitude = it },
+                    onLongitudeChange = { manualLongitude = it },
+                    onSave = {
+                        viewModel.saveManualPoint(
+                            title = manualTitle,
+                            note = manualNote,
+                            latitude = manualLatitude,
+                            longitude = manualLongitude,
+                        )
+                        manualTitle = ""
+                        manualNote = ""
+                        manualLatitude = ""
+                        manualLongitude = ""
+                    },
+                )
+            }
+
+            item {
+                ImportTasksCard(
+                    isImporting = uiState.isImportingTasks,
+                    onImport = viewModel::importTaskPoints,
+                )
+            }
+
+            item {
                 Text(
-                    text = "Android -> Soll",
+                    text = "Точки",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-            Text(
-                text = "Телефон отправляет текущую точку на primary-компьютер. Soll использует ее для поиска по заданным источникам.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+
+            if (uiState.points.isEmpty()) {
+                item {
+                    EmptyFieldPoints()
+                }
+            } else {
+                items(uiState.points, key = { it.id }) { point ->
+                    FieldPointCard(
+                        point = point,
+                        isActionRunning = uiState.actionPointId == point.id,
+                        onOpenMaps = {
+                            if (viewModel.ensureFieldMapCapability() && !openPointInMaps(context, point)) {
+                                viewModel.showMessage("Не удалось открыть карту на устройстве", isError = true)
+                            }
+                        },
+                        onStart = { viewModel.setStatus(point, FieldPointStatus.ACTIVE) },
+                        onDone = { viewModel.setStatus(point, FieldPointStatus.DONE) },
+                        onSkip = { viewModel.setStatus(point, FieldPointStatus.SKIPPED) },
+                        onExportNote = { viewModel.exportToNote(point) },
+                        onDelete = { viewModel.deletePoint(point) },
+                    )
+                }
+            }
         }
     }
 }

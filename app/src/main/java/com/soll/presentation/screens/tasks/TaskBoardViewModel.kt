@@ -3,10 +3,12 @@ package com.soll.presentation.screens.tasks
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.soll.data.repository.FieldMapRepository
 import com.soll.data.local.entity.SyncQueueEntity
 import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.data.repository.TaskCacheRepository
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.SollDailyTask
 import com.soll.domain.soll.SollLearningItem
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollRoadmap
@@ -30,6 +32,7 @@ import java.io.IOException
 import retrofit2.HttpException
 
 enum class TaskWorkspaceMode(val label: String) {
+    DAILY("Дела"),
     TASKS("Задачи"),
     INSIGHTS("Инсайты"),
     ROADMAP("Roadmap"),
@@ -63,6 +66,11 @@ enum class InsightStatusFilter(val label: String, val apiStatus: String?) {
 }
 
 data class TaskBoardUiState(
+    val dailyTasks: List<SollDailyTask> = emptyList(),
+    val dailySourcePath: String = "",
+    val dailyLoading: Boolean = false,
+    val dailyActionTaskId: String? = null,
+    val dailyAdding: Boolean = false,
     val today: List<SollTask> = emptyList(),
     val blocked: List<SollTask> = emptyList(),
     val inbox: List<SollTask> = emptyList(),
@@ -77,7 +85,7 @@ data class TaskBoardUiState(
     val isShowingCache: Boolean = false,
     val pendingEvidenceTaskIds: Set<String> = emptySet(),
     val pendingTaskActionIds: Set<String> = emptySet(),
-    val selectedMode: TaskWorkspaceMode = TaskWorkspaceMode.TASKS,
+    val selectedMode: TaskWorkspaceMode = TaskWorkspaceMode.DAILY,
     val selectedTab: TaskTab = TaskTab.ALL,
     val selectedPriority: TaskPriorityFilter = TaskPriorityFilter.ALL,
     val searchQuery: String = "",
@@ -177,6 +185,7 @@ data class TaskBoardUiState(
 @HiltViewModel
 class TaskBoardViewModel @Inject constructor(
     private val sollGateway: SollGateway,
+    private val fieldMapRepository: FieldMapRepository,
     private val syncQueueRepository: SollSyncQueueRepository,
     private val taskCacheRepository: TaskCacheRepository,
 ) : ViewModel() {
@@ -192,6 +201,10 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun refresh(showLoading: Boolean = true) {
+        if (_uiState.value.selectedMode == TaskWorkspaceMode.DAILY) {
+            loadDailyTasks(showLoading = showLoading)
+            return
+        }
         viewModelScope.launch {
             if (showLoading) {
                 _uiState.update { it.copy(isLoading = true, message = null, isError = false) }
@@ -389,6 +402,7 @@ class TaskBoardViewModel @Inject constructor(
     fun selectMode(mode: TaskWorkspaceMode) {
         _uiState.update { it.copy(selectedMode = mode) }
         when (mode) {
+            TaskWorkspaceMode.DAILY -> loadDailyTasks()
             TaskWorkspaceMode.TASKS -> Unit
             TaskWorkspaceMode.INSIGHTS -> loadInsights()
             TaskWorkspaceMode.ROADMAP -> loadRoadmap()
@@ -406,6 +420,121 @@ class TaskBoardViewModel @Inject constructor(
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query).deriveTaskList() }
+    }
+
+    fun loadDailyTasks(showLoading: Boolean = true) {
+        viewModelScope.launch {
+            if (showLoading) {
+                _uiState.update { it.copy(dailyLoading = true, message = null, isError = false) }
+            }
+            sollGateway.getTodayDailyTasks().fold(
+                onSuccess = { list ->
+                    _uiState.update {
+                        it.copy(
+                            dailyTasks = list.tasks,
+                            dailySourcePath = list.sourcePath,
+                            dailyLoading = false,
+                            message = null,
+                            isError = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            dailyLoading = false,
+                            message = error.message ?: "Не удалось загрузить дела",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun addDailyTask(text: String, includeLocation: Boolean) {
+        val cleanText = text.trim()
+        if (cleanText.isBlank()) {
+            _uiState.update { it.copy(message = "Введите дело", isError = true) }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(dailyAdding = true, message = null, isError = false) }
+            val locationLabel = if (includeLocation) {
+                runCatching { fieldMapRepository.publishCurrentLocationToSoll() }
+                    .getOrElse { error ->
+                        _uiState.update {
+                            it.copy(
+                                dailyAdding = false,
+                                message = error.message ?: "Не удалось определить геопозицию",
+                                isError = true,
+                            )
+                        }
+                        return@launch
+                    }
+            } else {
+                ""
+            }
+            sollGateway.addTodayDailyTask(cleanText, locationLabel).fold(
+                onSuccess = { list ->
+                    _uiState.update {
+                        it.copy(
+                            dailyTasks = list.tasks,
+                            dailySourcePath = list.sourcePath,
+                            dailyAdding = false,
+                            message = "Дело добавлено",
+                            isError = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            dailyAdding = false,
+                            message = error.message ?: "Не удалось добавить дело",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun reportDailyLocationPermissionDenied() {
+        _uiState.update {
+            it.copy(
+                message = "Геопозиция не добавлена: нет разрешения",
+                isError = true,
+            )
+        }
+    }
+
+    fun setDailyTaskDone(task: SollDailyTask, done: Boolean) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(dailyActionTaskId = task.id, message = null, isError = false) }
+            sollGateway.updateTodayDailyTask(task.id, done).fold(
+                onSuccess = { list ->
+                    _uiState.update {
+                        it.copy(
+                            dailyTasks = list.tasks,
+                            dailySourcePath = list.sourcePath,
+                            dailyActionTaskId = null,
+                            message = if (done) "Дело закрыто" else "Дело возвращено",
+                            isError = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            dailyActionTaskId = null,
+                            message = error.message ?: "Не удалось обновить дело",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
     }
 
     fun loadMoreTasks() {
@@ -985,6 +1114,7 @@ class TaskBoardViewModel @Inject constructor(
     private fun refreshSelectedWorkspace(showLoading: Boolean) {
         if (_uiState.value.workspaceLoading) return
         when (_uiState.value.selectedMode) {
+            TaskWorkspaceMode.DAILY -> loadDailyTasks(showLoading = showLoading)
             TaskWorkspaceMode.TASKS -> Unit
             TaskWorkspaceMode.INSIGHTS -> loadInsights(showLoading = showLoading)
             TaskWorkspaceMode.ROADMAP -> loadRoadmap(showLoading = showLoading)
@@ -997,7 +1127,11 @@ class TaskBoardViewModel @Inject constructor(
             while (isActive) {
                 delay(TASK_REFRESH_INTERVAL_MS)
                 if (_uiState.value.actionTaskId == null && !_uiState.value.isLoading) {
-                    refresh(showLoading = false)
+                    when (_uiState.value.selectedMode) {
+                        TaskWorkspaceMode.DAILY -> loadDailyTasks(showLoading = false)
+                        TaskWorkspaceMode.SOURCES -> loadSources(showLoading = false)
+                        else -> refresh(showLoading = false)
+                    }
                 }
             }
         }

@@ -209,12 +209,6 @@ fun AppNavigation(
                     pairingMode = true,
                 )
             }
-            composable(Routes.LOCATION_PROCESSOR) {
-                FieldMapScreen(
-                    onBack = { navController.popBackStack() },
-                    locationProcessorMode = true,
-                )
-            }
             composable(Routes.ACTIVITY_HISTORY) {
                 FieldMapScreen(
                     onBack = { navController.popBackStack() },

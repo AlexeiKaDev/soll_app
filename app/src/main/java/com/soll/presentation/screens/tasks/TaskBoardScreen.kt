@@ -1,5 +1,8 @@
 package com.soll.presentation.screens.tasks
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -66,10 +70,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.soll.domain.soll.SollDailyTask
 import com.soll.domain.soll.SollLearningItem
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollRoadmapLine
@@ -86,14 +93,30 @@ fun TaskBoardScreen(
     viewModel: TaskBoardViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var evidenceTask by remember { mutableStateOf<SollTask?>(null) }
+    var dailyTaskText by remember { mutableStateOf("") }
+    var includeDailyTaskLocation by remember { mutableStateOf(false) }
+    var pendingLocationDailyTaskText by remember { mutableStateOf<String?>(null) }
     val evidencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val task = evidenceTask
         evidenceTask = null
         if (task != null && uri != null) {
             viewModel.attachEvidence(task, uri)
+        }
+    }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val taskText = pendingLocationDailyTaskText
+        pendingLocationDailyTaskText = null
+        if (taskText != null && grants.values.any { it }) {
+            viewModel.addDailyTask(taskText, includeLocation = true)
+            dailyTaskText = ""
+        } else if (taskText != null) {
+            viewModel.reportDailyLocationPermissionDenied()
         }
     }
 
@@ -123,7 +146,7 @@ fun TaskBoardScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (uiState.isLoading) {
+            if (uiState.isLoading || uiState.dailyLoading || uiState.dailyAdding) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
@@ -148,6 +171,31 @@ fun TaskBoardScreen(
                     .weight(1f),
             ) {
                 when (uiState.selectedMode) {
+                    TaskWorkspaceMode.DAILY -> DailyTasksMode(
+                        uiState = uiState,
+                        taskText = dailyTaskText,
+                        includeLocation = includeDailyTaskLocation,
+                        onTaskTextChange = { dailyTaskText = it },
+                        onIncludeLocationChange = { includeDailyTaskLocation = it },
+                        onAddTask = {
+                            val cleanText = dailyTaskText.trim()
+                            if (cleanText.isBlank()) {
+                                viewModel.addDailyTask(cleanText, includeLocation = false)
+                            } else if (includeDailyTaskLocation && !context.hasTaskLocationPermission()) {
+                                pendingLocationDailyTaskText = cleanText
+                                locationPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    )
+                                )
+                            } else {
+                                viewModel.addDailyTask(cleanText, includeLocation = includeDailyTaskLocation)
+                                dailyTaskText = ""
+                            }
+                        },
+                        onToggleTask = viewModel::setDailyTaskDone,
+                    )
                     TaskWorkspaceMode.TASKS -> {
                         Column(modifier = Modifier.fillMaxSize()) {
                             TaskBoardFilters(
@@ -275,7 +323,7 @@ private fun TaskWorkspaceTabs(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TaskWorkspaceMode.entries.forEach { mode ->
+        listOf(TaskWorkspaceMode.DAILY, TaskWorkspaceMode.SOURCES).forEach { mode ->
             val selected = selectedMode == mode
             Column(
                 modifier = Modifier
@@ -310,6 +358,154 @@ private fun TaskWorkspaceTabs(
                         )
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DailyTasksMode(
+    uiState: TaskBoardUiState,
+    taskText: String,
+    includeLocation: Boolean,
+    onTaskTextChange: (String) -> Unit,
+    onIncludeLocationChange: (Boolean) -> Unit,
+    onAddTask: () -> Unit,
+    onToggleTask: (SollDailyTask, Boolean) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item(key = "daily-add", contentType = "daily-add") {
+            DailyTaskAddCard(
+                taskText = taskText,
+                includeLocation = includeLocation,
+                isAdding = uiState.dailyAdding,
+                onTaskTextChange = onTaskTextChange,
+                onIncludeLocationChange = onIncludeLocationChange,
+                onAddTask = onAddTask,
+            )
+        }
+
+        if (uiState.dailyTasks.isEmpty() && !uiState.dailyLoading) {
+            item(key = "daily-empty", contentType = "empty") {
+                EmptyWorkspace(text = "На сегодня дел нет")
+            }
+        } else {
+            items(uiState.dailyTasks, key = { it.id }) { task ->
+                DailyTaskRow(
+                    task = task,
+                    isRunning = uiState.dailyActionTaskId == task.id,
+                    onToggle = { checked -> onToggleTask(task, checked) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyTaskAddCard(
+    taskText: String,
+    includeLocation: Boolean,
+    isAdding: Boolean,
+    onTaskTextChange: (String) -> Unit,
+    onIncludeLocationChange: (Boolean) -> Unit,
+    onAddTask: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            OutlinedTextField(
+                value = taskText,
+                onValueChange = onTaskTextChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Новое дело") },
+                shape = RoundedCornerShape(12.dp),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("С геопозицией", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = "Точка приложится к этому делу",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = includeLocation,
+                    onCheckedChange = onIncludeLocationChange,
+                    enabled = !isAdding,
+                )
+            }
+            Button(
+                onClick = onAddTask,
+                enabled = !isAdding,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (isAdding) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text("Добавить")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyTaskRow(
+    task: SollDailyTask,
+    isRunning: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (task.done) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isRunning) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            } else {
+                Checkbox(
+                    checked = task.done,
+                    onCheckedChange = onToggle,
+                )
+            }
+            Text(
+                text = task.text,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (task.done) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -1437,6 +1633,14 @@ private fun List<String>.requiredCapabilitiesLabel(): String {
     val visible = take(2)
     val suffix = (size - visible.size).takeIf { it > 0 }?.let { " +$it" }.orEmpty()
     return visible.joinToString(", ") + suffix
+}
+
+private fun Context.hasTaskLocationPermission(): Boolean {
+    val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+    return fine || coarse
 }
 
 private const val TASK_DESCRIPTION_COLLAPSED_LINES = 4

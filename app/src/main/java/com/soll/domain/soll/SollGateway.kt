@@ -109,6 +109,19 @@ data class SollAndroidLocationStatus(
     val receivedAt: String?,
 )
 
+data class SollDailyTask(
+    val id: String,
+    val text: String,
+    val done: Boolean,
+    val line: Int,
+)
+
+data class SollDailyTaskList(
+    val date: String,
+    val sourcePath: String,
+    val tasks: List<SollDailyTask>,
+)
+
 data class SollChatSession(
     val sessionId: String,
     val title: String,
@@ -456,6 +469,9 @@ data class SollBookDownloadedFile(
 interface SollGateway {
     suspend fun getHealth(): Result<SollHealth>
     suspend fun getTaskBoard(limitPerSection: Int? = null): Result<SollTaskBoard>
+    suspend fun getTodayDailyTasks(): Result<SollDailyTaskList>
+    suspend fun addTodayDailyTask(text: String, locationLabel: String = ""): Result<SollDailyTaskList>
+    suspend fun updateTodayDailyTask(taskId: String, done: Boolean): Result<SollDailyTaskList>
     suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus>
     suspend fun listChatSessions(limit: Int = 50): Result<List<SollChatSession>>
     suspend fun createChatSession(title: String, sessionId: String? = null): Result<SollChatSession>

@@ -40,6 +40,10 @@ import com.soll.data.api.ChatSessionCreateResponse
 import com.soll.data.api.ChatSessionSummaryResponse
 import com.soll.data.api.ChatTurnRequest
 import com.soll.data.api.CreateRawFileRequest
+import com.soll.data.api.DailyTaskCreateRequest
+import com.soll.data.api.DailyTaskItemResponse
+import com.soll.data.api.DailyTaskListResponse
+import com.soll.data.api.DailyTaskUpdateRequest
 import com.soll.data.api.DeviceTokenRequest
 import com.soll.data.api.GadgetCommandAckRequest
 import com.soll.data.api.GadgetDiscoverySchemaResponse
@@ -120,6 +124,8 @@ import com.soll.domain.soll.SollBriefing
 import com.soll.domain.soll.SollChatActionResult
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollChatSession
+import com.soll.domain.soll.SollDailyTask
+import com.soll.domain.soll.SollDailyTaskList
 import com.soll.domain.soll.SollDevice
 import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
@@ -218,6 +224,35 @@ class SollRepository @Inject constructor(
 
         return boardResult
     }
+
+    override suspend fun getTodayDailyTasks(): Result<SollDailyTaskList> =
+        runSuspendCatching {
+            service().getTodayDailyTasks(readAuthorizationHeader()).toDomain()
+        }
+
+    override suspend fun addTodayDailyTask(text: String, locationLabel: String): Result<SollDailyTaskList> =
+        runSuspendCatching {
+            val cleanText = text.trim()
+            require(cleanText.isNotBlank()) { "Текст дела не задан" }
+            service().addTodayDailyTask(
+                authorization = authorizationHeader(),
+                request = DailyTaskCreateRequest(
+                    text = cleanText,
+                    locationLabel = locationLabel.trim(),
+                ),
+            ).toDomain()
+        }
+
+    override suspend fun updateTodayDailyTask(taskId: String, done: Boolean): Result<SollDailyTaskList> =
+        runSuspendCatching {
+            val cleanTaskId = taskId.trim()
+            require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
+            service().updateTodayDailyTask(
+                authorization = authorizationHeader(),
+                taskId = cleanTaskId,
+                request = DailyTaskUpdateRequest(done = done),
+            ).toDomain()
+        }
 
     override suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus> {
         val liveResult = runSuspendCatching {
@@ -1308,6 +1343,21 @@ class SollRepository @Inject constructor(
             doneRecent = doneRecent.map { it.toDomain() },
             counts = counts?.toDomain(),
             limitPerSection = limitPerSection,
+        )
+
+    private fun DailyTaskListResponse.toDomain(): SollDailyTaskList =
+        SollDailyTaskList(
+            date = date,
+            sourcePath = sourcePath,
+            tasks = tasks.map { it.toDomain() },
+        )
+
+    private fun DailyTaskItemResponse.toDomain(): SollDailyTask =
+        SollDailyTask(
+            id = id,
+            text = text,
+            done = done,
+            line = line,
         )
 
     private fun SollTaskBoardCountsResponse.toDomain(): SollTaskBoardCounts =

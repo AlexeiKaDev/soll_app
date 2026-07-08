@@ -29,6 +29,24 @@ interface SollApiService {
         @Query("include_counts") includeCounts: Boolean = false,
     ): SollTaskBoardResponse
 
+    @GET("api/v1/daily/tasks/today")
+    suspend fun getTodayDailyTasks(
+        @Header("Authorization") authorization: String? = null,
+    ): DailyTaskListResponse
+
+    @POST("api/v1/daily/tasks/today")
+    suspend fun addTodayDailyTask(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: DailyTaskCreateRequest,
+    ): DailyTaskListResponse
+
+    @PATCH("api/v1/daily/tasks/today/{task_id}")
+    suspend fun updateTodayDailyTask(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "task_id", encoded = true) taskId: String,
+        @Body request: DailyTaskUpdateRequest,
+    ): DailyTaskListResponse
+
     @GET("api/v1/android/sync-status")
     suspend fun getAndroidSyncStatus(
         @Header("Authorization") authorization: String? = null,
@@ -798,6 +816,36 @@ data class SollTaskBoardResponse(
     val counts: SollTaskBoardCountsResponse? = null,
     @Json(name = "limit_per_section")
     val limitPerSection: Int? = null,
+)
+
+data class DailyTaskListResponse(
+    val date: String = "",
+    @Json(name = "source_path")
+    val sourcePath: String = "",
+    val tasks: List<DailyTaskItemResponse> = emptyList(),
+)
+
+data class DailyTaskItemResponse(
+    val id: String = "",
+    val text: String = "",
+    val done: Boolean = false,
+    val line: Int = 0,
+)
+
+data class DailyTaskCreateRequest(
+    val text: String,
+    @Json(name = "location_label")
+    val locationLabel: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @Json(name = "accuracy_meters")
+    val accuracyMeters: Float? = null,
+    @Json(name = "captured_at")
+    val capturedAt: String? = null,
+)
+
+data class DailyTaskUpdateRequest(
+    val done: Boolean,
 )
 
 data class SollTaskBoardCountsResponse(

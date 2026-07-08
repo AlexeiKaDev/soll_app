@@ -10,7 +10,6 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,7 +34,6 @@ object Routes {
     const val TOOLS = "tools"
     const val LOGS = "logs"
     const val SETTINGS = "settings"
-    const val LOCATION_PROCESSOR = "location_processor"
     const val ACTIVITY_HISTORY = "activity_history"
     const val PORTABLE_SSD = "portable_ssd"
     const val MUSIC = "music"
@@ -57,10 +55,10 @@ object AppDestinations {
 
     val tools = listOf(
         ToolDestination(
-            route = Routes.LOCATION_PROCESSOR,
-            title = "Геопозиция для поиска",
-            description = "Отправить текущую точку в Soll для поиска по магазинам и источникам",
-            icon = Icons.Default.LocationOn,
+            route = Tasks.route,
+            title = "Список дел",
+            description = "Личные дела на сегодня, отдельно от task board Soll",
+            icon = Tasks.icon,
         ),
         ToolDestination(
             route = Routes.MUSIC,

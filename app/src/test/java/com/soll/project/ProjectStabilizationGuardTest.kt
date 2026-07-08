@@ -201,6 +201,11 @@ class ProjectStabilizationGuardTest {
         assertTrue(chatViewModel.contains("private var refreshInFlight = false"))
         assertTrue(chatViewModel.contains("if (refreshInFlight) return@launch"))
         assertTrue(chatViewModel.contains("finally {\n                refreshInFlight = false"))
+        assertTrue(chatViewModel.contains("fun refresh(showLoading: Boolean = true, afterIdOverride: Long? = null)"))
+        assertTrue(chatViewModel.contains("val previousLastId = _uiState.value.messages.maxOfOrNull { it.id }"))
+        assertTrue(chatViewModel.contains("runAssistant = true"))
+        assertTrue(chatViewModel.contains("refresh(showLoading = false, afterIdOverride = previousLastId)"))
+        assertFalse(chatViewModel.contains("runAssistant = false"))
         assertFalse(chatScreen.contains("LaunchedEffect(\n        listState.firstVisibleItemIndex"))
     }
 

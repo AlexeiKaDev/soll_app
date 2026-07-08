@@ -93,7 +93,7 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(isSearchOpen = false, searchQuery = "") }
     }
 
-    fun refresh(showLoading: Boolean = true) {
+    fun refresh(showLoading: Boolean = true, afterIdOverride: Long? = null) {
         viewModelScope.launch {
             if (refreshInFlight) return@launch
             refreshInFlight = true
@@ -112,8 +112,9 @@ class ChatViewModel @Inject constructor(
                 }
                 val sessionId = sync.chat.primarySessionId.ifBlank { "soll-main" }
                 val current = _uiState.value
-                val afterId = current.messages.maxOfOrNull { it.id }
-                    ?.takeIf { !showLoading && current.sessionId == sessionId && current.messages.isNotEmpty() }
+                val afterId = afterIdOverride
+                    ?: current.messages.maxOfOrNull { it.id }
+                        ?.takeIf { !showLoading && current.sessionId == sessionId && current.messages.isNotEmpty() }
                 val sessionMessages = sollGateway.getChatSession(
                     sessionId = sessionId,
                     limit = if (afterId == null) CHAT_PAGE_SIZE else null,
@@ -226,11 +227,12 @@ class ChatViewModel @Inject constructor(
         if (content.isBlank()) return
         viewModelScope.launch {
             val sessionId = _uiState.value.sessionId
+            val previousLastId = _uiState.value.messages.maxOfOrNull { it.id }
             _uiState.update { it.copy(isSending = true, error = null, input = "") }
             sollGateway.sendChatTurn(
                 content = content,
                 sessionId = sessionId,
-                runAssistant = false,
+                runAssistant = true,
             ).fold(
                 onSuccess = { (user, assistant) ->
                     val appended = buildList {
@@ -248,7 +250,7 @@ class ChatViewModel @Inject constructor(
                             scrollToBottomReason = ChatScrollReason.USER_SEND,
                         )
                     }
-                    refresh(showLoading = false)
+                    refresh(showLoading = false, afterIdOverride = previousLastId)
                 },
                 onFailure = { error ->
                     _uiState.update {

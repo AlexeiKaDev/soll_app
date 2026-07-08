@@ -272,9 +272,15 @@ class ProjectStabilizationGuardTest {
 
         assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_icon"))
         assertTrue(manifest.contains("@drawable/ic_ai_robot_notification"))
+        assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_color"))
+        assertTrue(manifest.contains("@color/ic_launcher_background"))
         listOf(ttsService, musicService, activityService, notificationRepository, serverSyncService).forEach { source ->
             assertTrue(source.contains("ic_ai_robot_notification"))
             assertFalse(source.contains("R.drawable.ic_notification"))
+        }
+        listOf(ttsService, activityService, notificationRepository, serverSyncService).forEach { source ->
+            assertTrue(source.contains("setColor(ContextCompat.getColor("))
+            assertTrue(source.contains("R.color.ic_launcher_background"))
         }
     }
 

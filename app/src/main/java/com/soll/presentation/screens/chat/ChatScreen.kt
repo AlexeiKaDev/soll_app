@@ -738,7 +738,7 @@ private fun AssistantMessageContent(
             Text(if (expanded) "Свернуть" else "Развернуть")
         }
     }
-    val actions = message.actionUis().filterNot { it.id in completedActionIds }
+    val actions = message.actionUis().filterNot { it.isCompletedBy(completedActionIds) }
     if (actions.isNotEmpty()) {
         CompactChatActionRow(
             actions = actions,

@@ -53,6 +53,7 @@ data class ChatActionUi(
     val type: String,
     val taskId: String?,
     val label: String,
+    val completionGroupKey: String? = null,
 )
 
 @HiltViewModel
@@ -313,7 +314,10 @@ class ChatViewModel @Inject constructor(
                 sessionId = _uiState.value.sessionId,
             ).fold(
                 onSuccess = { result ->
-                    val completedIds = result.completedActionIds(action.id)
+                    val completedIds = result.completedActionIds(
+                        requestedActionId = action.id,
+                        requestedTaskId = action.taskId,
+                    )
                     _uiState.update {
                         it.copy(
                             isSending = false,
@@ -477,6 +481,9 @@ fun SollChatMessage.actionUiOrNull(): ChatActionUi? = actionUis().firstOrNull()
 fun completedChatActionIds(messages: List<SollChatMessage>): Set<String> =
     messages.flatMap { it.completedChatActionIds() }.toSet()
 
+fun ChatActionUi.isCompletedBy(completedActionIds: Set<String>): Boolean =
+    id in completedActionIds || completionGroupKey?.let { it in completedActionIds } == true
+
 private fun Any?.asActionMapOrNull(): Map<*, *>? = this as? Map<*, *>
 
 private fun Any?.asActionMaps(): List<Map<*, *>> =
@@ -492,6 +499,7 @@ private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
     }
     if (type.isBlank()) return null
     val taskId = action["task_id"]?.toString()?.takeIf { it.isNotBlank() }
+    val approvalId = action["approval_id"]?.toString()?.takeIf { it.isNotBlank() }
     val id = action["id"]?.toString()?.takeIf { it.isNotBlank() }
         ?: if (type.startsWith("task.") && taskId != null) {
             "task:$taskId:${type.substringAfter('.')}"
@@ -503,20 +511,27 @@ private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
         type = type,
         taskId = taskId,
         label = action["label"]?.toString()?.takeIf { it.isNotBlank() } ?: type.defaultActionLabel(),
+        completionGroupKey = taskActionGroupKey(taskId) ?: approvalActionGroupKey(approvalId),
     )
 }
 
 private fun SollChatMessage.completedChatActionIds(): List<String> =
-    listOfNotNull(
-        metadata["action_result"].asActionMapOrNull()?.completedActionIdOrNull(),
-        metadata["yii2_task_action"].asActionMapOrNull()?.completedActionIdOrNull(),
-    )
+    listOf(
+        metadata["action_result"].asActionMapOrNull()?.completedActionIds().orEmpty(),
+        metadata["yii2_task_action"].asActionMapOrNull()?.completedActionIds().orEmpty(),
+        metadata["extra"].asActionMapOrNull()?.completedActionIds().orEmpty(),
+    ).flatten()
 
-private fun Map<*, *>.completedActionIdOrNull(): String? {
+private fun Map<*, *>.completedActionIds(): List<String> {
     val status = this["status"]?.toString()?.trim()?.lowercase().orEmpty()
-    if (status !in COMPLETED_ACTION_STATUSES) return null
-    return this["action_id"]?.toString()?.takeIf { it.isNotBlank() }
+    if (status !in COMPLETED_ACTION_STATUSES) return emptyList()
+    val actionId = this["action_id"]?.toString()?.takeIf { it.isNotBlank() }
         ?: this["id"]?.toString()?.takeIf { it.isNotBlank() }
+    val taskId = this["task_id"]?.toString()?.takeIf { it.isNotBlank() }
+        ?: actionId?.taskIdFromActionId()
+    val approvalId = this["approval_id"]?.toString()?.takeIf { it.isNotBlank() }
+        ?: actionId?.approvalIdFromActionId()
+    return listOfNotNull(actionId, taskActionGroupKey(taskId), approvalActionGroupKey(approvalId))
 }
 
 private fun Map<*, *>.isCompletedActionMap(): Boolean {
@@ -524,13 +539,39 @@ private fun Map<*, *>.isCompletedActionMap(): Boolean {
     return status in COMPLETED_ACTION_STATUSES
 }
 
-private fun com.soll.domain.soll.SollChatActionResult.completedActionIds(requestedActionId: String): Set<String> {
+private fun com.soll.domain.soll.SollChatActionResult.completedActionIds(
+    requestedActionId: String,
+    requestedTaskId: String?,
+): Set<String> {
     if (status.trim().lowercase() in FAILED_ACTION_STATUSES) return emptySet()
-    return setOf(requestedActionId, actionId).filter { it.isNotBlank() }.toSet()
+    return listOfNotNull(
+        requestedActionId.takeIf { it.isNotBlank() },
+        actionId.takeIf { it.isNotBlank() },
+        taskActionGroupKey(taskId ?: requestedTaskId ?: requestedActionId.taskIdFromActionId()),
+        approvalActionGroupKey(actionId.approvalIdFromActionId() ?: requestedActionId.approvalIdFromActionId()),
+    ).toSet()
 }
 
-private val COMPLETED_ACTION_STATUSES = setOf("ack", "acked", "done", "completed", "executed", "success")
-private val FAILED_ACTION_STATUSES = setOf("failed", "error", "rejected")
+private fun taskActionGroupKey(taskId: String?): String? =
+    taskId?.takeIf { it.isNotBlank() }?.let { "task:$it:*" }
+
+private fun approvalActionGroupKey(approvalId: String?): String? =
+    approvalId?.takeIf { it.isNotBlank() }?.let { "approval:$it:*" }
+
+private fun String.taskIdFromActionId(): String? {
+    if (!startsWith("task:")) return null
+    val taskId = removePrefix("task:").substringBefore(":", missingDelimiterValue = "")
+    return taskId.takeIf { it.isNotBlank() }
+}
+
+private fun String.approvalIdFromActionId(): String? {
+    if (!startsWith("approval:")) return null
+    val approvalId = removePrefix("approval:").substringBefore(":", missingDelimiterValue = "")
+    return approvalId.takeIf { it.isNotBlank() }
+}
+
+private val COMPLETED_ACTION_STATUSES = setOf("ack", "acked", "done", "completed", "executed", "success", "approved", "rejected")
+private val FAILED_ACTION_STATUSES = setOf("failed", "error")
 
 private fun String.defaultActionLabel(): String =
     when (this) {
@@ -539,6 +580,8 @@ private fun String.defaultActionLabel(): String =
         "task.reject" -> "Отклонить"
         "task.today" -> "Сегодня"
         "notice.ack" -> "Принято"
+        "approval.approve" -> "Подтвердить"
+        "approval.reject" -> "Отклонить"
         else -> "Выполнить"
     }
 

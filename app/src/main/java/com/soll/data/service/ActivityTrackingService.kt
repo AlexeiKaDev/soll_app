@@ -259,6 +259,7 @@ class ActivityTrackingService : Service(), SensorEventListener {
             .setContentTitle("Soll Активность")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
+            .setColor(ContextCompat.getColor(this, R.color.ic_launcher_background))
             .setContentIntent(contentPendingIntent())
             .addAction(R.drawable.ic_stop, "Стоп", stopPendingIntent())
             .setOngoing(true)

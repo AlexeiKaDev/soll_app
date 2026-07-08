@@ -397,7 +397,83 @@ class ChatMessageFiltersTest {
         )
 
         assertEquals(listOf("task:task-1:today"), taskMessage.actionUis().map { it.id })
-        assertEquals(setOf("task:task-1:today"), completedChatActionIds(listOf(taskMessage, resultMessage)))
+        assertEquals(
+            setOf("task:task-1:today", "task:task-1:*"),
+            completedChatActionIds(listOf(taskMessage, resultMessage)),
+        )
+    }
+
+    @Test
+    fun `completed task action hides sibling task action buttons`() {
+        val taskMessage = chatMessage(
+            content = "Registered task",
+            metadata = mapOf(
+                "actions" to listOf(
+                    mapOf(
+                        "id" to "task:task-1:today",
+                        "type" to "task.today",
+                        "task_id" to "task-1",
+                    ),
+                    mapOf(
+                        "id" to "task:task-1:reject",
+                        "type" to "task.reject",
+                        "task_id" to "task-1",
+                    ),
+                ),
+            ),
+        )
+        val resultMessage = chatMessage(
+            content = "Action complete",
+            metadata = mapOf(
+                "action_result" to mapOf(
+                    "action_id" to "task:task-1:today",
+                    "status" to "done",
+                ),
+            ),
+        )
+
+        val completed = completedChatActionIds(listOf(taskMessage, resultMessage))
+        val visibleActions = taskMessage.actionUis().filterNot { it.isCompletedBy(completed) }
+
+        assertTrue(visibleActions.isEmpty())
+    }
+
+    @Test
+    fun `completed approval event hides approve and reject buttons`() {
+        val approvalMessage = chatMessage(
+            content = "Approval required",
+            metadata = mapOf(
+                "action" to mapOf(
+                    "id" to "approval:approval-1:approve",
+                    "type" to "approval.approve",
+                    "approval_id" to "approval-1",
+                    "label" to "Подтвердить",
+                ),
+                "actions" to listOf(
+                    mapOf(
+                        "id" to "approval:approval-1:reject",
+                        "type" to "approval.reject",
+                        "approval_id" to "approval-1",
+                        "label" to "Отклонить",
+                    ),
+                ),
+            ),
+        )
+        val completedMessage = chatMessage(
+            content = "Approval accepted",
+            metadata = mapOf(
+                "extra" to mapOf(
+                    "approval_id" to "approval-1",
+                    "status" to "approved",
+                ),
+            ),
+        )
+
+        val completed = completedChatActionIds(listOf(approvalMessage, completedMessage))
+        val visibleActions = approvalMessage.actionUis().filterNot { it.isCompletedBy(completed) }
+
+        assertEquals(setOf("approval:approval-1:*"), completed)
+        assertTrue(visibleActions.isEmpty())
     }
 
     @Test

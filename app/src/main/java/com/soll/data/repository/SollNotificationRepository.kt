@@ -163,6 +163,7 @@ class SollNotificationRepository @Inject constructor(
         val summaryId = systemNotificationSummaryId(request.channel, groupKey)
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
+            .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
             .setContentTitle(request.title)
             .setContentText(request.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(request.message))
@@ -201,34 +202,35 @@ class SollNotificationRepository @Inject constructor(
             ?: systemNotificationSummaryTitle(request.channel)
         val summaryText = systemNotificationSummaryText(request.channel, unreadInChannel)
         return NotificationCompat.Builder(context, request.channel.channelId)
-        .setSmallIcon(R.drawable.ic_ai_robot_notification)
-        .setContentTitle(summaryTitle)
-        .setContentText(summaryText)
-        .setStyle(
-            NotificationCompat.InboxStyle()
-                .addLine("${request.title}: ${request.message}".compactNotificationLine())
-                .setSummaryText(summaryText),
-        )
-        .setContentIntent(
-            contentIntent(
-                request.copy(
-                    title = summaryTitle,
-                    message = summaryText,
-                    onlyAlertOnce = true,
-                    systemNotificationId = summaryId,
-                ),
-                summaryId,
+            .setSmallIcon(R.drawable.ic_ai_robot_notification)
+            .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
+            .setContentTitle(summaryTitle)
+            .setContentText(summaryText)
+            .setStyle(
+                NotificationCompat.InboxStyle()
+                    .addLine("${request.title}: ${request.message}".compactNotificationLine())
+                    .setSummaryText(summaryText),
             )
-        )
-        .setPriority(request.priority.toCompatPriority())
-        .setCategory(request.priority.toCategory())
-        .setAutoCancel(true)
-        .setOnlyAlertOnce(true)
-        .setGroup(groupKey)
-        .setGroupSummary(true)
-        .setGroupAlertBehavior(groupAlertBehavior(request.channel))
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .build()
+            .setContentIntent(
+                contentIntent(
+                    request.copy(
+                        title = summaryTitle,
+                        message = summaryText,
+                        onlyAlertOnce = true,
+                        systemNotificationId = summaryId,
+                    ),
+                    summaryId,
+                )
+            )
+            .setPriority(request.priority.toCompatPriority())
+            .setCategory(request.priority.toCategory())
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setGroup(groupKey)
+            .setGroupSummary(true)
+            .setGroupAlertBehavior(groupAlertBehavior(request.channel))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .build()
     }
 
     private fun groupAlertBehavior(channel: SollNotificationChannel): Int =

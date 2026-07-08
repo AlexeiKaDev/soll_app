@@ -511,6 +511,22 @@ class ChatMessageFiltersTest {
         )
     }
 
+    @Test
+    fun `source label overrides transport source in chat metadata`() {
+        val message = chatMessage(
+            content = "New source item",
+            metadata = mapOf(
+                "source" to "telegram_archived",
+                "source_label" to "Habr",
+                "title" to "Source Monitor",
+            ),
+        )
+
+        assertEquals("Habr", messageSourceLabel(message))
+        assertTrue(messageTitle(message).orEmpty().contains("Habr"))
+        assertTrue(message.badgeUis().map { it.text }.contains("Habr"))
+    }
+
     private fun chatMessage(
         content: String,
         source: String = "telegram_mirror",

@@ -1496,6 +1496,8 @@ internal fun messageTitle(message: SollChatMessage): String? {
 }
 
 internal fun messageSourceLabel(message: SollChatMessage): String? {
+    val sourceLabel = message.metadata["source_label"]?.toString()?.trim().orEmpty()
+    if (sourceLabel.isNotBlank()) return sourceLabel
     val source = message.metadata["source"]?.toString()?.trim().orEmpty()
     return when (source) {
         "telegram_mirror" -> "Telegram"

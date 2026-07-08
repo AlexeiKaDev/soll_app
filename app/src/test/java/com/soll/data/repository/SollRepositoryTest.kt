@@ -19,6 +19,21 @@ class SollRepositoryTest {
     }
 
     @Test
+    fun `normalize base url strips api v1 path from server url`() {
+        assertEquals("http://192.168.1.10:49237/", normalizeSollBaseUrl("http://192.168.1.10:49237/api/v1"))
+    }
+
+    @Test
+    fun `normalize base url strips monolith soll api path from server url`() {
+        assertEquals("https://sales.monolith-ost.com/", normalizeSollBaseUrl("https://sales.monolith-ost.com/api/v1/soll"))
+    }
+
+    @Test
+    fun `normalize base url preserves unknown non api path`() {
+        assertEquals("https://example.com/custom/", normalizeSollBaseUrl("https://example.com/custom"))
+    }
+
+    @Test
     fun `normalize base url keeps blank as blank`() {
         assertEquals("", normalizeSollBaseUrl("   "))
     }

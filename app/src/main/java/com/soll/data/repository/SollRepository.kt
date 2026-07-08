@@ -5,6 +5,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
+import android.webkit.MimeTypeMap
 import com.squareup.moshi.Moshi
 import com.soll.BuildConfig
 import com.soll.data.api.AndroidLocationStatusResponse
@@ -42,8 +43,11 @@ import com.soll.data.api.ChatTurnRequest
 import com.soll.data.api.CreateRawFileRequest
 import com.soll.data.api.DailyTaskAttachmentResponse
 import com.soll.data.api.DailyTaskCreateRequest
+import com.soll.data.api.DailyTaskDetailResponse
+import com.soll.data.api.DailyTaskGeoResponse
 import com.soll.data.api.DailyTaskItemResponse
 import com.soll.data.api.DailyTaskListResponse
+import com.soll.data.api.DailyTaskResearchResponse
 import com.soll.data.api.DailyTaskUpdateRequest
 import com.soll.data.api.DeviceTokenRequest
 import com.soll.data.api.GadgetCommandAckRequest
@@ -127,7 +131,10 @@ import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollChatSession
 import com.soll.domain.soll.SollDailyTask
 import com.soll.domain.soll.SollDailyTaskAttachment
+import com.soll.domain.soll.SollDailyTaskDetail
+import com.soll.domain.soll.SollDailyTaskGeo
 import com.soll.domain.soll.SollDailyTaskList
+import com.soll.domain.soll.SollDailyTaskResearch
 import com.soll.domain.soll.SollDevice
 import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
@@ -172,6 +179,7 @@ import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Interceptor
@@ -237,7 +245,7 @@ class SollRepository @Inject constructor(
             val cleanText = text.trim()
             require(cleanText.isNotBlank()) { "Текст дела не задан" }
             service().addTodayDailyTask(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 request = DailyTaskCreateRequest(
                     text = cleanText,
                     locationLabel = locationLabel.trim(),
@@ -250,9 +258,29 @@ class SollRepository @Inject constructor(
             val cleanTaskId = taskId.trim()
             require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
             service().updateTodayDailyTask(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 taskId = cleanTaskId,
                 request = DailyTaskUpdateRequest(done = done),
+            ).toDomain()
+        }
+
+    override suspend fun getTodayDailyTaskDetail(taskId: String): Result<SollDailyTaskDetail> =
+        runSuspendCatching {
+            val cleanTaskId = taskId.trim()
+            require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
+            service().getTodayDailyTaskDetail(
+                authorization = readAuthorizationHeader(),
+                taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
+            ).toDomain()
+        }
+
+    override suspend fun researchTodayDailyTask(taskId: String): Result<SollDailyTaskDetail> =
+        runSuspendCatching {
+            val cleanTaskId = taskId.trim()
+            require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
+            service().researchTodayDailyTask(
+                authorization = writeAuthorizationHeader(),
+                taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
             ).toDomain()
         }
 
@@ -269,7 +297,7 @@ class SollRepository @Inject constructor(
             )
             val part = MultipartBody.Part.createFormData("file", filename, requestBody)
             service().uploadTodayDailyTaskAttachment(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
                 file = part,
             ).toDomain()
@@ -662,7 +690,7 @@ class SollRepository @Inject constructor(
             ?: SOURCE_TYPE_WEB
         require(cleanTarget.isNotBlank()) { "URL источника не задан" }
         service().createSource(
-            authorization = authorizationHeader(),
+            authorization = writeAuthorizationHeader(),
             request = MonitoredSourceCreateRequest(
                 name = name.trim().takeIf { it.isNotBlank() },
                 sourceType = cleanSourceType,
@@ -682,7 +710,7 @@ class SollRepository @Inject constructor(
         val cleanSourceId = sourceId.trim()
         require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
         service().updateSource(
-            authorization = authorizationHeader(),
+            authorization = writeAuthorizationHeader(),
             sourceId = cleanSourceId,
             request = MonitoredSourceUpdateRequest(
                 name = name.trim().takeIf { it.isNotBlank() },
@@ -697,12 +725,12 @@ class SollRepository @Inject constructor(
     }
 
     override suspend fun deleteSource(sourceId: String): Result<Boolean> = runSuspendCatching {
-        service().deleteSource(authorizationHeader(), sourceId.trim())
+        service().deleteSource(writeAuthorizationHeader(), sourceId.trim())
         true
     }
 
     override suspend fun checkSource(sourceId: String): Result<Boolean> = runSuspendCatching {
-        service().checkSource(authorizationHeader(), sourceId.trim()).changed
+        service().checkSource(writeAuthorizationHeader(), sourceId.trim()).changed
     }
 
     override suspend fun createTaskFromSourceItem(sourceId: String, itemId: String): Result<SollTask?> =
@@ -712,7 +740,7 @@ class SollRepository @Inject constructor(
             require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
             require(cleanItemId.isNotBlank()) { "ID материала не задан" }
             service().createTaskFromSourceItem(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 sourceId = cleanSourceId,
                 itemId = cleanItemId,
                 request = SourceItemTaskRequest(priority = "B"),
@@ -1017,6 +1045,10 @@ class SollRepository @Inject constructor(
 
     private fun readAuthorizationHeader(): String? {
         return deviceAuthorizationHeader() ?: authorizationHeader()
+    }
+
+    private suspend fun writeAuthorizationHeader(): String? {
+        return ensureDeviceAuthorizationHeader() ?: authorizationHeader()
     }
 
     private suspend fun ensureDeviceAuthorizationHeader(): String? {
@@ -1374,6 +1406,16 @@ class SollRepository @Inject constructor(
             createdTaskId = createdTaskId,
         )
 
+    private fun DailyTaskDetailResponse.toDomain(): SollDailyTaskDetail =
+        SollDailyTaskDetail(
+            date = date,
+            sourcePath = sourcePath,
+            task = task.toDomain(),
+            geo = geo.toDomain(),
+            sourceMatches = sourceMatches,
+            research = research?.toDomain(),
+        )
+
     private fun DailyTaskItemResponse.toDomain(): SollDailyTask =
         SollDailyTask(
             id = id,
@@ -1395,6 +1437,26 @@ class SollRepository @Inject constructor(
             analysisSummary = analysisSummary,
             ocrText = ocrText,
             searchTerms = searchTerms,
+            createdAt = createdAt,
+        )
+
+    private fun DailyTaskGeoResponse.toDomain(): SollDailyTaskGeo =
+        SollDailyTaskGeo(
+            locationLabel = locationLabel,
+            latitude = latitude,
+            longitude = longitude,
+            accuracyMeters = accuracyMeters,
+            capturedAt = capturedAt,
+        )
+
+    private fun DailyTaskResearchResponse.toDomain(): SollDailyTaskResearch =
+        SollDailyTaskResearch(
+            taskId = taskId,
+            query = query,
+            summary = summary,
+            localResults = localResults,
+            sourceResults = sourceResults,
+            webResults = webResults,
             createdAt = createdAt,
         )
 
@@ -1780,10 +1842,25 @@ class SollRepository @Inject constructor(
             ?.takeIf { it.isNotBlank() }
             ?: "upload.bin"
 
+        val resolvedName = displayName?.takeIf { it.isNotBlank() } ?: fallbackName
+        val inferredMimeType = resolvedName
+            .substringAfterLast('.', missingDelimiterValue = "")
+            .lowercase(Locale.US)
+            .takeIf { it.isNotBlank() }
+            ?.let { extension ->
+                MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                    ?: when (extension) {
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> null
+                    }
+            }
+
         return RawUploadMetadata(
-            displayName = displayName?.takeIf { it.isNotBlank() } ?: fallbackName,
+            displayName = resolvedName,
             size = size,
-            mimeType = resolver.getType(uri),
+            mimeType = resolver.getType(uri) ?: inferredMimeType,
         )
     }
 
@@ -1951,7 +2028,20 @@ fun normalizeSollBaseUrl(rawUrl: String): String {
         "http://$trimmed"
     }
 
-    return if (withScheme.endsWith("/")) withScheme else "$withScheme/"
+    val parsed = withScheme.toHttpUrlOrNull()
+    val normalized = if (parsed != null) {
+        val pathSegments = parsed.pathSegments.filter { it.isNotBlank() }
+        val withoutQuery = parsed.newBuilder()
+            .query(null)
+            .fragment(null)
+        if (pathSegments == listOf("api", "v1") || pathSegments == listOf("api", "v1", "soll")) {
+            withoutQuery.encodedPath("/")
+        }
+        withoutQuery.build().toString()
+    } else {
+        withScheme
+    }
+    return if (normalized.endsWith("/")) normalized else "$normalized/"
 }
 
 fun normalizeSollApiPathPrefix(rawPrefix: String): String {

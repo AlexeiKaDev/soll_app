@@ -138,6 +138,33 @@ data class SollDailyTaskList(
     val createdTaskId: String? = null,
 )
 
+data class SollDailyTaskGeo(
+    val locationLabel: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val accuracyMeters: Float? = null,
+    val capturedAt: String? = null,
+)
+
+data class SollDailyTaskResearch(
+    val taskId: String,
+    val query: String,
+    val summary: String,
+    val localResults: List<Map<String, Any?>> = emptyList(),
+    val sourceResults: List<Map<String, Any?>> = emptyList(),
+    val webResults: List<Map<String, Any?>> = emptyList(),
+    val createdAt: String = "",
+)
+
+data class SollDailyTaskDetail(
+    val date: String,
+    val sourcePath: String,
+    val task: SollDailyTask,
+    val geo: SollDailyTaskGeo = SollDailyTaskGeo(),
+    val sourceMatches: List<Map<String, Any?>> = emptyList(),
+    val research: SollDailyTaskResearch? = null,
+)
+
 data class SollChatSession(
     val sessionId: String,
     val title: String,
@@ -488,6 +515,8 @@ interface SollGateway {
     suspend fun getTodayDailyTasks(): Result<SollDailyTaskList>
     suspend fun addTodayDailyTask(text: String, locationLabel: String = ""): Result<SollDailyTaskList>
     suspend fun updateTodayDailyTask(taskId: String, done: Boolean): Result<SollDailyTaskList>
+    suspend fun getTodayDailyTaskDetail(taskId: String): Result<SollDailyTaskDetail>
+    suspend fun researchTodayDailyTask(taskId: String): Result<SollDailyTaskDetail>
     suspend fun uploadTodayDailyTaskAttachment(taskId: String, uri: Uri): Result<SollDailyTaskAttachment>
     suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus>
     suspend fun listChatSessions(limit: Int = 50): Result<List<SollChatSession>>

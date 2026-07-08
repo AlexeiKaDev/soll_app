@@ -47,6 +47,18 @@ interface SollApiService {
         @Body request: DailyTaskUpdateRequest,
     ): DailyTaskListResponse
 
+    @GET("api/v1/daily/tasks/today/{task_id}/detail")
+    suspend fun getTodayDailyTaskDetail(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "task_id", encoded = true) taskId: String,
+    ): DailyTaskDetailResponse
+
+    @POST("api/v1/daily/tasks/today/{task_id}/research")
+    suspend fun researchTodayDailyTask(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "task_id", encoded = true) taskId: String,
+    ): DailyTaskDetailResponse
+
     @Multipart
     @POST("api/v1/daily/tasks/today/{task_id}/attachments")
     suspend fun uploadTodayDailyTaskAttachment(
@@ -862,6 +874,43 @@ data class DailyTaskAttachmentResponse(
     val searchTerms: List<String> = emptyList(),
     @Json(name = "created_at")
     val createdAt: String = "",
+)
+
+data class DailyTaskGeoResponse(
+    @Json(name = "location_label")
+    val locationLabel: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @Json(name = "accuracy_meters")
+    val accuracyMeters: Float? = null,
+    @Json(name = "captured_at")
+    val capturedAt: String? = null,
+)
+
+data class DailyTaskResearchResponse(
+    @Json(name = "task_id")
+    val taskId: String = "",
+    val query: String = "",
+    val summary: String = "",
+    @Json(name = "local_results")
+    val localResults: List<Map<String, Any?>> = emptyList(),
+    @Json(name = "source_results")
+    val sourceResults: List<Map<String, Any?>> = emptyList(),
+    @Json(name = "web_results")
+    val webResults: List<Map<String, Any?>> = emptyList(),
+    @Json(name = "created_at")
+    val createdAt: String = "",
+)
+
+data class DailyTaskDetailResponse(
+    val date: String = "",
+    @Json(name = "source_path")
+    val sourcePath: String = "",
+    val task: DailyTaskItemResponse = DailyTaskItemResponse(),
+    val geo: DailyTaskGeoResponse = DailyTaskGeoResponse(),
+    @Json(name = "source_matches")
+    val sourceMatches: List<Map<String, Any?>> = emptyList(),
+    val research: DailyTaskResearchResponse? = null,
 )
 
 data class DailyTaskCreateRequest(

@@ -100,8 +100,13 @@ class SollNotificationRepository @Inject constructor(
         } else {
             1
         }
+        val summaryUnreadInChannel = if (request.channel == SollNotificationChannel.CHAT) {
+            1
+        } else {
+            unreadInChannel
+        }
         val shown = if (shouldShowSystem && canPostSystem) {
-            showSystemNotification(request, systemNotificationId, unreadInChannel)
+            showSystemNotification(request, systemNotificationId, summaryUnreadInChannel)
         } else {
             false
         }
@@ -153,7 +158,7 @@ class SollNotificationRepository @Inject constructor(
     }
 
     @SuppressLint("MissingPermission")
-    private fun showSystemNotification(
+    private suspend fun showSystemNotification(
         request: SollNotificationRequest,
         systemNotificationId: Int,
         unreadInChannel: Int,
@@ -161,6 +166,7 @@ class SollNotificationRepository @Inject constructor(
         if (!canPostSystemNotifications()) return false
         val groupKey = systemNotificationGroupKey(request.channel, request.systemGroupKey)
         val summaryId = systemNotificationSummaryId(request.channel, groupKey)
+        cleanupLegacySystemNotifications(request.channel, systemNotificationId, summaryId)
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
             .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
@@ -190,6 +196,23 @@ class SollNotificationRepository @Inject constructor(
         }.onFailure { error ->
             Timber.w(error, "Failed to show Soll notification")
         }.getOrDefault(false)
+    }
+
+    private suspend fun cleanupLegacySystemNotifications(
+        channel: SollNotificationChannel,
+        keepNotificationId: Int,
+        keepSummaryId: Int,
+    ) {
+        if (channel != SollNotificationChannel.CHAT) return
+        val keepIds = setOf(keepNotificationId, keepSummaryId)
+        val legacyIds = notificationDao.getSystemNotificationIdsForChannel(channel.name)
+            .asSequence()
+            .filter { it !in keepIds }
+            .distinct()
+            .toList()
+        if (legacyIds.isEmpty()) return
+        val manager = NotificationManagerCompat.from(context)
+        legacyIds.forEach { manager.cancel(it) }
     }
 
     private fun buildGroupSummaryNotification(

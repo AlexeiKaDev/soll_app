@@ -138,6 +138,12 @@ class SollServerSyncWorkerTest {
     }
 
     @Test
+    fun `chat notification id stays stable per session`() {
+        assertEquals(stableChatNotificationId("soll-main"), stableChatNotificationId("soll-main"))
+        assertNotEquals(stableChatNotificationId("soll-main"), stableChatNotificationId("soll-other"))
+    }
+
+    @Test
     fun `task board signature changes when task state changes`() {
         val first = taskBoard(task(status = "inbox", executionState = "queued"))
         val changed = taskBoard(task(status = "today", executionState = "running"))

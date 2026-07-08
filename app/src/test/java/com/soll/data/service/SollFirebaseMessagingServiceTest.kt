@@ -3,7 +3,9 @@ package com.soll.data.service
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.notification.SollNotificationPriority
 import com.soll.presentation.navigation.AppLaunchTargets
+import com.soll.data.repository.stableChatNotificationId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class SollFirebaseMessagingServiceTest {
@@ -15,6 +17,8 @@ class SollFirebaseMessagingServiceTest {
         assertEquals("server_chat_push", route.type)
         assertEquals(SollNotificationPriority.DEFAULT, route.priority)
         assertEquals(AppLaunchTargets.SECTION_CHAT, route.launchSection)
+        assertEquals(stableChatNotificationId("soll-main"), stableChatNotificationId("soll-main"))
+        assertNotEquals(stableChatNotificationId("soll-main"), stableChatNotificationId("soll-other"))
     }
 
     @Test

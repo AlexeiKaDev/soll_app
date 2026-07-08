@@ -29,6 +29,15 @@ interface AppNotificationDao {
 
     @Query(
         """
+        SELECT DISTINCT system_notification_id
+        FROM app_notifications
+        WHERE channel_id = :channelId AND system_notification_id IS NOT NULL
+        """
+    )
+    suspend fun getSystemNotificationIdsForChannel(channelId: String): List<Int>
+
+    @Query(
+        """
         UPDATE app_notifications
         SET shown_at = :shownAt, system_notification_id = :systemNotificationId
         WHERE id = :id

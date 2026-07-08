@@ -114,6 +114,7 @@ class SollServerSyncWorker(
         )
 
         plan.messagesToNotify.forEach { message ->
+            val sessionId = message.sessionId.ifBlank { "soll-main" }
             notificationCenter.post(
                 SollNotificationRequest(
                     channel = SollNotificationChannel.CHAT,
@@ -123,15 +124,15 @@ class SollServerSyncWorker(
                     message = message.content.trim().take(MAX_NOTIFICATION_MESSAGE_LENGTH),
                     payloadJson = JSONObject()
                         .put("message_id", message.id)
-                        .put("session_id", message.sessionId)
+                        .put("session_id", sessionId)
                         .put("created_at", message.createdAt)
                         .toString(),
                     priority = message.notificationPriority(),
                     showSystem = true,
                     onlyAlertOnce = true,
-                    systemNotificationId = stableChatNotificationId(message),
+                    systemNotificationId = stableChatNotificationId(sessionId),
                     launchSection = AppLaunchTargets.SECTION_CHAT,
-                    dedupeKey = chatNotificationDedupeKey(message.sessionId, message.id),
+                    dedupeKey = chatNotificationDedupeKey(sessionId, message.id),
                 )
             )
         }
@@ -344,8 +345,8 @@ private fun SollChatMessage.notificationPriority(): SollNotificationPriority =
         else -> SollNotificationPriority.DEFAULT
     }
 
-private fun stableChatNotificationId(message: SollChatMessage): Int =
-    chatNotificationDedupeKey(message.sessionId, message.id).hashCode() and Int.MAX_VALUE
+internal fun stableChatNotificationId(sessionId: String): Int =
+    chatNotificationDedupeKey(sessionId, 0).hashCode() and Int.MAX_VALUE
 
 internal fun chatNotificationDedupeKey(sessionId: String, messageId: Long): String =
     "chat:${sessionId.ifBlank { "soll-main" }}:$messageId"

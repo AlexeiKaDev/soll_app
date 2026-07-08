@@ -5,6 +5,7 @@ import com.google.firebase.messaging.RemoteMessage
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollServerSyncScheduler
 import com.soll.data.repository.chatNotificationDedupeKey
+import com.soll.data.repository.stableChatNotificationId
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.notification.SollNotificationPriority
@@ -70,7 +71,11 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
                         priority = route.priority,
                         showSystem = shouldShowFcmSystemNotification(route, data),
                         onlyAlertOnce = true,
-                        systemNotificationId = stablePushNotificationId(chatDedupeKey ?: "fcm:$messageKey"),
+                        systemNotificationId = if (route.channel == SollNotificationChannel.CHAT) {
+                            stableChatNotificationId(sessionId)
+                        } else {
+                            stablePushNotificationId(chatDedupeKey ?: "fcm:$messageKey")
+                        },
                         launchSection = route.launchSection,
                         launchLogsTab = data[AppLaunchTargets.EXTRA_OPEN_LOGS_TAB],
                         systemGroupKey = fcmNotificationGroupKey(data),

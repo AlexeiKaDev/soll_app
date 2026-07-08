@@ -129,6 +129,32 @@ class FieldMapViewModel @Inject constructor(
         }
     }
 
+    fun publishCurrentLocationToSoll() {
+        if (!ensureFieldMapCapability()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingLocation = true, message = null, isError = false) }
+            runCatching { repository.publishCurrentLocationToSoll() }
+                .onSuccess { label ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingLocation = false,
+                            message = "Геопозиция отправлена в Soll: $label",
+                            isError = false,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingLocation = false,
+                            message = error.message ?: "Не удалось отправить геопозицию в Soll",
+                            isError = true,
+                        )
+                    }
+                }
+        }
+    }
+
     fun saveManualPoint(title: String, note: String, latitude: String, longitude: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(message = null, isError = false) }

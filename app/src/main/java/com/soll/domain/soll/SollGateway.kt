@@ -94,6 +94,21 @@ data class SollAndroidPushRegistration(
     val reason: String?,
 )
 
+data class SollAndroidLocationStatus(
+    val available: Boolean,
+    val needsAndroidLocation: Boolean,
+    val stale: Boolean,
+    val latitude: Double?,
+    val longitude: Double?,
+    val accuracyMeters: Float?,
+    val provider: String,
+    val label: String,
+    val city: String,
+    val country: String,
+    val capturedAt: String?,
+    val receivedAt: String?,
+)
+
 data class SollChatSession(
     val sessionId: String,
     val title: String,
@@ -469,6 +484,19 @@ interface SollGateway {
         token: String,
         provider: String = "fcm",
     ): Result<SollAndroidPushRegistration>
+
+    suspend fun publishAndroidLocation(
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Float? = null,
+        altitudeMeters: Double? = null,
+        provider: String = "android",
+        capturedAtMillis: Long = System.currentTimeMillis(),
+        label: String = "",
+        city: String = "",
+        country: String = "",
+        reason: String = "android_user_approved_location",
+    ): Result<SollAndroidLocationStatus>
 
     suspend fun createRawNote(
         title: String,

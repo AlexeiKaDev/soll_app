@@ -40,6 +40,17 @@ interface SollApiService {
         @Body request: AndroidPushTokenRequest,
     ): AndroidPushTokenResponse
 
+    @GET("api/v1/android/location")
+    suspend fun getAndroidLocation(
+        @Header("Authorization") authorization: String? = null,
+    ): AndroidLocationStatusResponse
+
+    @POST("api/v1/android/location")
+    suspend fun updateAndroidLocation(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: AndroidLocationUpdateRequest,
+    ): AndroidLocationStatusResponse
+
     @GET("api/v1/chat/sessions")
     suspend fun getChatSessions(
         @Header("Authorization") authorization: String? = null,
@@ -525,6 +536,62 @@ data class AndroidPushTokenResponse(
     @Json(name = "token_count")
     val tokenCount: Int = 0,
     val reason: String? = null,
+)
+
+data class AndroidLocationUpdateRequest(
+    @Json(name = "permission_granted")
+    val permissionGranted: Boolean = true,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @Json(name = "accuracy_meters")
+    val accuracyMeters: Float? = null,
+    @Json(name = "altitude_meters")
+    val altitudeMeters: Double? = null,
+    val provider: String = "android",
+    @Json(name = "captured_at")
+    val capturedAt: String? = null,
+    val label: String = "",
+    val country: String = "",
+    val region: String = "",
+    val city: String = "",
+    val locale: String = "",
+    val reason: String = "",
+)
+
+data class AndroidLocationStatusResponse(
+    val source: String = "android_app",
+    val available: Boolean = false,
+    @Json(name = "permission_granted")
+    val permissionGranted: Boolean = false,
+    @Json(name = "needs_android_location")
+    val needsAndroidLocation: Boolean = true,
+    val stale: Boolean = true,
+    @Json(name = "age_seconds")
+    val ageSeconds: Int? = null,
+    @Json(name = "max_age_seconds")
+    val maxAgeSeconds: Int = 1800,
+    @Json(name = "device_id")
+    val deviceId: String = "",
+    @Json(name = "device_name")
+    val deviceName: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    @Json(name = "accuracy_meters")
+    val accuracyMeters: Float? = null,
+    @Json(name = "altitude_meters")
+    val altitudeMeters: Double? = null,
+    val provider: String = "",
+    val label: String = "",
+    val country: String = "",
+    val region: String = "",
+    val city: String = "",
+    val locale: String = "",
+    @Json(name = "captured_at")
+    val capturedAt: String? = null,
+    @Json(name = "received_at")
+    val receivedAt: String? = null,
+    val reason: String = "",
+    val request: Map<String, Any?> = emptyMap(),
 )
 
 data class ChatSessionSummaryResponse(

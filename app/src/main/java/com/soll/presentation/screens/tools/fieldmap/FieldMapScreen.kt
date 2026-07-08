@@ -200,6 +200,7 @@ fun FieldMapScreen(
                     onTitleChange = { currentTitle = it },
                     onNoteChange = { currentNote = it },
                     onRefreshLocation = { runWithLocationPermission(viewModel::refreshLocation) },
+                    onPublishLocation = { runWithLocationPermission(viewModel::publishCurrentLocationToSoll) },
                     onSaveCurrentPoint = {
                         runWithLocationPermission {
                             viewModel.saveCurrentPoint(currentTitle, currentNote)
@@ -497,6 +498,7 @@ private fun CurrentLocationCard(
     onTitleChange: (String) -> Unit,
     onNoteChange: (String) -> Unit,
     onRefreshLocation: () -> Unit,
+    onPublishLocation: () -> Unit,
     onSaveCurrentPoint: () -> Unit,
 ) {
     Card(
@@ -559,6 +561,13 @@ private fun CurrentLocationCard(
                 ) {
                     Text("Сохранить здесь")
                 }
+            }
+            OutlinedButton(
+                onClick = onPublishLocation,
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Отправить геопозицию в Soll")
             }
         }
     }

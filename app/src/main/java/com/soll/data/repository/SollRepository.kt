@@ -7,6 +7,8 @@ import android.provider.OpenableColumns
 import android.util.Base64
 import com.squareup.moshi.Moshi
 import com.soll.BuildConfig
+import com.soll.data.api.AndroidLocationStatusResponse
+import com.soll.data.api.AndroidLocationUpdateRequest
 import com.soll.data.api.AndroidProtocolBootstrapResponse
 import com.soll.data.api.AndroidPushTokenRequest
 import com.soll.data.api.AndroidPushTokenResponse
@@ -97,6 +99,7 @@ import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollAndroidChatSync
+import com.soll.domain.soll.SollAndroidLocationStatus
 import com.soll.domain.soll.SollAndroidPushHealth
 import com.soll.domain.soll.SollAndroidPushRegistration
 import com.soll.domain.soll.SollBookActionResult
@@ -359,6 +362,38 @@ class SollRepository @Inject constructor(
                 deviceId = settingsRepository.sollDeviceId.takeIf { it.isNotBlank() },
                 appId = context.packageName,
                 appVersion = BuildConfig.VERSION_NAME,
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun publishAndroidLocation(
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Float?,
+        altitudeMeters: Double?,
+        provider: String,
+        capturedAtMillis: Long,
+        label: String,
+        city: String,
+        country: String,
+        reason: String,
+    ): Result<SollAndroidLocationStatus> = runSuspendCatching {
+        val authorization = ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader()
+        service().updateAndroidLocation(
+            authorization = authorization,
+            request = AndroidLocationUpdateRequest(
+                permissionGranted = true,
+                latitude = latitude,
+                longitude = longitude,
+                accuracyMeters = accuracyMeters,
+                altitudeMeters = altitudeMeters,
+                provider = provider.trim().ifBlank { "android" },
+                capturedAt = Instant.ofEpochMilli(capturedAtMillis).toString(),
+                label = label.trim(),
+                city = city.trim(),
+                country = country.trim(),
+                locale = Locale.getDefault().toLanguageTag(),
+                reason = reason.trim().ifBlank { "android_user_approved_location" },
             ),
         ).toDomain()
     }
@@ -1456,6 +1491,22 @@ class SollRepository @Inject constructor(
             enabled = enabled,
             tokenCount = tokenCount,
             reason = reason,
+        )
+
+    private fun AndroidLocationStatusResponse.toDomain(): SollAndroidLocationStatus =
+        SollAndroidLocationStatus(
+            available = available,
+            needsAndroidLocation = needsAndroidLocation,
+            stale = stale,
+            latitude = latitude,
+            longitude = longitude,
+            accuracyMeters = accuracyMeters,
+            provider = provider,
+            label = label,
+            city = city,
+            country = country,
+            capturedAt = capturedAt,
+            receivedAt = receivedAt,
         )
 
     private fun SollProtocolAuthResponse.toDomain(): SollProtocolAuth =

@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import androidx.core.content.ContextCompat
@@ -19,6 +20,7 @@ import com.soll.domain.field.FieldPoint
 import com.soll.domain.field.FieldPointSource
 import com.soll.domain.field.FieldPointStatus
 import com.soll.domain.field.GeoCoordinate
+import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollTask
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.SimpleDateFormat
@@ -43,6 +45,7 @@ class FieldMapRepository @Inject constructor(
     private val fieldPointDao: FieldPointDao,
     private val taskCacheRepository: TaskCacheRepository,
     private val noteRepository: NoteRepository,
+    private val sollGateway: SollGateway,
 ) {
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
@@ -98,6 +101,24 @@ class FieldMapRepository @Inject constructor(
         )
         fieldPointDao.upsert(point)
         point.toDomain()
+    }
+
+    suspend fun publishCurrentLocationToSoll(): String = withContext(Dispatchers.IO) {
+        val snapshot = currentLocation.value ?: refreshCurrentLocation()
+        val place = reverseGeocode(snapshot)
+        val result = sollGateway.publishAndroidLocation(
+            latitude = snapshot.coordinate.latitude,
+            longitude = snapshot.coordinate.longitude,
+            accuracyMeters = snapshot.accuracyMeters,
+            provider = snapshot.provider,
+            capturedAtMillis = snapshot.capturedAt,
+            label = place.label,
+            city = place.city,
+            country = place.country,
+            reason = "android_field_map_user_share",
+        ).getOrThrow()
+        check(result.available) { "Сервер не принял геолокацию" }
+        result.label.ifBlank { snapshot.coordinate.formatted() }
     }
 
     suspend fun saveManualPoint(
@@ -193,6 +214,26 @@ class FieldMapRepository @Inject constructor(
         }.getOrDefault(false)
         check(enabled) { "Геолокация выключена в Android" }
     }
+
+    private fun reverseGeocode(snapshot: FieldLocationSnapshot): LocationPlace = runCatching {
+        if (!Geocoder.isPresent()) return@runCatching LocationPlace()
+        val geocoder = Geocoder(context, Locale.getDefault())
+        @Suppress("DEPRECATION")
+        val address = geocoder.getFromLocation(
+            snapshot.coordinate.latitude,
+            snapshot.coordinate.longitude,
+            1,
+        )?.firstOrNull() ?: return@runCatching LocationPlace()
+        LocationPlace(
+            label = listOfNotNull(
+                address.locality,
+                address.adminArea,
+                address.countryName,
+            ).filter { it.isNotBlank() }.distinct().joinToString(", "),
+            city = address.locality.orEmpty(),
+            country = address.countryName.orEmpty(),
+        )
+    }.getOrDefault(LocationPlace())
 
     @SuppressLint("MissingPermission")
     private suspend fun requestCurrentLocation(
@@ -309,3 +350,9 @@ class FieldMapRepository @Inject constructor(
         const val FALLBACK_LOCATION_TIMEOUT_MS = 3_000L
     }
 }
+
+private data class LocationPlace(
+    val label: String = "",
+    val city: String = "",
+    val country: String = "",
+)

@@ -47,6 +47,14 @@ interface SollApiService {
         @Body request: DailyTaskUpdateRequest,
     ): DailyTaskListResponse
 
+    @Multipart
+    @POST("api/v1/daily/tasks/today/{task_id}/attachments")
+    suspend fun uploadTodayDailyTaskAttachment(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "task_id", encoded = true) taskId: String,
+        @Part file: MultipartBody.Part,
+    ): DailyTaskAttachmentResponse
+
     @GET("api/v1/android/sync-status")
     suspend fun getAndroidSyncStatus(
         @Header("Authorization") authorization: String? = null,
@@ -830,6 +838,28 @@ data class DailyTaskItemResponse(
     val text: String = "",
     val done: Boolean = false,
     val line: Int = 0,
+    val attachments: List<DailyTaskAttachmentResponse> = emptyList(),
+)
+
+data class DailyTaskAttachmentResponse(
+    val id: String = "",
+    @Json(name = "task_id")
+    val taskId: String = "",
+    val filename: String = "",
+    @Json(name = "content_type")
+    val contentType: String = "",
+    val size: Long = 0,
+    val path: String = "",
+    @Json(name = "analysis_status")
+    val analysisStatus: String = "",
+    @Json(name = "analysis_summary")
+    val analysisSummary: String = "",
+    @Json(name = "ocr_text")
+    val ocrText: String = "",
+    @Json(name = "search_terms")
+    val searchTerms: List<String> = emptyList(),
+    @Json(name = "created_at")
+    val createdAt: String = "",
 )
 
 data class DailyTaskCreateRequest(

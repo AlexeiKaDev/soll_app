@@ -70,6 +70,7 @@ data class TaskBoardUiState(
     val dailySourcePath: String = "",
     val dailyLoading: Boolean = false,
     val dailyActionTaskId: String? = null,
+    val dailyAttachmentTaskId: String? = null,
     val dailyAdding: Boolean = false,
     val today: List<SollTask> = emptyList(),
     val blocked: List<SollTask> = emptyList(),
@@ -85,7 +86,7 @@ data class TaskBoardUiState(
     val isShowingCache: Boolean = false,
     val pendingEvidenceTaskIds: Set<String> = emptySet(),
     val pendingTaskActionIds: Set<String> = emptySet(),
-    val selectedMode: TaskWorkspaceMode = TaskWorkspaceMode.DAILY,
+    val selectedMode: TaskWorkspaceMode = TaskWorkspaceMode.TASKS,
     val selectedTab: TaskTab = TaskTab.ALL,
     val selectedPriority: TaskPriorityFilter = TaskPriorityFilter.ALL,
     val searchQuery: String = "",
@@ -529,6 +530,47 @@ class TaskBoardViewModel @Inject constructor(
                         it.copy(
                             dailyActionTaskId = null,
                             message = error.message ?: "Не удалось обновить дело",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun attachDailyTaskFile(task: SollDailyTask, uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(dailyAttachmentTaskId = task.id, message = null, isError = false) }
+            sollGateway.uploadTodayDailyTaskAttachment(task.id, uri).fold(
+                onSuccess = { attachment ->
+                    sollGateway.getTodayDailyTasks().fold(
+                        onSuccess = { list ->
+                            _uiState.update {
+                                it.copy(
+                                    dailyTasks = list.tasks,
+                                    dailySourcePath = list.sourcePath,
+                                    dailyAttachmentTaskId = null,
+                                    message = attachment.analysisStatus.dailyAttachmentMessage(),
+                                    isError = false,
+                                )
+                            }
+                        },
+                        onFailure = { error ->
+                            _uiState.update {
+                                it.copy(
+                                    dailyAttachmentTaskId = null,
+                                    message = error.message ?: "Вложение добавлено, но дела не обновились",
+                                    isError = true,
+                                )
+                            }
+                        },
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            dailyAttachmentTaskId = null,
+                            message = error.message ?: "Не удалось прикрепить файл",
                             isError = true,
                         )
                     }
@@ -1340,6 +1382,15 @@ private fun String.normalizedTaskPriorityLabel(): String =
         "C", "P3" -> "C"
         "D", "P4" -> "D"
         else -> trim().uppercase()
+    }
+
+private fun String.dailyAttachmentMessage(): String =
+    when (this) {
+        "parsed" -> "Файл прикреплен и разобран"
+        "ocr_only" -> "Фото прикреплено, текст распознан"
+        "vision_unavailable" -> "Фото прикреплено, для объекта нужна локальная vision-модель"
+        "unsupported" -> "Файл прикреплен, анализ недоступен"
+        else -> "Вложение прикреплено"
     }
 
 private fun String.parseTags(): List<String> =

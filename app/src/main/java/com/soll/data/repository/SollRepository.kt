@@ -40,6 +40,7 @@ import com.soll.data.api.ChatSessionCreateResponse
 import com.soll.data.api.ChatSessionSummaryResponse
 import com.soll.data.api.ChatTurnRequest
 import com.soll.data.api.CreateRawFileRequest
+import com.soll.data.api.DailyTaskAttachmentResponse
 import com.soll.data.api.DailyTaskCreateRequest
 import com.soll.data.api.DailyTaskItemResponse
 import com.soll.data.api.DailyTaskListResponse
@@ -125,6 +126,7 @@ import com.soll.domain.soll.SollChatActionResult
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollChatSession
 import com.soll.domain.soll.SollDailyTask
+import com.soll.domain.soll.SollDailyTaskAttachment
 import com.soll.domain.soll.SollDailyTaskList
 import com.soll.domain.soll.SollDevice
 import com.soll.domain.soll.SollDeviceToken
@@ -251,6 +253,25 @@ class SollRepository @Inject constructor(
                 authorization = authorizationHeader(),
                 taskId = cleanTaskId,
                 request = DailyTaskUpdateRequest(done = done),
+            ).toDomain()
+        }
+
+    override suspend fun uploadTodayDailyTaskAttachment(taskId: String, uri: Uri): Result<SollDailyTaskAttachment> =
+        runSuspendCatching {
+            val cleanTaskId = taskId.trim()
+            require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
+            val metadata = resolveRawUploadMetadata(uri)
+            val filename = buildRawUploadFilename(metadata.displayName)
+            val requestBody = uriRequestBody(
+                uri = uri,
+                contentType = metadata.mimeType,
+                contentLength = metadata.size,
+            )
+            val part = MultipartBody.Part.createFormData("file", filename, requestBody)
+            service().uploadTodayDailyTaskAttachment(
+                authorization = authorizationHeader(),
+                taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
+                file = part,
             ).toDomain()
         }
 
@@ -1358,6 +1379,22 @@ class SollRepository @Inject constructor(
             text = text,
             done = done,
             line = line,
+            attachments = attachments.map { it.toDomain() },
+        )
+
+    private fun DailyTaskAttachmentResponse.toDomain(): SollDailyTaskAttachment =
+        SollDailyTaskAttachment(
+            id = id,
+            taskId = taskId,
+            filename = filename,
+            contentType = contentType,
+            size = size,
+            path = path,
+            analysisStatus = analysisStatus,
+            analysisSummary = analysisSummary,
+            ocrText = ocrText,
+            searchTerms = searchTerms,
+            createdAt = createdAt,
         )
 
     private fun SollTaskBoardCountsResponse.toDomain(): SollTaskBoardCounts =

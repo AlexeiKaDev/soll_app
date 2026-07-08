@@ -26,6 +26,7 @@ import com.soll.presentation.screens.logs.LogsScreen
 import com.soll.presentation.screens.settings.DeviceQaScreen
 import com.soll.presentation.screens.settings.SettingsScreen
 import com.soll.presentation.screens.tasks.TaskBoardScreen
+import com.soll.presentation.screens.tasks.TaskWorkspaceMode
 import com.soll.presentation.screens.tools.ToolsScreen
 import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
@@ -146,6 +147,17 @@ fun AppNavigation(
             }
             composable(AppDestinations.Tasks.route) {
                 TaskBoardScreen()
+            }
+            composable(Routes.DAILY_TODO) {
+                TaskBoardScreen(
+                    title = "Список дел",
+                    initialMode = TaskWorkspaceMode.DAILY,
+                    visibleModes = listOf(
+                        TaskWorkspaceMode.DAILY,
+                        TaskWorkspaceMode.SOURCES,
+                    ),
+                    onBack = { navController.popBackStack() },
+                )
             }
             composable(AppDestinations.Devices.route) {
                 DevicesScreen()

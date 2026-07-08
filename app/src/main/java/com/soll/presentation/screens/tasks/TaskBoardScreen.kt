@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Done
@@ -90,6 +91,15 @@ import com.soll.ui.components.RemoteLinkPreviewImage
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskBoardScreen(
+    title: String = "Задачи Soll",
+    initialMode: TaskWorkspaceMode = TaskWorkspaceMode.TASKS,
+    visibleModes: List<TaskWorkspaceMode> = listOf(
+        TaskWorkspaceMode.TASKS,
+        TaskWorkspaceMode.INSIGHTS,
+        TaskWorkspaceMode.ROADMAP,
+        TaskWorkspaceMode.SOURCES,
+    ),
+    onBack: (() -> Unit)? = null,
     viewModel: TaskBoardViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -97,6 +107,7 @@ fun TaskBoardScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var evidenceTask by remember { mutableStateOf<SollTask?>(null) }
+    var dailyAttachmentTask by remember { mutableStateOf<SollDailyTask?>(null) }
     var dailyTaskText by remember { mutableStateOf("") }
     var includeDailyTaskLocation by remember { mutableStateOf(false) }
     var pendingLocationDailyTaskText by remember { mutableStateOf<String?>(null) }
@@ -105,6 +116,13 @@ fun TaskBoardScreen(
         evidenceTask = null
         if (task != null && uri != null) {
             viewModel.attachEvidence(task, uri)
+        }
+    }
+    val dailyAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val task = dailyAttachmentTask
+        dailyAttachmentTask = null
+        if (task != null && uri != null) {
+            viewModel.attachDailyTaskFile(task, uri)
         }
     }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -120,6 +138,12 @@ fun TaskBoardScreen(
         }
     }
 
+    LaunchedEffect(initialMode) {
+        if (uiState.selectedMode != initialMode) {
+            viewModel.selectMode(initialMode)
+        }
+    }
+
     LaunchedEffect(uiState.message) {
         uiState.message?.let { message ->
             snackbarHostState.showSnackbar(message)
@@ -132,7 +156,14 @@ fun TaskBoardScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Задачи Soll") },
+                title = { Text(title) },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        }
+                    }
+                },
                 actions = {
                     IconButton(onClick = viewModel::refresh, enabled = !uiState.isLoading) {
                         Icon(Icons.Default.Refresh, contentDescription = "Обновить")
@@ -152,6 +183,7 @@ fun TaskBoardScreen(
 
             TaskWorkspaceTabs(
                 selectedMode = uiState.selectedMode,
+                visibleModes = visibleModes,
                 onSelect = viewModel::selectMode,
             )
 
@@ -195,6 +227,10 @@ fun TaskBoardScreen(
                             }
                         },
                         onToggleTask = viewModel::setDailyTaskDone,
+                        onAttachTask = { task ->
+                            dailyAttachmentTask = task
+                            dailyAttachmentPicker.launch("*/*")
+                        },
                     )
                     TaskWorkspaceMode.TASKS -> {
                         Column(modifier = Modifier.fillMaxSize()) {
@@ -313,6 +349,7 @@ private fun LoadMoreTasksRow(
 @Composable
 private fun TaskWorkspaceTabs(
     selectedMode: TaskWorkspaceMode,
+    visibleModes: List<TaskWorkspaceMode>,
     onSelect: (TaskWorkspaceMode) -> Unit,
 ) {
     Row(
@@ -323,7 +360,7 @@ private fun TaskWorkspaceTabs(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf(TaskWorkspaceMode.DAILY, TaskWorkspaceMode.SOURCES).forEach { mode ->
+        visibleModes.forEach { mode ->
             val selected = selectedMode == mode
             Column(
                 modifier = Modifier
@@ -371,6 +408,7 @@ private fun DailyTasksMode(
     onIncludeLocationChange: (Boolean) -> Unit,
     onAddTask: () -> Unit,
     onToggleTask: (SollDailyTask, Boolean) -> Unit,
+    onAttachTask: (SollDailyTask) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -397,7 +435,9 @@ private fun DailyTasksMode(
                 DailyTaskRow(
                     task = task,
                     isRunning = uiState.dailyActionTaskId == task.id,
+                    isAttachmentRunning = uiState.dailyAttachmentTaskId == task.id,
                     onToggle = { checked -> onToggleTask(task, checked) },
+                    onAttach = { onAttachTask(task) },
                 )
             }
         }
@@ -468,7 +508,9 @@ private fun DailyTaskAddCard(
 private fun DailyTaskRow(
     task: SollDailyTask,
     isRunning: Boolean,
+    isAttachmentRunning: Boolean,
     onToggle: (Boolean) -> Unit,
+    onAttach: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -481,33 +523,70 @@ private fun DailyTaskRow(
             },
         ),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (isRunning) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-            } else {
-                Checkbox(
-                    checked = task.done,
-                    onCheckedChange = onToggle,
-                )
-            }
-            Text(
-                text = task.text,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (task.done) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.weight(1f),
-            )
+                    Checkbox(
+                        checked = task.done,
+                        onCheckedChange = onToggle,
+                    )
+                }
+                Text(
+                    text = task.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (task.done) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onAttach, enabled = !isAttachmentRunning) {
+                    if (isAttachmentRunning) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.AttachFile, contentDescription = "Прикрепить файл")
+                    }
+                }
+            }
+            if (task.attachments.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    task.attachments.take(2).forEach { attachment ->
+                        PassiveChip(text = attachment.dailyAttachmentChipText())
+                    }
+                    if (task.attachments.size > 2) {
+                        PassiveChip(text = "+${task.attachments.size - 2}")
+                    }
+                }
+            }
         }
     }
+}
+
+private fun com.soll.domain.soll.SollDailyTaskAttachment.dailyAttachmentChipText(): String {
+    val label = when (analysisStatus) {
+        "parsed" -> "Файл"
+        "ocr_only" -> "Фото OCR"
+        "vision_unavailable" -> "Фото"
+        "unsupported" -> "Файл"
+        else -> "Вложение"
+    }
+    return "$label: ${filename.take(22)}"
 }
 
 @Composable

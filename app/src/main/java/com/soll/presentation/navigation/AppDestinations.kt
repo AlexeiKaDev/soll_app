@@ -39,6 +39,7 @@ object Routes {
     const val MUSIC = "music"
     const val BOOK_READER = "book_reader"
     const val BREATHING = "guided_breathing"
+    const val DAILY_TODO = "daily_todo"
     const val SCANNER = "scanner"
     const val DEVICE_QA = "device_qa"
 }
@@ -55,7 +56,7 @@ object AppDestinations {
 
     val tools = listOf(
         ToolDestination(
-            route = Tasks.route,
+            route = Routes.DAILY_TODO,
             title = "Список дел",
             description = "Личные дела на сегодня, отдельно от task board Soll",
             icon = Tasks.icon,

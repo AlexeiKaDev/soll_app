@@ -114,6 +114,21 @@ data class SollDailyTask(
     val text: String,
     val done: Boolean,
     val line: Int,
+    val attachments: List<SollDailyTaskAttachment> = emptyList(),
+)
+
+data class SollDailyTaskAttachment(
+    val id: String,
+    val taskId: String,
+    val filename: String,
+    val contentType: String,
+    val size: Long,
+    val path: String,
+    val analysisStatus: String,
+    val analysisSummary: String,
+    val ocrText: String,
+    val searchTerms: List<String>,
+    val createdAt: String,
 )
 
 data class SollDailyTaskList(
@@ -472,6 +487,7 @@ interface SollGateway {
     suspend fun getTodayDailyTasks(): Result<SollDailyTaskList>
     suspend fun addTodayDailyTask(text: String, locationLabel: String = ""): Result<SollDailyTaskList>
     suspend fun updateTodayDailyTask(taskId: String, done: Boolean): Result<SollDailyTaskList>
+    suspend fun uploadTodayDailyTaskAttachment(taskId: String, uri: Uri): Result<SollDailyTaskAttachment>
     suspend fun getAndroidSyncStatus(): Result<SollAndroidSyncStatus>
     suspend fun listChatSessions(limit: Int = 50): Result<List<SollChatSession>>
     suspend fun createChatSession(title: String, sessionId: String? = null): Result<SollChatSession>

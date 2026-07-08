@@ -1,5 +1,6 @@
 package com.soll.presentation.navigation
 
+import android.content.Intent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
@@ -12,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -26,7 +28,7 @@ import com.soll.presentation.screens.logs.LogsScreen
 import com.soll.presentation.screens.settings.DeviceQaScreen
 import com.soll.presentation.screens.settings.SettingsScreen
 import com.soll.presentation.screens.tasks.TaskBoardScreen
-import com.soll.presentation.screens.tasks.TaskWorkspaceMode
+import com.soll.presentation.screens.todo.DailyTodoActivity
 import com.soll.presentation.screens.tools.ToolsScreen
 import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
@@ -42,6 +44,7 @@ fun AppNavigation(
     onLaunchCommandConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
     val screens = AppDestinations.bottomBar
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -148,24 +151,17 @@ fun AppNavigation(
             composable(AppDestinations.Tasks.route) {
                 TaskBoardScreen()
             }
-            composable(Routes.DAILY_TODO) {
-                TaskBoardScreen(
-                    title = "Список дел",
-                    initialMode = TaskWorkspaceMode.DAILY,
-                    visibleModes = listOf(
-                        TaskWorkspaceMode.DAILY,
-                        TaskWorkspaceMode.SOURCES,
-                    ),
-                    onBack = { navController.popBackStack() },
-                )
-            }
             composable(AppDestinations.Devices.route) {
                 DevicesScreen()
             }
             composable(AppDestinations.Tools.route) {
                 ToolsScreen(
                     onNavigateToDestination = { destination ->
-                        navController.navigate(destination.route)
+                        if (destination.route == Routes.DAILY_TODO) {
+                            context.startActivity(Intent(context, DailyTodoActivity::class.java))
+                        } else {
+                            navController.navigate(destination.route)
+                        }
                     },
                 )
             }

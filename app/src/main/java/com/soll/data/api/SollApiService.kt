@@ -831,6 +831,8 @@ data class DailyTaskListResponse(
     @Json(name = "source_path")
     val sourcePath: String = "",
     val tasks: List<DailyTaskItemResponse> = emptyList(),
+    @Json(name = "created_task_id")
+    val createdTaskId: String? = null,
 )
 
 data class DailyTaskItemResponse(

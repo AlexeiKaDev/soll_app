@@ -1371,6 +1371,7 @@ class SollRepository @Inject constructor(
             date = date,
             sourcePath = sourcePath,
             tasks = tasks.map { it.toDomain() },
+            createdTaskId = createdTaskId,
         )
 
     private fun DailyTaskItemResponse.toDomain(): SollDailyTask =

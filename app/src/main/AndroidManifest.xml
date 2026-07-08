@@ -88,6 +88,12 @@
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/ic_launcher_background" />
 
+        <activity
+            android:name=".presentation.screens.todo.DailyTodoActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.Soll" />
+
         <!-- Main Activity -->
         <activity
             android:name=".presentation.MainActivity"

@@ -135,6 +135,7 @@ data class SollDailyTaskList(
     val date: String,
     val sourcePath: String,
     val tasks: List<SollDailyTask>,
+    val createdTaskId: String? = null,
 )
 
 data class SollChatSession(

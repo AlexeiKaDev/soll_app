@@ -582,6 +582,14 @@ object AppModule {
         }
     }
 
+    private val migration21To22 = object : Migration(21, 22) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `assigned_node_id` TEXT")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `required_capabilities_json` TEXT NOT NULL DEFAULT '[]'")
+            db.execSQL("ALTER TABLE `task_cache` ADD COLUMN `routing_state` TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
     private const val ENCRYPTED_PREFS_NAME = "soll_secure_prefs"
 
     private fun createCoreTables(db: SupportSQLiteDatabase) {
@@ -753,6 +761,7 @@ object AppModule {
                 migration18To19,
                 migration19To20,
                 migration20To21,
+                migration21To22,
             )
             .build()
 

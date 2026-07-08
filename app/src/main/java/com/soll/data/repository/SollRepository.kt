@@ -1290,6 +1290,9 @@ class SollRepository @Inject constructor(
             valueMetric = valueMetric,
             branch = branch,
             pairId = pairId,
+            assignedNodeId = assignedNodeId,
+            requiredCapabilities = requiredCapabilities,
+            routingState = routingState,
         )
 
     private fun RawFileResponse.toDomain(): SollRawNote =

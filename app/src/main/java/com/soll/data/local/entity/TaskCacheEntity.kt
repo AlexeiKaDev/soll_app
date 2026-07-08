@@ -56,6 +56,15 @@ data class TaskCacheEntity(
     @ColumnInfo(name = "pair_id")
     val pairId: String?,
 
+    @ColumnInfo(name = "assigned_node_id")
+    val assignedNodeId: String?,
+
+    @ColumnInfo(name = "required_capabilities_json")
+    val requiredCapabilitiesJson: String,
+
+    @ColumnInfo(name = "routing_state")
+    val routingState: String,
+
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long,
 ) {
@@ -77,6 +86,9 @@ data class TaskCacheEntity(
             valueMetric = valueMetric,
             branch = branch,
             pairId = pairId,
+            assignedNodeId = assignedNodeId,
+            requiredCapabilities = JSONArray(requiredCapabilitiesJson).toStringList(),
+            routingState = routingState,
         )
 
     companion object {
@@ -98,6 +110,9 @@ data class TaskCacheEntity(
                 valueMetric = task.valueMetric,
                 branch = task.branch,
                 pairId = task.pairId,
+                assignedNodeId = task.assignedNodeId,
+                requiredCapabilitiesJson = JSONArray(task.requiredCapabilities).toString(),
+                routingState = task.routingState,
                 updatedAt = updatedAt,
             )
     }

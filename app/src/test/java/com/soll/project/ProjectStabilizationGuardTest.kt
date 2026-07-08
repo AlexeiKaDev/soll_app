@@ -67,14 +67,17 @@ class ProjectStabilizationGuardTest {
         val appModule = projectFile("app/src/main/java/com/soll/di/AppModule.kt").readText()
         val schema20 = projectFile("app/schemas/com.soll.data.local.SollDatabase/20.json").readText()
         val schema21 = projectFile("app/schemas/com.soll.data.local.SollDatabase/21.json").readText()
+        val schema22 = projectFile("app/schemas/com.soll.data.local.SollDatabase/22.json").readText()
 
         assertFalse(appModule.contains("fallbackToDestructiveMigration()"))
         assertTrue(appModule.contains("migration1To2"))
         assertTrue(appModule.contains("migration3To4"))
         assertTrue(appModule.contains("migration19To20"))
         assertTrue(appModule.contains("migration20To21"))
+        assertTrue(appModule.contains("migration21To22"))
         assertTrue(schema20.contains("\"version\": 20"))
         assertTrue(schema21.contains("\"version\": 21"))
+        assertTrue(schema22.contains("\"version\": 22"))
         listOf(
             "approval_id",
             "tool_job_id",
@@ -92,6 +95,14 @@ class ProjectStabilizationGuardTest {
         assertTrue(appModule.contains("ADD COLUMN `dedupe_key`"))
         assertTrue(schema21.contains("\"columnName\": \"dedupe_key\""))
         assertTrue(schema21.contains("\"name\": \"index_app_notifications_dedupe_key\""))
+        listOf(
+            "assigned_node_id",
+            "required_capabilities_json",
+            "routing_state",
+        ).forEach { column ->
+            assertTrue(appModule.contains("ADD COLUMN `$column`"))
+            assertTrue(schema22.contains("\"columnName\": \"$column\""))
+        }
     }
 
     @Test
@@ -479,6 +490,13 @@ class ProjectStabilizationGuardTest {
         assertTrue(screen.contains("maxLines = if (expanded) Int.MAX_VALUE else TASK_DESCRIPTION_COLLAPSED_LINES"))
         assertTrue(screen.contains("text = \"Источник: \${task.sourceRef}\""))
         assertTrue(screen.contains("maxLines = 1"))
+        assertTrue(screen.contains("uiState.routedOpenTaskCount"))
+        assertTrue(screen.contains("task.hasRoutingContext()"))
+        assertTrue(screen.contains("routingState.routingStateLabel()"))
+        assertTrue(screen.contains("requiredCapabilities.requiredCapabilitiesLabel()"))
+        assertTrue(viewModel.contains("internal fun SollTask.hasRoutingContext()"))
+        assertTrue(viewModel.contains("assignedNodeId.orEmpty().contains"))
+        assertTrue(viewModel.contains("requiredCapabilities.any"))
         assertTrue(screen.contains("key = { it.taskListKey() }"))
         assertTrue(screen.contains("val visibility = taskActionVisibility(status = status, taskId = taskId)"))
         assertTrue(screen.contains("internal fun taskActionVisibility(status: String, taskId: String): TaskActionVisibility"))

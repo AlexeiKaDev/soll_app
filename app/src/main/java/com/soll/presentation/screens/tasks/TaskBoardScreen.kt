@@ -397,6 +397,9 @@ private fun TaskSummary(uiState: TaskBoardUiState) {
         if (uiState.pendingTaskActionCount > 0) {
             PassiveChip(text = "Действия: ${uiState.pendingTaskActionCount}", icon = Icons.Default.Schedule)
         }
+        if (uiState.routedOpenTaskCount > 0) {
+            PassiveChip(text = "Маршрут: ${uiState.routedOpenTaskCount}", icon = Icons.Default.FilterList)
+        }
     }
 }
 
@@ -1107,6 +1110,7 @@ private fun TaskCard(
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
             ) {
                 PassiveChip(text = task.status.statusLabel())
                 task.dueDate?.takeIf { it.isNotBlank() }?.let { dueDate ->
@@ -1117,6 +1121,24 @@ private fun TaskCard(
                 }
                 if (hasPendingTaskAction) {
                     PassiveChip(text = "Действие в очереди")
+                }
+            }
+
+            if (task.hasRoutingContext()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                    task.routingState.takeIf { it.isNotBlank() }?.let { routingState ->
+                        PassiveChip(text = "Маршрут: ${routingState.routingStateLabel()}")
+                    }
+                    task.assignedNodeId?.takeIf { it.isNotBlank() }?.let { nodeId ->
+                        PassiveChip(text = "Нода: $nodeId")
+                    }
+                    if (task.requiredCapabilities.isNotEmpty()) {
+                        PassiveChip(text = "Нужно: ${task.requiredCapabilities.requiredCapabilitiesLabel()}")
+                    }
                 }
             }
 
@@ -1195,6 +1217,15 @@ private fun TaskDetailSection(task: SollTask) {
         }
         task.dueDate?.takeIf { it.isNotBlank() }?.let { dueDate ->
             DetailRow(label = "Дата", value = dueDate)
+        }
+        task.routingState.takeIf { it.isNotBlank() }?.let { routingState ->
+            DetailRow(label = "Маршрут", value = routingState.routingStateLabel())
+        }
+        task.assignedNodeId?.takeIf { it.isNotBlank() }?.let { nodeId ->
+            DetailRow(label = "Нода", value = nodeId)
+        }
+        if (task.requiredCapabilities.isNotEmpty()) {
+            DetailRow(label = "Нужно", value = task.requiredCapabilities.joinToString(", "))
         }
     }
 }
@@ -1391,6 +1422,22 @@ private fun String.statusLabel(): String =
         "rejected" -> "отклонена"
         else -> this
     }
+
+private fun String.routingStateLabel(): String =
+    when (trim()) {
+        "waiting_for_android_adb_node" -> "ждет Android/ADB-ноду"
+        "delegated_active" -> "делегировано активной ноде"
+        "queued" -> "в очереди"
+        "applied" -> "применено"
+        "failed" -> "ошибка маршрута"
+        else -> trim().replace('_', ' ')
+    }
+
+private fun List<String>.requiredCapabilitiesLabel(): String {
+    val visible = take(2)
+    val suffix = (size - visible.size).takeIf { it > 0 }?.let { " +$it" }.orEmpty()
+    return visible.joinToString(", ") + suffix
+}
 
 private const val TASK_DESCRIPTION_COLLAPSED_LINES = 4
 

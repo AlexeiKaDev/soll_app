@@ -20,6 +20,9 @@ class TaskBoardFilterTest {
             priority = "A",
             dueDate = null,
             tags = listOf("push", "notifications"),
+            assignedNodeId = "soll-home",
+            requiredCapabilities = listOf("android_adb"),
+            routingState = "waiting_for_android_adb_node",
         )
 
         assertTrue(task.matchesTaskQuery("CLOSED APP"))
@@ -27,7 +30,22 @@ class TaskBoardFilterTest {
         assertTrue(task.matchesTaskQuery("manual/android"))
         assertTrue(task.matchesTaskQuery("notifications"))
         assertTrue(task.matchesTaskQuery("in_progress"))
+        assertTrue(task.matchesTaskQuery("soll-home"))
+        assertTrue(task.matchesTaskQuery("android_adb"))
+        assertTrue(task.matchesTaskQuery("waiting_for_android"))
+        assertTrue(task.hasRoutingContext())
         assertFalse(task.matchesTaskQuery("roadmap"))
+    }
+
+    @Test
+    fun `task summary counts open tasks with routing context`() {
+        val state = TaskBoardUiState(
+            today = listOf(task(id = "routed-today", status = "today", routingState = "delegated_active")),
+            blocked = listOf(task(id = "routed-blocked", status = "blocked", assignedNodeId = "soll-home")),
+            doneRecent = listOf(task(id = "routed-done", status = "done", assignedNodeId = "soll-home")),
+        )
+
+        assertEquals(2, state.routedOpenTaskCount)
     }
 
     @Test
@@ -104,7 +122,12 @@ class TaskBoardFilterTest {
         assertFalse(rejected.canReject)
     }
 
-    private fun task(id: String, status: String): SollTask =
+    private fun task(
+        id: String,
+        status: String,
+        assignedNodeId: String? = null,
+        routingState: String = "",
+    ): SollTask =
         SollTask(
             id = id,
             title = "Task ${id.ifBlank { "without id" }.trim()}",
@@ -115,5 +138,7 @@ class TaskBoardFilterTest {
             priority = "B",
             dueDate = null,
             tags = emptyList(),
+            assignedNodeId = assignedNodeId,
+            routingState = routingState,
         )
 }

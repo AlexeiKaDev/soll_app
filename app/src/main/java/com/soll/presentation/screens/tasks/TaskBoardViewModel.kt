@@ -167,6 +167,9 @@ data class TaskBoardUiState(
     val pendingTaskActionCount: Int
         get() = pendingTaskActionIds.size
 
+    val routedOpenTaskCount: Int
+        get() = openTasksRaw().count { it.hasRoutingContext() }
+
     val canLoadMoreTasks: Boolean
         get() = hasLimitedSelectedTaskSection && requestedTaskBoardLimitPerSection < MAX_TASK_BOARD_SECTION_LIMIT
 }
@@ -1182,8 +1185,16 @@ internal fun SollTask.matchesTaskQuery(query: String): Boolean {
         sourceRef.contains(needle, ignoreCase = true) ||
         status.contains(needle, ignoreCase = true) ||
         priority.contains(needle, ignoreCase = true) ||
-        tags.any { tag -> tag.contains(needle, ignoreCase = true) }
+        tags.any { tag -> tag.contains(needle, ignoreCase = true) } ||
+        assignedNodeId.orEmpty().contains(needle, ignoreCase = true) ||
+        routingState.contains(needle, ignoreCase = true) ||
+        requiredCapabilities.any { capability -> capability.contains(needle, ignoreCase = true) }
 }
+
+internal fun SollTask.hasRoutingContext(): Boolean =
+    assignedNodeId?.isNotBlank() == true ||
+        routingState.isNotBlank() ||
+        requiredCapabilities.isNotEmpty()
 
 private fun SollTask.isIdeaTask(): Boolean =
     IDEA_TASK_MARKERS.any { marker -> matchesTaskQuery(marker) }

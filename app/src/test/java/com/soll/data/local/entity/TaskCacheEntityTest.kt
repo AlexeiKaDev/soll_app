@@ -24,6 +24,9 @@ class TaskCacheEntityTest {
             valueMetric = "closed_app_delivery",
             branch = "product",
             pairId = "pair-1",
+            assignedNodeId = "soll-home",
+            requiredCapabilities = listOf("android_adb", "usb_otg"),
+            routingState = "waiting_for_android_adb_node",
         )
 
         val restored = TaskCacheEntity.fromDomain(task, updatedAt = 123L).toDomain()

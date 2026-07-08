@@ -767,6 +767,12 @@ data class SollTaskResponse(
     val branch: String = "innovation",
     @Json(name = "pair_id")
     val pairId: String? = null,
+    @Json(name = "assigned_node_id")
+    val assignedNodeId: String? = null,
+    @Json(name = "required_capabilities")
+    val requiredCapabilities: List<String> = emptyList(),
+    @Json(name = "routing_state")
+    val routingState: String = "",
 )
 
 data class SollTaskMutationResponse(
@@ -801,6 +807,12 @@ data class SollTaskMutationResponse(
     val branch: String = "innovation",
     @Json(name = "pair_id")
     val pairId: String? = null,
+    @Json(name = "assigned_node_id")
+    val assignedNodeId: String? = null,
+    @Json(name = "required_capabilities")
+    val requiredCapabilities: List<String> = emptyList(),
+    @Json(name = "routing_state")
+    val routingState: String = "",
     val task: SollTaskResponse? = null,
 ) {
     fun taskResponse(): SollTaskResponse {
@@ -829,6 +841,9 @@ data class SollTaskMutationResponse(
             valueMetric = valueMetric,
             branch = branch,
             pairId = pairId,
+            assignedNodeId = assignedNodeId,
+            requiredCapabilities = requiredCapabilities,
+            routingState = routingState,
         )
     }
 }

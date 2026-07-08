@@ -294,6 +294,9 @@ data class SollTask(
     val valueMetric: String = "",
     val branch: String = "innovation",
     val pairId: String? = null,
+    val assignedNodeId: String? = null,
+    val requiredCapabilities: List<String> = emptyList(),
+    val routingState: String = "",
 )
 
 data class SollRawNote(

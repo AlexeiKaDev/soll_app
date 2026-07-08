@@ -457,7 +457,15 @@ data class AndroidSyncStatusResponse(
     val briefing: SollBriefingResponse? = null,
     val chat: AndroidChatSyncResponse = AndroidChatSyncResponse(),
     val protocol: AndroidProtocolBootstrapResponse? = null,
+    val workspace: AndroidWorkspaceSyncResponse = AndroidWorkspaceSyncResponse(),
     val warnings: List<String> = emptyList(),
+)
+
+data class AndroidWorkspaceSyncResponse(
+    val insights: LearningItemsResponse = LearningItemsResponse(),
+    val sources: List<MonitoredSourceResponse> = emptyList(),
+    @Json(name = "source_items_by_source")
+    val sourceItemsBySource: Map<String, List<SourceItemResponse>> = emptyMap(),
 )
 
 data class SollNodeIdentityResponse(

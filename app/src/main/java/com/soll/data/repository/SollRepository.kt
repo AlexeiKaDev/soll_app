@@ -454,8 +454,10 @@ class SollRepository @Inject constructor(
                 limit = limit.coerceIn(1, 200),
             ).items.map { it.toDomain() }
         }.recoverCatching { error ->
-            if (!error.isHttpStatus(404)) throw error
-            emptyList()
+            if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
+            getAndroidSyncStatus().getOrThrow().insights
+                .filter { status.isNullOrBlank() || it.status == status }
+                .take(limit.coerceIn(1, 200))
         }
 
     override suspend fun updateLearningItemStatus(itemId: String, status: String): Result<SollLearningItem?> =
@@ -540,8 +542,8 @@ class SollRepository @Inject constructor(
         runSuspendCatching {
             service().listSources(readAuthorizationHeader()).map { it.toDomain() }
         }.recoverCatching { error ->
-            if (!error.isHttpStatus(404)) throw error
-            emptyList()
+            if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
+            getAndroidSyncStatus().getOrThrow().sources
         }
 
     override suspend fun listSourceItems(sourceId: String, limit: Int): Result<List<SollSourceItem>> =
@@ -551,6 +553,12 @@ class SollRepository @Inject constructor(
                 sourceId = sourceId.trim(),
                 limit = limit.coerceIn(1, 100),
             ).map { it.toDomain() }
+        }.recoverCatching { error ->
+            if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
+            getAndroidSyncStatus().getOrThrow()
+                .sourceItemsBySource[sourceId.trim()]
+                .orEmpty()
+                .take(limit.coerceIn(1, 100))
         }
 
     override suspend fun createSource(
@@ -1072,6 +1080,11 @@ class SollRepository @Inject constructor(
             briefing = briefing?.toDomain(),
             chat = chat.toDomain(),
             protocol = protocol?.toDomain(),
+            insights = workspace.insights.items.map { it.toDomain() },
+            sources = workspace.sources.map { it.toDomain() },
+            sourceItemsBySource = workspace.sourceItemsBySource.mapValues { (_, items) ->
+                items.map { it.toDomain() }
+            },
             warnings = (warnings + extraWarnings).distinct(),
             fromCache = fromCache,
             cachedAtMillis = cachedAtMillis,
@@ -1662,6 +1675,9 @@ private data class RawUploadMetadata(
 
 private fun Throwable.isHttpStatus(statusCode: Int): Boolean =
     this is HttpException && code() == statusCode
+
+private fun Throwable.isWorkspaceSnapshotFallbackStatus(): Boolean =
+    this is HttpException && code() in setOf(401, 403, 404)
 
 private fun buildTaskGraphFromBoard(
     board: SollTaskBoard,

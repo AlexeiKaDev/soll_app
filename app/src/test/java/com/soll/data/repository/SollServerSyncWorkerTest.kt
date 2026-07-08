@@ -100,6 +100,38 @@ class SollServerSyncWorkerTest {
     }
 
     @Test
+    fun `background sync notifies source digest but keeps source item silent`() {
+        val plan = planChatNotificationsForSync(
+            messages = listOf(
+                chatMessage(
+                    id = 2,
+                    role = "assistant",
+                    content = "source item",
+                    metadata = mapOf(
+                        "entity_type" to "source_monitor",
+                        "event_type" to "source_item",
+                    ),
+                ),
+                chatMessage(
+                    id = 3,
+                    role = "assistant",
+                    content = "source digest",
+                    metadata = mapOf(
+                        "entity_type" to "source_monitor",
+                        "event_type" to "source_digest",
+                    ),
+                ),
+            ),
+            lastSeenMessageId = 1,
+            latestMessageId = 3,
+            appInForeground = false,
+        )
+
+        assertEquals(listOf(3L), plan.messagesToNotify.map { it.id })
+        assertEquals(3L, plan.nextLastSeenMessageId)
+    }
+
+    @Test
     fun `background sync does not advance past messages it did not receive`() {
         val plan = planChatNotificationsForSync(
             messages = emptyList(),

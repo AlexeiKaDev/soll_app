@@ -527,6 +527,35 @@ class ChatMessageFiltersTest {
         assertTrue(message.badgeUis().map { it.text }.contains("Habr"))
     }
 
+    @Test
+    fun `source digest exposes article rows for chat card`() {
+        val message = chatMessage(
+            content = "Digest",
+            metadata = mapOf(
+                "entity_type" to "source_monitor",
+                "event_type" to "source_digest",
+                "items" to listOf(
+                    mapOf(
+                        "title" to "First article",
+                        "summary" to "Useful detail for Android sync.",
+                        "source_url" to "https://example.com/one",
+                        "usefulness" to "high",
+                        "needs_deep_dive" to true,
+                    ),
+                ),
+            ),
+        )
+
+        val items = message.sourceDigestItemUis()
+
+        assertEquals(1, items.size)
+        assertEquals("First article", items[0].title)
+        assertEquals("Useful detail for Android sync.", items[0].summary)
+        assertEquals("https://example.com/one", items[0].url)
+        assertEquals("high", items[0].usefulness)
+        assertTrue(items[0].needsDeepDive)
+    }
+
     private fun chatMessage(
         content: String,
         source: String = "telegram_mirror",

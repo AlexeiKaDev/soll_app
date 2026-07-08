@@ -361,7 +361,8 @@ private fun SollChatMessage.isSilentForSystemNotification(): Boolean {
     if (extra.booleanValue("silent") || extra.booleanValue("android_silent")) return true
     val entityType = extra.stringValue("entity_type").ifBlank { metadata.stringValue("entity_type") }
     val eventType = extra.stringValue("event_type").ifBlank { metadata.stringValue("event_type") }
-    if (entityType in setOf("source_monitor", "task_digest")) return true
+    if (entityType == "source_monitor") return eventType != "source_digest"
+    if (entityType == "task_digest") return true
     if (entityType == "tool_job" && eventType == "job_completed") return true
     return false
 }

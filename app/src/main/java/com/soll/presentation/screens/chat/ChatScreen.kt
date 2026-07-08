@@ -733,6 +733,10 @@ private fun AssistantMessageContent(
     message.linkPreviewOrNull()?.let { preview ->
         LinkPreviewCard(preview = preview)
     }
+    val digestItems = message.sourceDigestItemUis()
+    if (digestItems.isNotEmpty()) {
+        SourceDigestItemsCard(items = digestItems)
+    }
     if (isLong) {
         TextButton(onClick = { expanded = !expanded }) {
             Text(if (expanded) "Свернуть" else "Развернуть")
@@ -1572,4 +1576,133 @@ private fun SollChatMessage.linkPreviewOrNull(): Map<*, *>? {
     if (direct != null && direct.isNotEmpty()) return direct
     val taskIntake = metadata["task_intake"] as? Map<*, *>
     return taskIntake?.get("link_preview") as? Map<*, *>
+}
+
+internal data class SourceDigestItemUi(
+    val title: String,
+    val summary: String,
+    val url: String,
+    val usefulness: String,
+    val needsDeepDive: Boolean,
+)
+
+internal fun SollChatMessage.sourceDigestItemUis(): List<SourceDigestItemUi> {
+    if (!metadata.sourceEventType().equals("source_digest", ignoreCase = true)) return emptyList()
+    val direct = metadata["items"].asSourceDigestItemMaps()
+    val nested = (metadata["extra"] as? Map<*, *>)?.get("items").asSourceDigestItemMaps()
+    return (direct.ifEmpty { nested })
+        .mapNotNull { it.toSourceDigestItemUiOrNull() }
+        .take(6)
+}
+
+private fun Map<String, Any?>.sourceEventType(): String {
+    val direct = this["event_type"]?.toString()?.trim().orEmpty()
+    if (direct.isNotBlank()) return direct
+    val extra = this["extra"] as? Map<*, *>
+    return extra?.get("event_type")?.toString()?.trim().orEmpty()
+}
+
+private fun Any?.asSourceDigestItemMaps(): List<Map<*, *>> =
+    (this as? List<*>)
+        ?.mapNotNull { item -> item as? Map<*, *> }
+        .orEmpty()
+
+private fun Map<*, *>.toSourceDigestItemUiOrNull(): SourceDigestItemUi? {
+    val title = this["title"]?.toString()?.trim().orEmpty()
+    val summary = this["summary"]?.toString()?.trim().orEmpty()
+    val url = this["source_url"]?.toString()?.trim().orEmpty()
+    if (title.isBlank() && summary.isBlank() && url.isBlank()) return null
+    return SourceDigestItemUi(
+        title = title.ifBlank { url },
+        summary = summary,
+        url = url,
+        usefulness = this["usefulness"]?.toString()?.trim().orEmpty(),
+        needsDeepDive = this["needs_deep_dive"].asBoolean(),
+    )
+}
+
+private fun Any?.asBoolean(): Boolean =
+    when (this) {
+        is Boolean -> this
+        is Number -> toInt() != 0
+        is String -> trim().lowercase() in setOf("1", "true", "yes", "y", "on")
+        else -> false
+    }
+
+@Composable
+private fun SourceDigestItemsCard(items: List<SourceDigestItemUi>) {
+    if (items.isEmpty()) return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            items.forEachIndexed { index, item ->
+                SourceDigestItemRow(item = item)
+                if (index < items.lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceDigestItemRow(item: SourceDigestItemUi) {
+    val uriHandler = LocalUriHandler.current
+    val openableUrl = item.url.takeIf { isOpenableChatUrl(it) }
+    val rowModifier = if (openableUrl != null) {
+        Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri(openableUrl) }
+    } else {
+        Modifier.fillMaxWidth()
+    }
+    Column(
+        modifier = rowModifier,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (item.usefulness.isNotBlank()) {
+                Text(
+                    text = item.usefulness,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (item.summary.isNotBlank()) {
+            Text(
+                text = item.summary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (item.needsDeepDive) {
+            Text(
+                text = "разобрать подробнее",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                maxLines = 1,
+            )
+        }
+    }
 }

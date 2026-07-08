@@ -1,6 +1,6 @@
 # soll_app Status
 
-Last updated: 2026-07-06 11:37 Europe/Chisinau
+Last updated: 2026-07-08 00:16 Europe/Chisinau
 
 ## Current Changes
 
@@ -197,7 +197,7 @@ Last updated: 2026-07-06 11:37 Europe/Chisinau
 
 - Keep watching real Android task workspace behavior with large boards; the production tab smoke passes, but longer scrolling/editing sessions should still be checked during normal use.
 - Android closed-app push smoke is blocked while the phone is unavailable; local FCM classification and Monolith payload lint pass.
-- Portable SSD real-device smoke: blocked until the phone is visible to ADB again; then connect the real SSD through USB OTG, choose the SSD root in `SSD Wiki`, open `Task Board`, search a known wiki note, verify daily/tasks counts, open a wiki article, and confirm the cached phone copy is shown after detach.
+- Portable SSD real-device smoke: blocked until the phone is visible to ADB again; latest 2026-07-08 recheck still shows no ADB device. Then connect the real exFAT SSD through USB OTG, choose the SSD root in `SSD Wiki`, open `Task Board`, search a known wiki note, verify daily/tasks counts, open a wiki article, and confirm the cached phone copy is shown after detach.
 - Activity tracker extended walk smoke: run 10-15 minutes with the phone moving, verify steps increase from `TYPE_STEP_COUNTER`, additional samples appear, and battery drain is acceptable.
 - Hardware smoke remains open: test the manual write path with a real ESP/Aquik target after the device is visible and binding QA passes.
 - Keep any future ASR/Whisper downloads under `D:\AI\Models\audio\whisper`.
@@ -205,6 +205,10 @@ Last updated: 2026-07-06 11:37 Europe/Chisinau
 
 ## Verification Notes
 
+- 2026-07-08 Portable SSD Android OTG smoke recheck blocked:
+  - `adb start-server` then `adb devices -l` returned no online Android devices.
+  - Final exFAT SSD smoke still requires the physical phone plus USB OTG SSD: select the SSD root in `SSD Wiki`, open `Task Board`, search/open a wiki note, verify daily/tasks counts, detach the SSD, and confirm the cached phone copy opens.
+  - Local Gradle verification could not be refreshed in this sandbox: wrapper download was blocked by network policy, and direct cached Gradle 8.9 could not resolve the `com.android.application:8.7.3` plugin marker without repository access.
 - 2026-07-03 Portable SSD Android OTG smoke attempt blocked:
   - Desktop SSD mirror state is ready enough for Android content smoke: last stable mirror sync finished at `2026-07-03T14:30:00Z`, target `F:\Projects\Soll`, `files_done=70912`, SQLite snapshots checked, portable readiness `ready=true`.
   - Android smoke report: `D:\Projects\Soll\Soll\outputs\portable-ssd\android-otg-smoke-20260703.md`.

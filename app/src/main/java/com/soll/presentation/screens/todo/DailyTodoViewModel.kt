@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 enum class DailyTodoTab {
     TASKS,
@@ -30,6 +31,7 @@ data class DailyTodoUiState(
     val isLoading: Boolean = true,
     val isAdding: Boolean = false,
     val actionTaskId: String? = null,
+    val deletingTaskId: String? = null,
     val attachmentTaskId: String? = null,
     val selectedTaskDetail: SollDailyTaskDetail? = null,
     val detailLoading: Boolean = false,
@@ -40,6 +42,7 @@ data class DailyTodoUiState(
     val sourceLoading: Boolean = false,
     val message: String? = null,
     val isError: Boolean = false,
+    val addSuccessVersion: Long = 0L,
 )
 
 @HiltViewModel
@@ -197,6 +200,7 @@ class DailyTodoViewModel @Inject constructor(
                     attachmentTaskId = null,
                     message = message,
                     isError = isError,
+                    addSuccessVersion = it.addSuccessVersion + 1,
                 )
             }
         }
@@ -241,7 +245,7 @@ class DailyTodoViewModel @Inject constructor(
 
     fun openTask(task: SollDailyTask) {
         viewModelScope.launch {
-            loadTaskDetail(task.id, showLoading = true)
+            loadTaskDetail(task.id, fallbackTask = task, showLoading = true)
         }
     }
 
@@ -250,23 +254,68 @@ class DailyTodoViewModel @Inject constructor(
     }
 
     fun refreshSelectedTaskDetail(showLoading: Boolean = true) {
-        val taskId = _uiState.value.selectedTaskDetail?.task?.id ?: return
+        val task = _uiState.value.selectedTaskDetail?.task ?: return
         viewModelScope.launch {
-            loadTaskDetail(taskId, showLoading = showLoading)
+            loadTaskDetail(task.id, fallbackTask = task, showLoading = showLoading)
         }
     }
 
-    fun researchSelectedTask() {
+    fun deleteTask(task: SollDailyTask) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(deletingTaskId = task.id, message = null, isError = false) }
+            sollGateway.deleteTodayDailyTask(task.id).fold(
+                onSuccess = { list ->
+                    _uiState.update {
+                        val selectedDetail = it.selectedTaskDetail
+                        val selectedTask = selectedDetail?.let { current ->
+                            list.tasks.firstOrNull { item -> item.id == current.task.id }
+                        }
+                        it.copy(
+                            tasks = list.tasks,
+                            sourcePath = list.sourcePath,
+                            selectedTaskDetail = if (selectedDetail != null) {
+                                selectedTask?.let { task -> selectedDetail.copy(task = task) }
+                            } else {
+                                null
+                            },
+                            deletingTaskId = null,
+                            message = "Дело удалено",
+                            isError = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            deletingTaskId = null,
+                            message = error.message ?: "Не удалось удалить дело",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun researchSelectedTask(publishLocation: Boolean = true) {
         val taskId = _uiState.value.selectedTaskDetail?.task?.id ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(researchTaskId = taskId, message = null, isError = false) }
+            var locationWarning: String? = null
+            if (publishLocation) {
+                runCatching { fieldMapRepository.publishCurrentLocationToSoll() }
+                    .onFailure { error ->
+                        locationWarning = error.message ?: "Геопозиция недоступна"
+                    }
+            }
             sollGateway.researchTodayDailyTask(taskId).fold(
                 onSuccess = { detail ->
+                    val message = detail.research?.summary ?: "Поиск завершен"
                     _uiState.update {
                         it.copy(
                             selectedTaskDetail = detail,
                             researchTaskId = null,
-                            message = detail.research?.summary ?: "Поиск завершен",
+                            message = locationWarning?.let { warning -> "$message. $warning" } ?: message,
                             isError = false,
                         )
                     }
@@ -506,7 +555,7 @@ class DailyTodoViewModel @Inject constructor(
         _uiState.update { it.copy(message = null, isError = false) }
     }
 
-    private suspend fun loadTaskDetail(taskId: String, showLoading: Boolean) {
+    private suspend fun loadTaskDetail(taskId: String, fallbackTask: SollDailyTask?, showLoading: Boolean) {
         if (showLoading) {
             _uiState.update { it.copy(detailLoading = true, message = null, isError = false) }
         }
@@ -523,11 +572,20 @@ class DailyTodoViewModel @Inject constructor(
             },
             onFailure = { error ->
                 _uiState.update {
-                    it.copy(
-                        detailLoading = false,
-                        message = error.message ?: "Не удалось открыть дело",
-                        isError = true,
-                    )
+                    if (fallbackTask != null && error.isHttpStatus(404)) {
+                        it.copy(
+                            selectedTaskDetail = fallbackTask.toFallbackDetail(sourcePath = it.sourcePath),
+                            detailLoading = false,
+                            message = null,
+                            isError = false,
+                        )
+                    } else {
+                        it.copy(
+                            detailLoading = false,
+                            message = error.message ?: "Не удалось открыть дело",
+                            isError = true,
+                        )
+                    }
                 }
             },
         )
@@ -568,6 +626,16 @@ class DailyTodoViewModel @Inject constructor(
 
 private fun findCreatedTaskId(tasks: List<SollDailyTask>, existingTaskIds: Set<String>): String? =
     tasks.lastOrNull { it.id !in existingTaskIds }?.id ?: tasks.lastOrNull()?.id
+
+private fun SollDailyTask.toFallbackDetail(sourcePath: String): SollDailyTaskDetail =
+    SollDailyTaskDetail(
+        date = "",
+        sourcePath = sourcePath,
+        task = this,
+    )
+
+private fun Throwable.isHttpStatus(statusCode: Int): Boolean =
+    this is HttpException && code() == statusCode
 
 private fun String.parseTags(): List<String> =
     split(",", ";", "#")

@@ -521,6 +521,7 @@ interface SollGateway {
     suspend fun getTodayDailyTasks(): Result<SollDailyTaskList>
     suspend fun addTodayDailyTask(text: String, locationLabel: String = ""): Result<SollDailyTaskList>
     suspend fun updateTodayDailyTask(taskId: String, done: Boolean): Result<SollDailyTaskList>
+    suspend fun deleteTodayDailyTask(taskId: String): Result<SollDailyTaskList>
     suspend fun getTodayDailyTaskDetail(taskId: String): Result<SollDailyTaskDetail>
     suspend fun researchTodayDailyTask(taskId: String): Result<SollDailyTaskDetail>
     suspend fun uploadTodayDailyTaskAttachment(taskId: String, uri: Uri): Result<SollDailyTaskAttachment>

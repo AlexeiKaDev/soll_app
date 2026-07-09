@@ -194,6 +194,7 @@ import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlin.coroutines.cancellation.CancellationException
 
 @Singleton
 class SollRepository @Inject constructor(
@@ -273,8 +274,9 @@ class SollRepository @Inject constructor(
                 put("project_name", "Daily")
                 if (cleanLocation.isNotBlank()) put("location_label", cleanLocation)
             }
+            val authorization = writeAuthorizationHeader() ?: readAuthorizationHeader()
             val response = service().sendChatTurn(
-                authorization = writeAuthorizationHeader() ?: readAuthorizationHeader(),
+                authorization = authorization,
                 request = ChatTurnRequest(
                     sessionId = ANDROID_PRIMARY_SESSION_ID,
                     content = taskIntakeContent(cleanText),
@@ -283,9 +285,22 @@ class SollRepository @Inject constructor(
                     taskIntake = true,
                 ),
             )
+            val createdTaskId = taskIntakeTaskId(response)
+            createdTaskId?.let { taskId ->
+                try {
+                    service().moveTaskToToday(
+                        authorization = authorization,
+                        taskId = taskId.encodedSollPathSegment(fieldName = "task_id"),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    // Best effort: the task still exists and the board refresh below will expose it.
+                }
+            }
             taskBoardToDailyTaskList(
                 board = getTaskBoard().getOrThrow(),
-                createdTaskId = taskIntakeTaskId(response),
+                createdTaskId = createdTaskId,
             )
         }
 
@@ -311,6 +326,32 @@ class SollRepository @Inject constructor(
             }
             taskBoardToDailyTaskList(getTaskBoard().getOrThrow())
         }
+
+    override suspend fun deleteTodayDailyTask(taskId: String): Result<SollDailyTaskList> {
+        val cleanTaskId = taskId.trim()
+        val result = runSuspendCatching {
+            require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
+            service().deleteTodayDailyTask(
+                authorization = writeAuthorizationHeader(),
+                taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
+            ).toDomain()
+        }
+        if (
+            result.isSuccess ||
+            result.exceptionOrNull()?.isHttpStatus(404) != true ||
+            !canFallbackDeleteDailyTaskId(cleanTaskId)
+        ) {
+            return result
+        }
+        return runSuspendCatching {
+            val authorization = writeAuthorizationHeader() ?: readAuthorizationHeader()
+            service().rejectTask(
+                authorization = authorization,
+                taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
+            )
+            taskBoardToDailyTaskList(getTaskBoard().getOrThrow())
+        }
+    }
 
     override suspend fun getTodayDailyTaskDetail(taskId: String): Result<SollDailyTaskDetail> =
         runSuspendCatching {
@@ -2002,6 +2043,9 @@ private fun taskIntakeContent(text: String): String {
     val cleanText = text.trim()
     return if (TASK_INTAKE_PREFIX_RE.containsMatchIn(cleanText)) cleanText else "task: $cleanText"
 }
+
+internal fun canFallbackDeleteDailyTaskId(taskId: String): Boolean =
+    taskId.trim().startsWith("task:")
 
 private fun Throwable.isHttpStatus(statusCode: Int): Boolean =
     this is HttpException && code() == statusCode

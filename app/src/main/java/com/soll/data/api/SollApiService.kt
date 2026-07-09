@@ -47,6 +47,12 @@ interface SollApiService {
         @Body request: DailyTaskUpdateRequest,
     ): DailyTaskListResponse
 
+    @DELETE("api/v1/daily/tasks/today/{task_id}")
+    suspend fun deleteTodayDailyTask(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "task_id", encoded = true) taskId: String,
+    ): DailyTaskListResponse
+
     @GET("api/v1/daily/tasks/today/{task_id}/detail")
     suspend fun getTodayDailyTaskDetail(
         @Header("Authorization") authorization: String? = null,

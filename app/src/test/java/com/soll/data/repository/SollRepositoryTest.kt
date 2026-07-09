@@ -192,6 +192,13 @@ class SollRepositoryTest {
         assertEquals("task:chat:2", taskId)
     }
 
+    @Test
+    fun `daily delete fallback is limited to task board ids`() {
+        assertEquals(true, canFallbackDeleteDailyTaskId("task:chat:1"))
+        assertEquals(false, canFallbackDeleteDailyTaskId("daily-1"))
+        assertEquals(false, canFallbackDeleteDailyTaskId(""))
+    }
+
     private fun task(id: String, status: String, title: String): SollTask =
         SollTask(
             id = id,

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -49,11 +51,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -99,6 +106,7 @@ fun DailyTodoScreen(
     var pendingAttachmentName by rememberSaveable { mutableStateOf<String?>(null) }
     var existingAttachmentTask by remember { mutableStateOf<SollDailyTask?>(null) }
     var pendingAdd by remember { mutableStateOf<PendingDailyTodoAdd?>(null) }
+    var pendingResearchLocationRequest by rememberSaveable { mutableStateOf(false) }
     var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraFilename by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraTaskId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -180,14 +188,17 @@ fun DailyTodoScreen(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
         val request = pendingAdd
+        val shouldResearch = pendingResearchLocationRequest
         pendingAdd = null
+        pendingResearchLocationRequest = false
         if (request != null) {
             viewModel.addTask(
                 text = request.text,
                 attachmentUri = request.attachmentUri,
                 attachLocation = grants.values.any { it },
             )
-            clearAddForm()
+        } else if (shouldResearch) {
+            viewModel.researchSelectedTask(publishLocation = grants.values.any { it })
         }
     }
 
@@ -214,7 +225,6 @@ fun DailyTodoScreen(
         val attachmentUri = pendingAttachmentUri
         if (context.hasDailyTodoLocationPermission()) {
             viewModel.addTask(cleanText, attachmentUri, attachLocation = true)
-            clearAddForm()
         } else {
             pendingAdd = PendingDailyTodoAdd(cleanText, attachmentUri)
             locationPermissionLauncher.launch(
@@ -223,6 +233,40 @@ fun DailyTodoScreen(
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                 ),
             )
+        }
+    }
+
+    fun submitResearch() {
+        if (context.hasDailyTodoLocationPermission()) {
+            viewModel.researchSelectedTask(publishLocation = true)
+        } else {
+            pendingResearchLocationRequest = true
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+            )
+        }
+    }
+
+    fun requestDeleteTask(task: SollDailyTask) {
+        coroutineScope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = "Удалить дело?",
+                actionLabel = "Отмена",
+                withDismissAction = true,
+                duration = SnackbarDuration.Short,
+            )
+            if (result != SnackbarResult.ActionPerformed) {
+                viewModel.deleteTask(task)
+            }
+        }
+    }
+
+    LaunchedEffect(uiState.addSuccessVersion) {
+        if (uiState.addSuccessVersion > 0L) {
+            clearAddForm()
         }
     }
 
@@ -282,7 +326,7 @@ fun DailyTodoScreen(
                                 existingAttachmentPicker.launch("*/*")
                             },
                             onTakePhoto = { task -> startCameraCapture(task) },
-                            onResearch = viewModel::researchSelectedTask,
+                            onResearch = ::submitResearch,
                         )
                     } else {
                         DailyTodoTasksMode(
@@ -299,6 +343,7 @@ fun DailyTodoScreen(
                             onAddTask = ::submitTask,
                             onOpenTask = viewModel::openTask,
                             onToggleTask = viewModel::setTaskDone,
+                            onDeleteTask = ::requestDeleteTask,
                             onAttachTask = { task ->
                                 existingAttachmentTask = task
                                 existingAttachmentPicker.launch("*/*")
@@ -349,6 +394,7 @@ private fun DailyTodoTasksMode(
     onAddTask: () -> Unit,
     onOpenTask: (SollDailyTask) -> Unit,
     onToggleTask: (SollDailyTask, Boolean) -> Unit,
+    onDeleteTask: (SollDailyTask) -> Unit,
     onAttachTask: (SollDailyTask) -> Unit,
     onPhotoTask: (SollDailyTask) -> Unit,
 ) {
@@ -382,10 +428,11 @@ private fun DailyTodoTasksMode(
         ) { task ->
             DailyTodoRow(
                 task = task,
-                isRunning = uiState.actionTaskId == task.id,
+                isRunning = uiState.actionTaskId == task.id || uiState.deletingTaskId == task.id,
                 isAttachmentRunning = uiState.attachmentTaskId == task.id,
                 onOpen = { onOpenTask(task) },
                 onToggle = { done -> onToggleTask(task, done) },
+                onDelete = { onDeleteTask(task) },
                 onAttach = { onAttachTask(task) },
                 onPhoto = { onPhotoTask(task) },
             )
@@ -495,82 +542,113 @@ private fun PendingAttachmentChip(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun DailyTodoRow(
     task: SollDailyTask,
     isRunning: Boolean,
     isAttachmentRunning: Boolean,
     onOpen: () -> Unit,
     onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
     onAttach: () -> Unit,
     onPhoto: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (task.done) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        ),
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+            }
+            false
+        },
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(end = 24.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Удалить",
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        },
     ) {
-        Column(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (isRunning) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                .clickable(onClick = onOpen),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (task.done) {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
                 } else {
-                    Checkbox(
-                        checked = task.done,
-                        onCheckedChange = onToggle,
-                    )
-                }
-                Text(
-                    text = task.text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (task.done) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    textDecoration = if (task.done) TextDecoration.LineThrough else null,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(onClick = onOpen),
-                )
-                IconButton(onClick = onAttach, enabled = !isAttachmentRunning) {
-                    if (isAttachmentRunning) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.AttachFile, contentDescription = "Прикрепить файл")
-                    }
-                }
-                IconButton(onClick = onPhoto, enabled = !isAttachmentRunning) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "Сделать фото")
-                }
-            }
-            if (task.attachments.isNotEmpty()) {
+                    MaterialTheme.colorScheme.surface
+                },
+            ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    task.attachments.take(3).forEach { attachment ->
-                        AttachmentChip(text = attachment.dailyTodoAttachmentChipText())
+                    if (isRunning) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    } else {
+                        Checkbox(
+                            checked = task.done,
+                            onCheckedChange = onToggle,
+                        )
                     }
-                    if (task.attachments.size > 3) {
-                        AttachmentChip(text = "+${task.attachments.size - 3}")
+                    Text(
+                        text = task.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (task.done) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        textDecoration = if (task.done) TextDecoration.LineThrough else null,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onAttach, enabled = !isAttachmentRunning) {
+                        if (isAttachmentRunning) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.AttachFile, contentDescription = "Прикрепить файл")
+                        }
+                    }
+                    IconButton(onClick = onPhoto, enabled = !isAttachmentRunning) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "Сделать фото")
+                    }
+                }
+                if (task.attachments.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        task.attachments.take(3).forEach { attachment ->
+                            AttachmentChip(text = attachment.dailyTodoAttachmentChipText())
+                        }
+                        if (task.attachments.size > 3) {
+                            AttachmentChip(text = "+${task.attachments.size - 3}")
+                        }
                     }
                 }
             }

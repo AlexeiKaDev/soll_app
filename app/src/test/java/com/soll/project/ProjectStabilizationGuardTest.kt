@@ -493,6 +493,8 @@ class ProjectStabilizationGuardTest {
         assertTrue(todoScreen.contains("Text(\"Найти\")"))
         assertTrue(todoScreen.contains("Icons.Default.AttachFile"))
         assertTrue(todoScreen.contains("Icons.Default.PhotoCamera"))
+        assertTrue(todoScreen.contains("combinedClickable("))
+        assertTrue(todoScreen.contains("onLongClick = onDelete"))
         assertFalse(todoScreen.contains("Text(\"Файл\")"))
         assertFalse(todoScreen.contains("Text(\"Фото\")"))
         assertTrue(todoScreen.contains("ActivityResultContracts.RequestMultiplePermissions()"))

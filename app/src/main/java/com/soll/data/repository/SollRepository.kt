@@ -1992,8 +1992,10 @@ internal fun taskBoardToDailyTaskList(
         addAll(board.stale)
         addAll(board.deferred)
     }
-    val tasks = (openTasks + board.doneRecent)
+    val cleanCreatedTaskId = createdTaskId?.trim()?.takeIf { it.isNotBlank() }
+    val tasks = openTasks
         .filterNot { it.status == "rejected" }
+        .filter { it.isDailyTodoFallbackTask(cleanCreatedTaskId) }
         .distinctBy { it.id }
         .mapIndexed { index, task ->
             SollDailyTask(
@@ -2005,11 +2007,15 @@ internal fun taskBoardToDailyTaskList(
         }
     return SollDailyTaskList(
         date = today,
-        sourcePath = "Task board fallback",
+        sourcePath = "Android daily fallback",
         tasks = tasks,
-        createdTaskId = createdTaskId?.trim()?.takeIf { it.isNotBlank() },
+        createdTaskId = cleanCreatedTaskId,
     )
 }
+
+private fun SollTask.isDailyTodoFallbackTask(createdTaskId: String?): Boolean =
+    id == createdTaskId ||
+        id.startsWith("task:daily:", ignoreCase = true)
 
 internal fun taskIntakeTaskId(response: ChatTurnResponse): String? =
     response.taskIntake?.items

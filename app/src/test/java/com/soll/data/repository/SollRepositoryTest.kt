@@ -140,25 +140,46 @@ class SollRepositoryTest {
     }
 
     @Test
-    fun `task board fallback exposes open and done tasks as daily list`() {
+    fun `task board fallback keeps only daily open tasks`() {
         val list = taskBoardToDailyTaskList(
             board = SollTaskBoard(
-                today = listOf(task("today-1", "today", "Call client")),
-                inbox = listOf(task("inbox-1", "inbox", "task: Buy milk")),
-                stale = emptyList(),
+                today = listOf(
+                    task("task:daily:today-1", "today", "Call client"),
+                    task("project-daily-1", "today", "Project Daily task", projectName = "Daily"),
+                ),
+                inbox = listOf(task("task:daily:inbox-1", "inbox", "task: Buy milk")),
+                stale = listOf(task("stale-1", "stale", "General task", projectName = "AI Core")),
                 deferred = emptyList(),
                 doneRecent = listOf(task("done-1", "done", "Sent report")),
             ),
-            createdTaskId = "inbox-1",
+            createdTaskId = "task:daily:inbox-1",
             today = "2026-07-09",
         )
 
         assertEquals("2026-07-09", list.date)
-        assertEquals("Task board fallback", list.sourcePath)
-        assertEquals("inbox-1", list.createdTaskId)
-        assertEquals(listOf("today-1", "inbox-1", "done-1"), list.tasks.map { it.id })
+        assertEquals("Android daily fallback", list.sourcePath)
+        assertEquals("task:daily:inbox-1", list.createdTaskId)
+        assertEquals(listOf("task:daily:today-1", "task:daily:inbox-1"), list.tasks.map { it.id })
         assertEquals("Buy milk", list.tasks[1].text)
-        assertEquals(listOf(false, false, true), list.tasks.map { it.done })
+        assertEquals(listOf(false, false), list.tasks.map { it.done })
+    }
+
+    @Test
+    fun `task board fallback keeps just created non daily task`() {
+        val list = taskBoardToDailyTaskList(
+            board = SollTaskBoard(
+                today = listOf(task("created-1", "today", "task: Fresh fallback", projectName = "Inbox")),
+                inbox = emptyList(),
+                stale = listOf(task("other-1", "stale", "Other task", projectName = "AI Core")),
+                deferred = emptyList(),
+                doneRecent = emptyList(),
+            ),
+            createdTaskId = "created-1",
+            today = "2026-07-09",
+        )
+
+        assertEquals(listOf("created-1"), list.tasks.map { it.id })
+        assertEquals("Fresh fallback", list.tasks.single().text)
     }
 
     @Test
@@ -199,13 +220,13 @@ class SollRepositoryTest {
         assertEquals(false, canFallbackDeleteDailyTaskId(""))
     }
 
-    private fun task(id: String, status: String, title: String): SollTask =
+    private fun task(id: String, status: String, title: String, projectName: String = "Daily"): SollTask =
         SollTask(
             id = id,
             title = title,
             description = "",
             sourceRef = "test",
-            projectName = "Daily",
+            projectName = projectName,
             status = status,
             priority = "B",
             dueDate = null,

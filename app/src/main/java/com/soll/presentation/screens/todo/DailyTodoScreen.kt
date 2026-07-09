@@ -7,8 +7,9 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -542,7 +543,7 @@ private fun PendingAttachmentChip(
 }
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 private fun DailyTodoRow(
     task: SollDailyTask,
     isRunning: Boolean,
@@ -584,7 +585,10 @@ private fun DailyTodoRow(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onOpen),
+                .combinedClickable(
+                    onClick = onOpen,
+                    onLongClick = onDelete,
+                ),
             shape = RoundedCornerShape(8.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,

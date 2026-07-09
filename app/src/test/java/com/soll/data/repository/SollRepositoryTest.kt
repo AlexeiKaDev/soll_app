@@ -1,6 +1,12 @@
 package com.soll.data.repository
 
+import com.soll.data.api.ChatTaskIntakeItemResponse
+import com.soll.data.api.ChatTaskIntakeResponse
+import com.soll.data.api.ChatTurnResponse
+import com.soll.data.api.ChatMessageResponse
 import com.soll.data.api.SollTaskMutationResponse
+import com.soll.domain.soll.SollTask
+import com.soll.domain.soll.SollTaskBoard
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -132,4 +138,70 @@ class SollRepositoryTest {
         assertEquals("task-1", wrapped.id)
         assertEquals("in_progress", wrapped.status)
     }
+
+    @Test
+    fun `task board fallback exposes open and done tasks as daily list`() {
+        val list = taskBoardToDailyTaskList(
+            board = SollTaskBoard(
+                today = listOf(task("today-1", "today", "Call client")),
+                inbox = listOf(task("inbox-1", "inbox", "task: Buy milk")),
+                stale = emptyList(),
+                deferred = emptyList(),
+                doneRecent = listOf(task("done-1", "done", "Sent report")),
+            ),
+            createdTaskId = "inbox-1",
+            today = "2026-07-09",
+        )
+
+        assertEquals("2026-07-09", list.date)
+        assertEquals("Task board fallback", list.sourcePath)
+        assertEquals("inbox-1", list.createdTaskId)
+        assertEquals(listOf("today-1", "inbox-1", "done-1"), list.tasks.map { it.id })
+        assertEquals("Buy milk", list.tasks[1].text)
+        assertEquals(listOf(false, false, true), list.tasks.map { it.done })
+    }
+
+    @Test
+    fun `chat turn task intake id is extracted from top level response`() {
+        val taskId = taskIntakeTaskId(
+            ChatTurnResponse(
+                taskIntake = ChatTaskIntakeResponse(
+                    acted = true,
+                    items = listOf(ChatTaskIntakeItemResponse(taskId = "task:chat:1")),
+                ),
+            ),
+        )
+
+        assertEquals("task:chat:1", taskId)
+    }
+
+    @Test
+    fun `chat turn task intake id falls back to assistant metadata`() {
+        val taskId = taskIntakeTaskId(
+            ChatTurnResponse(
+                assistant = ChatMessageResponse(
+                    metadata = mapOf(
+                        "task_intake" to mapOf(
+                            "items" to listOf(mapOf("task_id" to "task:chat:2")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("task:chat:2", taskId)
+    }
+
+    private fun task(id: String, status: String, title: String): SollTask =
+        SollTask(
+            id = id,
+            title = title,
+            description = "",
+            sourceRef = "test",
+            projectName = "Daily",
+            status = status,
+            priority = "B",
+            dueDate = null,
+            tags = emptyList(),
+        )
 }

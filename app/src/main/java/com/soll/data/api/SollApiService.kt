@@ -717,6 +717,23 @@ data class ChatTurnResponse(
     val sessionId: String = "",
     val message: ChatMessageResponse = ChatMessageResponse(),
     val assistant: ChatMessageResponse? = null,
+    @Json(name = "task_intake")
+    val taskIntake: ChatTaskIntakeResponse? = null,
+)
+
+data class ChatTaskIntakeResponse(
+    val acted: Boolean = false,
+    val reason: String = "",
+    val items: List<ChatTaskIntakeItemResponse> = emptyList(),
+)
+
+data class ChatTaskIntakeItemResponse(
+    val action: String = "",
+    @Json(name = "task_id")
+    val taskId: String? = null,
+    val title: String = "",
+    @Json(name = "project_name")
+    val projectName: String? = null,
 )
 
 data class ChatActionExecuteRequest(

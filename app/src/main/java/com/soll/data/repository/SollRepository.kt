@@ -40,6 +40,7 @@ import com.soll.data.api.ChatSessionCreateRequest
 import com.soll.data.api.ChatSessionCreateResponse
 import com.soll.data.api.ChatSessionSummaryResponse
 import com.soll.data.api.ChatTurnRequest
+import com.soll.data.api.ChatTurnResponse
 import com.soll.data.api.CreateRawFileRequest
 import com.soll.data.api.DailyTaskAttachmentResponse
 import com.soll.data.api.DailyTaskCreateRequest
@@ -170,6 +171,7 @@ import java.util.Locale
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.TimeZone
@@ -236,10 +238,17 @@ class SollRepository @Inject constructor(
         return boardResult
     }
 
-    override suspend fun getTodayDailyTasks(): Result<SollDailyTaskList> =
-        runSuspendCatching {
+    override suspend fun getTodayDailyTasks(): Result<SollDailyTaskList> {
+        val result = runSuspendCatching {
             service().getTodayDailyTasks(readAuthorizationHeader()).toDomain()
         }
+        if (result.isSuccess || result.exceptionOrNull()?.isHttpStatus(404) != true) {
+            return result
+        }
+        return runSuspendCatching {
+            taskBoardToDailyTaskList(getTaskBoard().getOrThrow())
+        }
+    }
 
     override suspend fun addTodayDailyTask(text: String, locationLabel: String): Result<SollDailyTaskList> =
         runSuspendCatching {
@@ -252,6 +261,32 @@ class SollRepository @Inject constructor(
                     locationLabel = locationLabel.trim(),
                 ),
             ).toDomain()
+        }.recoverCatching { error ->
+            if (!error.isHttpStatus(404)) throw error
+            val cleanText = text.trim()
+            val cleanLocation = locationLabel.trim()
+            require(cleanText.isNotBlank()) { "Task text is required" }
+            val metadata = buildMap<String, Any?> {
+                put("source", "android_daily_todo")
+                put("force_task_intake", true)
+                put("force_task_create", true)
+                put("project_name", "Daily")
+                if (cleanLocation.isNotBlank()) put("location_label", cleanLocation)
+            }
+            val response = service().sendChatTurn(
+                authorization = writeAuthorizationHeader() ?: readAuthorizationHeader(),
+                request = ChatTurnRequest(
+                    sessionId = ANDROID_PRIMARY_SESSION_ID,
+                    content = taskIntakeContent(cleanText),
+                    metadata = metadata,
+                    runAssistant = false,
+                    taskIntake = true,
+                ),
+            )
+            taskBoardToDailyTaskList(
+                board = getTaskBoard().getOrThrow(),
+                createdTaskId = taskIntakeTaskId(response),
+            )
         }
 
     override suspend fun updateTodayDailyTask(taskId: String, done: Boolean): Result<SollDailyTaskList> =
@@ -260,9 +295,21 @@ class SollRepository @Inject constructor(
             require(cleanTaskId.isNotBlank()) { "ID дела не задан" }
             service().updateTodayDailyTask(
                 authorization = writeAuthorizationHeader(),
-                taskId = cleanTaskId,
+                taskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id"),
                 request = DailyTaskUpdateRequest(done = done),
             ).toDomain()
+        }.recoverCatching { error ->
+            if (!error.isHttpStatus(404)) throw error
+            val cleanTaskId = taskId.trim()
+            require(cleanTaskId.isNotBlank()) { "Task id is required" }
+            val authorization = writeAuthorizationHeader() ?: readAuthorizationHeader()
+            val encodedTaskId = cleanTaskId.encodedSollPathSegment(fieldName = "task_id")
+            if (done) {
+                service().completeTask(authorization, encodedTaskId)
+            } else {
+                service().moveTaskToToday(authorization, encodedTaskId)
+            }
+            taskBoardToDailyTaskList(getTaskBoard().getOrThrow())
         }
 
     override suspend fun getTodayDailyTaskDetail(taskId: String): Result<SollDailyTaskDetail> =
@@ -1893,6 +1940,69 @@ private data class RawUploadMetadata(
     val mimeType: String?,
 )
 
+internal fun taskBoardToDailyTaskList(
+    board: SollTaskBoard,
+    createdTaskId: String? = null,
+    today: String = LocalDate.now().toString(),
+): SollDailyTaskList {
+    val openTasks = buildList {
+        addAll(board.today)
+        addAll(board.inbox)
+        addAll(board.stale)
+        addAll(board.deferred)
+    }
+    val tasks = (openTasks + board.doneRecent)
+        .filterNot { it.status == "rejected" }
+        .distinctBy { it.id }
+        .mapIndexed { index, task ->
+            SollDailyTask(
+                id = task.id,
+                text = dailyTaskText(task),
+                done = task.status == "done",
+                line = index + 1,
+            )
+        }
+    return SollDailyTaskList(
+        date = today,
+        sourcePath = "Task board fallback",
+        tasks = tasks,
+        createdTaskId = createdTaskId?.trim()?.takeIf { it.isNotBlank() },
+    )
+}
+
+internal fun taskIntakeTaskId(response: ChatTurnResponse): String? =
+    response.taskIntake?.items
+        ?.asSequence()
+        ?.mapNotNull { it.taskId.cleanIdOrNull() }
+        ?.firstOrNull()
+        ?: taskIntakeTaskId(response.assistant?.metadata.orEmpty())
+        ?: taskIntakeTaskId(response.message.metadata)
+
+private fun taskIntakeTaskId(metadata: Map<String, Any?>): String? {
+    val intake = metadata["task_intake"] as? Map<*, *> ?: return null
+    intake["task_id"].cleanIdOrNull()?.let { return it }
+    val items = intake["items"] as? List<*> ?: return null
+    return items.asSequence()
+        .mapNotNull { item ->
+            (item as? Map<*, *>)?.get("task_id").cleanIdOrNull()
+        }
+        .firstOrNull()
+}
+
+private fun Any?.cleanIdOrNull(): String? =
+    this?.toString()?.trim()?.takeIf { it.isNotBlank() }
+
+private fun dailyTaskText(task: SollTask): String {
+    val title = task.title.trim()
+    val cleanTitle = TASK_INTAKE_PREFIX_RE.replace(title, "").trim()
+    return cleanTitle.ifBlank { task.description.trim().ifBlank { task.id } }
+}
+
+private fun taskIntakeContent(text: String): String {
+    val cleanText = text.trim()
+    return if (TASK_INTAKE_PREFIX_RE.containsMatchIn(cleanText)) cleanText else "task: $cleanText"
+}
+
 private fun Throwable.isHttpStatus(statusCode: Int): Boolean =
     this is HttpException && code() == statusCode
 
@@ -2019,8 +2129,10 @@ private const val TASK_BOARD_SECTION_LIMIT = 80
 private const val TASK_BOARD_MIN_SECTION_LIMIT = 20
 private const val TASK_BOARD_MAX_SECTION_LIMIT = 500
 private const val DEVICE_TOKEN_REFRESH_SAFETY_MS = 2 * 60_000L
+private const val ANDROID_PRIMARY_SESSION_ID = "soll-main"
 private const val SOURCE_TYPE_WEB = "web"
 private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")
+private val TASK_INTAKE_PREFIX_RE = Regex("""^\s*(?:task|todo)\s*[:,-]\s*""", RegexOption.IGNORE_CASE)
 
 fun normalizeSollBaseUrl(rawUrl: String): String {
     val trimmed = rawUrl.trim()

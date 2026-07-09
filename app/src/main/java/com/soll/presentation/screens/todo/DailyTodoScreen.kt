@@ -433,28 +433,24 @@ private fun DailyTodoAddCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(
+                IconButton(
                     onClick = onSelectFile,
                     enabled = !isAdding,
-                    modifier = Modifier.weight(0.28f),
+                    modifier = Modifier.size(48.dp),
                 ) {
-                    Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Файл")
+                    Icon(Icons.Default.AttachFile, contentDescription = "Прикрепить файл")
                 }
-                OutlinedButton(
+                IconButton(
                     onClick = onTakePhoto,
                     enabled = !isAdding,
-                    modifier = Modifier.weight(0.28f),
+                    modifier = Modifier.size(48.dp),
                 ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Фото")
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "Сделать фото")
                 }
                 Button(
                     onClick = onAddTask,
                     enabled = !isAdding,
-                    modifier = Modifier.weight(0.44f),
+                    modifier = Modifier.weight(1f),
                 ) {
                     if (isAdding) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -642,15 +638,19 @@ private fun DailyTodoDetailPane(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        OutlinedButton(onClick = { onSelectFile(detail.task) }, enabled = !isAttachmentRunning) {
-                            Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Файл")
+                        IconButton(
+                            onClick = { onSelectFile(detail.task) },
+                            enabled = !isAttachmentRunning,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(Icons.Default.AttachFile, contentDescription = "Прикрепить файл")
                         }
-                        OutlinedButton(onClick = { onTakePhoto(detail.task) }, enabled = !isAttachmentRunning) {
-                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Фото")
+                        IconButton(
+                            onClick = { onTakePhoto(detail.task) },
+                            enabled = !isAttachmentRunning,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = "Сделать фото")
                         }
                         Button(onClick = onResearch, enabled = !isResearchRunning) {
                             if (isResearchRunning) {

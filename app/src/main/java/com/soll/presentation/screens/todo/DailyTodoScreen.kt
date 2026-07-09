@@ -587,11 +587,7 @@ private fun DailyTodoRow(
                 .clickable(onClick = onOpen),
             shape = RoundedCornerShape(8.dp),
             colors = CardDefaults.cardColors(
-                containerColor = if (task.done) {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
             Column(

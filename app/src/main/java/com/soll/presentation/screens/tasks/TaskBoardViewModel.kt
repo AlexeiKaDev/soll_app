@@ -14,6 +14,7 @@ import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollRoadmap
 import com.soll.domain.soll.SollRoadmapLine
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoardCounts
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,7 +37,7 @@ enum class TaskWorkspaceMode(val label: String) {
     TASKS("Задачи"),
     INSIGHTS("Инсайты"),
     ROADMAP("Roadmap"),
-    SOURCES("Источники"),
+    SOURCES("Источники Soll"),
 }
 
 enum class TaskTab {
@@ -802,7 +803,7 @@ class TaskBoardViewModel @Inject constructor(
     fun loadSources(sourceId: String? = _uiState.value.selectedSourceId, showLoading: Boolean = true) {
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = showLoading, message = null, isError = false) }
-            sollGateway.listSources().fold(
+            sollGateway.listSources(SollSourceScope.PROJECT_SOLL).fold(
                 onSuccess = { sources ->
                     val sourceIds = sources.mapTo(mutableSetOf()) { it.id }
                     sourceItemsCache.keys.retainAll(sourceIds)
@@ -853,7 +854,7 @@ class TaskBoardViewModel @Inject constructor(
     fun createSource(name: String, target: String, sourceType: String = "web") {
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
-            sollGateway.createSource(name, target, sourceType).fold(
+            sollGateway.createSource(name, target, SollSourceScope.PROJECT_SOLL, sourceType).fold(
                 onSuccess = {
                     sourceItemsCache.clear()
                     _uiState.update {

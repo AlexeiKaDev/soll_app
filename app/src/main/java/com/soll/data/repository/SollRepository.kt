@@ -146,6 +146,7 @@ import com.soll.domain.soll.SollRoadmapLine
 import com.soll.domain.soll.SollRoadmapReadiness
 import com.soll.domain.soll.SollRoadmapStage
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollGadgetDiscoverySchema
 import com.soll.domain.soll.SollMeshOutboxItem
 import com.soll.domain.soll.SollMeshStatus
@@ -657,12 +658,12 @@ class SollRepository @Inject constructor(
             ).task?.toDomain()
         }
 
-    override suspend fun listSources(): Result<List<SollMonitoredSource>> =
+    override suspend fun listSources(scope: SollSourceScope): Result<List<SollMonitoredSource>> =
         runSuspendCatching {
-            service().listSources(readAuthorizationHeader()).map { it.toDomain() }
+            service().listSources(readAuthorizationHeader(), scope = scope.apiValue).map { it.toDomain() }
         }.recoverCatching { error ->
             if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
-            getAndroidSyncStatus().getOrThrow().sources
+            getAndroidSyncStatus().getOrThrow().sources.filter { it.scope == scope }
         }
 
     override suspend fun listSourceItems(sourceId: String, limit: Int): Result<List<SollSourceItem>> =
@@ -683,6 +684,7 @@ class SollRepository @Inject constructor(
     override suspend fun createSource(
         name: String,
         target: String,
+        scope: SollSourceScope,
         sourceType: String,
     ): Result<SollMonitoredSource> = runSuspendCatching {
         val cleanTarget = target.trim()
@@ -694,8 +696,9 @@ class SollRepository @Inject constructor(
             request = MonitoredSourceCreateRequest(
                 name = name.trim().takeIf { it.isNotBlank() },
                 sourceType = cleanSourceType,
+                scope = scope.apiValue,
                 target = cleanTarget,
-                tags = listOf("android"),
+                tags = listOf("android", scope.apiValue),
             ),
         ).toDomain()
     }
@@ -1341,6 +1344,7 @@ class SollRepository @Inject constructor(
             id = id,
             name = name,
             sourceType = sourceType,
+            scope = SollSourceScope.entries.firstOrNull { it.apiValue == scope } ?: SollSourceScope.PROJECT_SOLL,
             target = target,
             description = description,
             tags = tags,

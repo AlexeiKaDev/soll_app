@@ -246,10 +246,16 @@ data class SollRoadmapReadiness(
     val gap: String,
 )
 
+enum class SollSourceScope(val apiValue: String) {
+    PROJECT_SOLL("project_soll"),
+    DAILY_TODO("daily_todo"),
+}
+
 data class SollMonitoredSource(
     val id: String,
     val name: String,
     val sourceType: String,
+    val scope: SollSourceScope,
     val target: String,
     val description: String,
     val tags: List<String>,
@@ -581,11 +587,12 @@ interface SollGateway {
     suspend fun updateRoadmapLine(stageId: String, line: String, newLine: String, text: String): Result<SollRoadmap>
     suspend fun deleteRoadmapLine(stageId: String, line: String): Result<SollRoadmap>
     suspend fun createTaskFromRoadmapLine(stageId: String, line: String): Result<SollTask?>
-    suspend fun listSources(): Result<List<SollMonitoredSource>>
+    suspend fun listSources(scope: SollSourceScope): Result<List<SollMonitoredSource>>
     suspend fun listSourceItems(sourceId: String, limit: Int = 20): Result<List<SollSourceItem>>
     suspend fun createSource(
         name: String,
         target: String,
+        scope: SollSourceScope,
         sourceType: String = "web",
     ): Result<SollMonitoredSource>
     suspend fun updateSource(

@@ -332,7 +332,7 @@ private fun DailyTodoTabs(
         FilterChip(
             selected = selectedTab == DailyTodoTab.SOURCES,
             onClick = { onSelect(DailyTodoTab.SOURCES) },
-            label = { Text("Источники") },
+            label = { Text("Источники дел") },
         )
     }
 }
@@ -742,7 +742,7 @@ private fun DailyTodoSourcesMode(
         item(key = "source-add") {
             Card(shape = RoundedCornerShape(8.dp)) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Новый источник", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("Новый источник дел", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -788,7 +788,7 @@ private fun DailyTodoSourcesMode(
         if (!uiState.sourceLoading && uiState.sources.isEmpty()) {
             item {
                 Text(
-                    text = "Источники не добавлены",
+                    text = "Источники дел не добавлены",
                     modifier = Modifier.padding(vertical = 20.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -809,7 +809,7 @@ private fun DailyTodoSourcesMode(
         }
         if (uiState.sourceItems.isNotEmpty()) {
             item(key = "source-items-title") {
-                Text("Материалы выбранного источника", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Материалы источника дел", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
             items(uiState.sourceItems, key = { it.itemId }) { item ->
                 SourceItemCard(item = item)

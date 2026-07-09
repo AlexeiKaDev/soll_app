@@ -9,6 +9,7 @@ import com.soll.domain.soll.SollDailyTaskDetail
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -322,7 +323,7 @@ class DailyTodoViewModel @Inject constructor(
     fun loadSources(sourceId: String? = _uiState.value.selectedSourceId, showLoading: Boolean = true) {
         viewModelScope.launch {
             _uiState.update { it.copy(sourceLoading = showLoading, message = null, isError = false) }
-            sollGateway.listSources().fold(
+            sollGateway.listSources(SollSourceScope.DAILY_TODO).fold(
                 onSuccess = { sources ->
                     val sourceIds = sources.mapTo(mutableSetOf()) { it.id }
                     sourceItemsCache.keys.retainAll(sourceIds)
@@ -383,7 +384,7 @@ class DailyTodoViewModel @Inject constructor(
     fun createSource(name: String, target: String, sourceType: String = "web") {
         viewModelScope.launch {
             _uiState.update { it.copy(sourceLoading = true, message = null, isError = false) }
-            sollGateway.createSource(name, target, sourceType).fold(
+            sollGateway.createSource(name, target, SollSourceScope.DAILY_TODO, sourceType).fold(
                 onSuccess = {
                     sourceItemsCache.clear()
                     _uiState.update {

@@ -259,6 +259,7 @@ interface SollApiService {
     @GET("api/v1/sources")
     suspend fun listSources(
         @Header("Authorization") authorization: String? = null,
+        @Query("scope") scope: String = "project_soll",
     ): List<MonitoredSourceResponse>
 
     @GET("api/v1/sources/{source_id}/items")
@@ -1177,6 +1178,7 @@ data class MonitoredSourceResponse(
     val name: String = "",
     @Json(name = "source_type")
     val sourceType: String = "web",
+    val scope: String = "project_soll",
     val target: String = "",
     val description: String = "",
     val tags: List<String> = emptyList(),
@@ -1218,6 +1220,7 @@ data class MonitoredSourceCreateRequest(
     val name: String? = null,
     @Json(name = "source_type")
     val sourceType: String = "web",
+    val scope: String = "project_soll",
     val target: String,
     val description: String = "",
     val tags: List<String> = emptyList(),

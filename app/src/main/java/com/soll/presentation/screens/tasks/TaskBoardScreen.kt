@@ -1048,7 +1048,7 @@ private fun SourcesMode(
         item(key = "source-add") {
             Card(shape = RoundedCornerShape(8.dp)) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Новый источник", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("Новый источник Soll", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1105,7 +1105,7 @@ private fun SourcesMode(
         }
         if (uiState.sourceItems.isNotEmpty()) {
             item(key = "source-items-title") {
-                Text("Последние материалы", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Последние материалы Soll", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
             items(uiState.sourceItems, key = { it.itemId }) { item ->
                 SourceItemCard(

@@ -269,6 +269,7 @@ class ProjectStabilizationGuardTest {
     @Test
     fun `android system notifications use only robot small icon`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
+        val colors = projectFile("app/src/main/res/values/colors.xml").readText()
         val ttsService = projectFile("app/src/main/java/com/soll/data/service/TtsService.kt").readText()
         val musicService = projectFile("app/src/main/java/com/soll/data/service/MusicPlaybackService.kt").readText()
         val activityService = projectFile("app/src/main/java/com/soll/data/service/ActivityTrackingService.kt").readText()
@@ -278,14 +279,16 @@ class ProjectStabilizationGuardTest {
         assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_icon"))
         assertTrue(manifest.contains("@drawable/ic_ai_robot_notification"))
         assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_color"))
-        assertTrue(manifest.contains("@color/ic_launcher_background"))
+        assertTrue(manifest.contains("@color/notification_icon_tint"))
+        assertTrue(colors.contains("<color name=\"notification_icon_tint\">#5F6368</color>"))
         listOf(ttsService, musicService, activityService, notificationRepository, serverSyncService).forEach { source ->
             assertTrue(source.contains("ic_ai_robot_notification"))
             assertFalse(source.contains("R.drawable.ic_notification"))
         }
         listOf(ttsService, activityService, notificationRepository, serverSyncService).forEach { source ->
             assertTrue(source.contains("setColor(ContextCompat.getColor("))
-            assertTrue(source.contains("R.color.ic_launcher_background"))
+            assertTrue(source.contains("R.color.notification_icon_tint"))
+            assertFalse(source.contains("R.color.ic_launcher_background"))
         }
     }
 

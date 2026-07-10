@@ -100,7 +100,7 @@ class SollServerSyncForegroundService : Service() {
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, SollNotificationChannel.SERVER_SYNC.channelId)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(this, R.color.ic_launcher_background))
+            .setColor(ContextCompat.getColor(this, R.color.notification_icon_tint))
             .setContentTitle("Фоновая синхронизация Soll")
             .setContentText("Проверяю чат и задачи, пока приложение свернуто")
             .setContentIntent(openChatIntent())

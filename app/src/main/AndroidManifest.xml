@@ -86,7 +86,7 @@
             android:resource="@drawable/ic_ai_robot_notification" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
-            android:resource="@color/ic_launcher_background" />
+            android:resource="@color/notification_icon_tint" />
 
         <activity
             android:name=".presentation.screens.todo.DailyTodoActivity"

@@ -169,7 +169,7 @@ class SollNotificationRepository @Inject constructor(
         cleanupLegacySystemNotifications(request.channel, systemNotificationId, summaryId)
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
+            .setColor(ContextCompat.getColor(context, R.color.notification_icon_tint))
             .setContentTitle(request.title)
             .setContentText(request.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(request.message))
@@ -226,7 +226,7 @@ class SollNotificationRepository @Inject constructor(
         val summaryText = systemNotificationSummaryText(request.channel, unreadInChannel)
         return NotificationCompat.Builder(context, request.channel.channelId)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
+            .setColor(ContextCompat.getColor(context, R.color.notification_icon_tint))
             .setContentTitle(summaryTitle)
             .setContentText(summaryText)
             .setStyle(

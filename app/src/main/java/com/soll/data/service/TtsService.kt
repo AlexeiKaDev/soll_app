@@ -318,7 +318,7 @@ class TtsService : Service() {
             .setContentTitle(currentTitle)
             .setContentText(currentSubtitle)
             .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(this, R.color.ic_launcher_background))
+            .setColor(ContextCompat.getColor(this, R.color.notification_icon_tint))
             .setLargeIcon(WidgetArtworkLoader.decodeFileArtwork(currentCoverPath))
             .setContentIntent(contentIntent)
             .setOngoing(true)

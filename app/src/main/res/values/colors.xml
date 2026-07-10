@@ -2,4 +2,5 @@
 <resources>
     <!-- Soll green background, white "S" in foreground. -->
     <color name="ic_launcher_background">#247A52</color>
+    <color name="notification_icon_tint">#5F6368</color>
 </resources>

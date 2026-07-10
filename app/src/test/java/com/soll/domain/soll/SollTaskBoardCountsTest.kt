@@ -36,16 +36,41 @@ class SollTaskBoardCountsTest {
         assertTrue(board.hasLimitedSections)
     }
 
-    private fun task(id: String, status: String): SollTask =
+    @Test
+    fun `daily todo tasks are removed from project task board`() {
+        val board = SollTaskBoard(
+            today = listOf(task(id = "task:daily:1", status = "today"), task(id = "task-1", status = "today")),
+            blocked = listOf(task(id = "task-2", status = "blocked")),
+            inbox = listOf(task(id = "task-3", status = "inbox", sourceRef = "android_daily_todo")),
+            stale = listOf(task(id = "task-4", status = "stale", tags = listOf("daily_todo"))),
+            deferred = listOf(task(id = "task-5", status = "deferred")),
+            doneRecent = listOf(task(id = "task-6", status = "done")),
+        ).withoutDailyTodoTasks()
+
+        assertEquals(listOf("task-1"), board.today.map { it.id })
+        assertEquals(listOf("task-2"), board.blocked.map { it.id })
+        assertEquals(emptyList<String>(), board.inbox.map { it.id })
+        assertEquals(emptyList<String>(), board.stale.map { it.id })
+        assertEquals(listOf("task-5"), board.deferred.map { it.id })
+        assertEquals(listOf("task-6"), board.doneRecent.map { it.id })
+        assertEquals(4, board.totalCount)
+    }
+
+    private fun task(
+        id: String,
+        status: String,
+        sourceRef: String = "test",
+        tags: List<String> = emptyList(),
+    ): SollTask =
         SollTask(
             id = id,
             title = "Task $id",
             description = "",
-            sourceRef = "test",
+            sourceRef = sourceRef,
             projectName = "Soll",
             status = status,
             priority = "B",
             dueDate = null,
-            tags = emptyList(),
+            tags = tags,
         )
 }

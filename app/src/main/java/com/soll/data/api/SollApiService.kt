@@ -23,7 +23,7 @@ interface SollApiService {
     @GET("api/v1/tasks/board")
     suspend fun getTaskBoard(
         @Header("Authorization") authorization: String? = null,
-        @Query("import_daily") importDaily: Boolean = true,
+        @Query("import_daily") importDaily: Boolean = false,
         @Query("import_project_opportunities") importProjectOpportunities: Boolean = true,
         @Query("limit_per_section") limitPerSection: Int? = null,
         @Query("include_counts") includeCounts: Boolean = false,
@@ -1116,6 +1116,8 @@ data class LearningItemResponse(
     val id: String = "",
     val title: String = "",
     val status: String = "pending",
+    val scope: String = "",
+    val origin: String = "",
     @Json(name = "next_action")
     val nextAction: String = "",
     @Json(name = "source_ref")

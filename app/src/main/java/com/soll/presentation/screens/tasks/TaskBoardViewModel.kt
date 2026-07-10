@@ -3,12 +3,10 @@ package com.soll.presentation.screens.tasks
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.soll.data.repository.FieldMapRepository
 import com.soll.data.local.entity.SyncQueueEntity
 import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.data.repository.TaskCacheRepository
 import com.soll.domain.soll.SollGateway
-import com.soll.domain.soll.SollDailyTask
 import com.soll.domain.soll.SollLearningItem
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollRoadmap
@@ -33,7 +31,6 @@ import java.io.IOException
 import retrofit2.HttpException
 
 enum class TaskWorkspaceMode(val label: String) {
-    DAILY("Дела"),
     TASKS("Задачи"),
     INSIGHTS("Инсайты"),
     ROADMAP("Roadmap"),
@@ -67,12 +64,6 @@ enum class InsightStatusFilter(val label: String, val apiStatus: String?) {
 }
 
 data class TaskBoardUiState(
-    val dailyTasks: List<SollDailyTask> = emptyList(),
-    val dailySourcePath: String = "",
-    val dailyLoading: Boolean = false,
-    val dailyActionTaskId: String? = null,
-    val dailyAttachmentTaskId: String? = null,
-    val dailyAdding: Boolean = false,
     val today: List<SollTask> = emptyList(),
     val blocked: List<SollTask> = emptyList(),
     val inbox: List<SollTask> = emptyList(),
@@ -187,7 +178,6 @@ data class TaskBoardUiState(
 @HiltViewModel
 class TaskBoardViewModel @Inject constructor(
     private val sollGateway: SollGateway,
-    private val fieldMapRepository: FieldMapRepository,
     private val syncQueueRepository: SollSyncQueueRepository,
     private val taskCacheRepository: TaskCacheRepository,
 ) : ViewModel() {
@@ -203,10 +193,6 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun refresh(showLoading: Boolean = true) {
-        if (_uiState.value.selectedMode == TaskWorkspaceMode.DAILY) {
-            loadDailyTasks(showLoading = showLoading)
-            return
-        }
         viewModelScope.launch {
             if (showLoading) {
                 _uiState.update { it.copy(isLoading = true, message = null, isError = false) }
@@ -404,7 +390,6 @@ class TaskBoardViewModel @Inject constructor(
     fun selectMode(mode: TaskWorkspaceMode) {
         _uiState.update { it.copy(selectedMode = mode) }
         when (mode) {
-            TaskWorkspaceMode.DAILY -> loadDailyTasks()
             TaskWorkspaceMode.TASKS -> Unit
             TaskWorkspaceMode.INSIGHTS -> loadInsights()
             TaskWorkspaceMode.ROADMAP -> loadRoadmap()
@@ -422,162 +407,6 @@ class TaskBoardViewModel @Inject constructor(
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query).deriveTaskList() }
-    }
-
-    fun loadDailyTasks(showLoading: Boolean = true) {
-        viewModelScope.launch {
-            if (showLoading) {
-                _uiState.update { it.copy(dailyLoading = true, message = null, isError = false) }
-            }
-            sollGateway.getTodayDailyTasks().fold(
-                onSuccess = { list ->
-                    _uiState.update {
-                        it.copy(
-                            dailyTasks = list.tasks,
-                            dailySourcePath = list.sourcePath,
-                            dailyLoading = false,
-                            message = null,
-                            isError = false,
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            dailyLoading = false,
-                            message = error.message ?: "Не удалось загрузить дела",
-                            isError = true,
-                        )
-                    }
-                },
-            )
-        }
-    }
-
-    fun addDailyTask(text: String, includeLocation: Boolean) {
-        val cleanText = text.trim()
-        if (cleanText.isBlank()) {
-            _uiState.update { it.copy(message = "Введите дело", isError = true) }
-            return
-        }
-        viewModelScope.launch {
-            _uiState.update { it.copy(dailyAdding = true, message = null, isError = false) }
-            val locationLabel = if (includeLocation) {
-                runCatching { fieldMapRepository.publishCurrentLocationToSoll() }
-                    .getOrElse { error ->
-                        _uiState.update {
-                            it.copy(
-                                dailyAdding = false,
-                                message = error.message ?: "Не удалось определить геопозицию",
-                                isError = true,
-                            )
-                        }
-                        return@launch
-                    }
-            } else {
-                ""
-            }
-            sollGateway.addTodayDailyTask(cleanText, locationLabel).fold(
-                onSuccess = { list ->
-                    _uiState.update {
-                        it.copy(
-                            dailyTasks = list.tasks,
-                            dailySourcePath = list.sourcePath,
-                            dailyAdding = false,
-                            message = "Дело добавлено",
-                            isError = false,
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            dailyAdding = false,
-                            message = error.message ?: "Не удалось добавить дело",
-                            isError = true,
-                        )
-                    }
-                },
-            )
-        }
-    }
-
-    fun reportDailyLocationPermissionDenied() {
-        _uiState.update {
-            it.copy(
-                message = "Геопозиция не добавлена: нет разрешения",
-                isError = true,
-            )
-        }
-    }
-
-    fun setDailyTaskDone(task: SollDailyTask, done: Boolean) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(dailyActionTaskId = task.id, message = null, isError = false) }
-            sollGateway.updateTodayDailyTask(task.id, done).fold(
-                onSuccess = { list ->
-                    _uiState.update {
-                        it.copy(
-                            dailyTasks = list.tasks,
-                            dailySourcePath = list.sourcePath,
-                            dailyActionTaskId = null,
-                            message = if (done) "Дело закрыто" else "Дело возвращено",
-                            isError = false,
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            dailyActionTaskId = null,
-                            message = error.message ?: "Не удалось обновить дело",
-                            isError = true,
-                        )
-                    }
-                },
-            )
-        }
-    }
-
-    fun attachDailyTaskFile(task: SollDailyTask, uri: Uri) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(dailyAttachmentTaskId = task.id, message = null, isError = false) }
-            sollGateway.uploadTodayDailyTaskAttachment(task.id, uri).fold(
-                onSuccess = { attachment ->
-                    sollGateway.getTodayDailyTasks().fold(
-                        onSuccess = { list ->
-                            _uiState.update {
-                                it.copy(
-                                    dailyTasks = list.tasks,
-                                    dailySourcePath = list.sourcePath,
-                                    dailyAttachmentTaskId = null,
-                                    message = attachment.analysisStatus.dailyAttachmentMessage(),
-                                    isError = false,
-                                )
-                            }
-                        },
-                        onFailure = { error ->
-                            _uiState.update {
-                                it.copy(
-                                    dailyAttachmentTaskId = null,
-                                    message = error.message ?: "Вложение добавлено, но дела не обновились",
-                                    isError = true,
-                                )
-                            }
-                        },
-                    )
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            dailyAttachmentTaskId = null,
-                            message = error.message ?: "Не удалось прикрепить файл",
-                            isError = true,
-                        )
-                    }
-                },
-            )
-        }
     }
 
     fun loadMoreTasks() {
@@ -974,6 +803,19 @@ class TaskBoardViewModel @Inject constructor(
 
     fun createTaskFromSourceItem(sourceId: String, item: SollSourceItem) {
         viewModelScope.launch {
+            val projectSource = _uiState.value.sources.firstOrNull { source ->
+                source.id == sourceId && source.scope == SollSourceScope.PROJECT_SOLL
+            }
+            if (projectSource == null) {
+                _uiState.update {
+                    it.copy(
+                        sourceItemTaskId = null,
+                        message = "Материал не относится к источникам Soll",
+                        isError = true,
+                    )
+                }
+                return@launch
+            }
             _uiState.update { it.copy(sourceItemTaskId = item.itemId, message = null, isError = false) }
             sollGateway.createTaskFromSourceItem(sourceId, item.itemId).fold(
                 onSuccess = {
@@ -1157,7 +999,6 @@ class TaskBoardViewModel @Inject constructor(
     private fun refreshSelectedWorkspace(showLoading: Boolean) {
         if (_uiState.value.workspaceLoading) return
         when (_uiState.value.selectedMode) {
-            TaskWorkspaceMode.DAILY -> loadDailyTasks(showLoading = showLoading)
             TaskWorkspaceMode.TASKS -> Unit
             TaskWorkspaceMode.INSIGHTS -> loadInsights(showLoading = showLoading)
             TaskWorkspaceMode.ROADMAP -> loadRoadmap(showLoading = showLoading)
@@ -1171,7 +1012,6 @@ class TaskBoardViewModel @Inject constructor(
                 delay(TASK_REFRESH_INTERVAL_MS)
                 if (_uiState.value.actionTaskId == null && !_uiState.value.isLoading) {
                     when (_uiState.value.selectedMode) {
-                        TaskWorkspaceMode.DAILY -> loadDailyTasks(showLoading = false)
                         TaskWorkspaceMode.SOURCES -> loadSources(showLoading = false)
                         else -> refresh(showLoading = false)
                     }
@@ -1383,15 +1223,6 @@ private fun String.normalizedTaskPriorityLabel(): String =
         "C", "P3" -> "C"
         "D", "P4" -> "D"
         else -> trim().uppercase()
-    }
-
-private fun String.dailyAttachmentMessage(): String =
-    when (this) {
-        "parsed" -> "Файл прикреплен и разобран"
-        "ocr_only" -> "Фото прикреплено, текст распознан"
-        "vision_unavailable" -> "Фото прикреплено, для объекта нужна локальная vision-модель"
-        "unsupported" -> "Файл прикреплен, анализ недоступен"
-        else -> "Вложение прикреплено"
     }
 
 private fun String.parseTags(): List<String> =

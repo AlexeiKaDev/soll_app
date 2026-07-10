@@ -52,8 +52,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -73,6 +71,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -251,20 +250,6 @@ fun DailyTodoScreen(
         }
     }
 
-    fun requestDeleteTask(task: SollDailyTask) {
-        coroutineScope.launch {
-            val result = snackbarHostState.showSnackbar(
-                message = "Удалить дело?",
-                actionLabel = "Отмена",
-                withDismissAction = true,
-                duration = SnackbarDuration.Short,
-            )
-            if (result != SnackbarResult.ActionPerformed) {
-                viewModel.deleteTask(task)
-            }
-        }
-    }
-
     LaunchedEffect(uiState.addSuccessVersion) {
         if (uiState.addSuccessVersion > 0L) {
             clearAddForm()
@@ -344,7 +329,7 @@ fun DailyTodoScreen(
                             onAddTask = ::submitTask,
                             onOpenTask = viewModel::openTask,
                             onToggleTask = viewModel::setTaskDone,
-                            onDeleteTask = ::requestDeleteTask,
+                            onDeleteTask = viewModel::deleteTask,
                             onAttachTask = { task ->
                                 existingAttachmentTask = task
                                 existingAttachmentPicker.launch("*/*")
@@ -554,9 +539,10 @@ private fun DailyTodoRow(
     onAttach: () -> Unit,
     onPhoto: () -> Unit,
 ) {
+    val rowShape = RoundedCornerShape(8.dp)
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
+            if (value == SwipeToDismissBoxValue.EndToStart && !isRunning) {
                 onDelete()
             }
             false
@@ -565,20 +551,26 @@ private fun DailyTodoRow(
 
     SwipeToDismissBox(
         state = dismissState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(rowShape)
+            .background(MaterialTheme.colorScheme.surface),
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                    .padding(end = 24.dp),
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(end = 8.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Удалить",
-                    tint = MaterialTheme.colorScheme.error,
-                )
+                IconButton(onClick = onDelete, enabled = !isRunning) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Удалить",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
     ) {
@@ -587,9 +579,9 @@ private fun DailyTodoRow(
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = onOpen,
-                    onLongClick = onDelete,
+                    onLongClick = if (isRunning) null else onDelete,
                 ),
-            shape = RoundedCornerShape(8.dp),
+            shape = rowShape,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
@@ -633,6 +625,13 @@ private fun DailyTodoRow(
                     }
                     IconButton(onClick = onPhoto, enabled = !isAttachmentRunning) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = "Сделать фото")
+                    }
+                    IconButton(onClick = onDelete, enabled = !isRunning) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Удалить",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
                 if (task.attachments.isNotEmpty()) {

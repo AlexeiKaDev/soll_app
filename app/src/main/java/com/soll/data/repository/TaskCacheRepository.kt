@@ -5,6 +5,7 @@ import com.soll.data.local.entity.TaskCacheEntity
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
 import com.soll.domain.soll.SollTaskBoardCounts
+import com.soll.domain.soll.withoutDailyTodoTasks
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,7 +18,7 @@ class TaskCacheRepository @Inject constructor(
         pendingStatuses: Map<String, String> = emptyMap(),
     ): SollTaskBoard {
         val now = System.currentTimeMillis()
-        val adjustedBoard = board.withPendingStatuses(pendingStatuses)
+        val adjustedBoard = board.withoutDailyTodoTasks().withPendingStatuses(pendingStatuses)
         taskCacheDao.replaceAll(
             adjustedBoard.allTasks()
                 .distinctBy { it.id }
@@ -32,7 +33,7 @@ class TaskCacheRepository @Inject constructor(
         val tasks = taskCacheDao.getAll()
             .map { it.toDomain() }
             .withPendingStatuses(pendingStatuses)
-        return tasks.toBoard()
+        return tasks.toBoard().withoutDailyTodoTasks()
     }
 
     suspend fun applyOptimisticTaskStatus(

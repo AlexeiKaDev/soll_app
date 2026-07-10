@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.soll.data.repository.FieldMapRepository
 import com.soll.domain.soll.SollDailyTask
 import com.soll.domain.soll.SollDailyTaskDetail
+import com.soll.domain.soll.SollDailyTaskList
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollSourceItem
@@ -72,19 +73,17 @@ class DailyTodoViewModel @Inject constructor(
             }
             sollGateway.getTodayDailyTasks().fold(
                 onSuccess = { list ->
+                    val visibleTasks = list.tasks.withoutCompletedDailyTasks()
                     _uiState.update {
                         val selectedDetail = it.selectedTaskDetail
-                        val updatedSelectedTask = selectedDetail?.let { detail ->
-                            list.tasks.firstOrNull { task -> task.id == detail.task.id }
-                        }
+                        val updatedSelectedDetail = selectedDetail?.updatedWith(visibleTasks)
+                        val selectedTaskMissing = selectedDetail != null && updatedSelectedDetail == null
                         it.copy(
-                            tasks = list.tasks,
+                            tasks = visibleTasks,
                             sourcePath = list.sourcePath,
-                            selectedTaskDetail = if (selectedDetail != null && updatedSelectedTask != null) {
-                                selectedDetail.copy(task = updatedSelectedTask)
-                            } else {
-                                selectedDetail
-                            },
+                            selectedTaskDetail = updatedSelectedDetail,
+                            detailLoading = if (selectedTaskMissing) false else it.detailLoading,
+                            researchTaskId = if (selectedTaskMissing) null else it.researchTaskId,
                             isLoading = false,
                             message = null,
                             isError = false,
@@ -151,9 +150,9 @@ class DailyTodoViewModel @Inject constructor(
                         )
                     }
                     return@launch
-                }
+            }
 
-            var currentTasks = createdList.tasks
+            var currentTasks = createdList.tasks.withoutCompletedDailyTasks()
             var currentSourcePath = createdList.sourcePath
             val createdTaskId = createdList.createdTaskId
                 ?: findCreatedTaskId(createdList.tasks, existingTaskIds)
@@ -176,7 +175,7 @@ class DailyTodoViewModel @Inject constructor(
                         onSuccess = { attachment ->
                             message = "Дело добавлено. ${attachment.analysisStatus.dailyAttachmentMessage()}"
                             sollGateway.getTodayDailyTasks().onSuccess { refreshed ->
-                                currentTasks = refreshed.tasks
+                                currentTasks = refreshed.tasks.withoutCompletedDailyTasks()
                                 currentSourcePath = refreshed.sourcePath
                             }
                         },
@@ -209,21 +208,21 @@ class DailyTodoViewModel @Inject constructor(
     fun setTaskDone(task: SollDailyTask, done: Boolean) {
         viewModelScope.launch {
             _uiState.update { it.copy(actionTaskId = task.id, message = null, isError = false) }
-            sollGateway.updateTodayDailyTask(task.id, done).fold(
+            callDailyTaskReferences(task) { taskRef ->
+                sollGateway.updateTodayDailyTask(taskRef, done)
+            }.fold(
                 onSuccess = { list ->
+                    val visibleTasks = list.tasks.withoutCompletedDailyTasks()
                     _uiState.update {
                         val detail = it.selectedTaskDetail
-                        val selectedTask = detail?.let { current ->
-                            list.tasks.firstOrNull { item -> item.id == current.task.id }
-                        }
+                        val updatedDetail = detail?.updatedWith(visibleTasks)
+                        val selectedTaskMissing = detail != null && updatedDetail == null
                         it.copy(
-                            tasks = list.tasks,
+                            tasks = visibleTasks,
                             sourcePath = list.sourcePath,
-                            selectedTaskDetail = if (detail != null && selectedTask != null) {
-                                detail.copy(task = selectedTask)
-                            } else {
-                                detail
-                            },
+                            selectedTaskDetail = updatedDetail,
+                            detailLoading = if (selectedTaskMissing) false else it.detailLoading,
+                            researchTaskId = if (selectedTaskMissing) null else it.researchTaskId,
                             actionTaskId = null,
                             message = if (done) "Дело закрыто" else "Дело возвращено",
                             isError = false,
@@ -245,7 +244,7 @@ class DailyTodoViewModel @Inject constructor(
 
     fun openTask(task: SollDailyTask) {
         viewModelScope.launch {
-            loadTaskDetail(task.id, fallbackTask = task, showLoading = true)
+            loadTaskDetail(task, showLoading = true)
         }
     }
 
@@ -256,28 +255,26 @@ class DailyTodoViewModel @Inject constructor(
     fun refreshSelectedTaskDetail(showLoading: Boolean = true) {
         val task = _uiState.value.selectedTaskDetail?.task ?: return
         viewModelScope.launch {
-            loadTaskDetail(task.id, fallbackTask = task, showLoading = showLoading)
+            loadTaskDetail(task, showLoading = showLoading)
         }
     }
 
     fun deleteTask(task: SollDailyTask) {
         viewModelScope.launch {
             _uiState.update { it.copy(deletingTaskId = task.id, message = null, isError = false) }
-            sollGateway.deleteTodayDailyTask(task.id).fold(
+            deleteDailyTaskWithReferences(task).fold(
                 onSuccess = { list ->
+                    val visibleTasks = list.tasks.withoutCompletedDailyTasks()
                     _uiState.update {
                         val selectedDetail = it.selectedTaskDetail
-                        val selectedTask = selectedDetail?.let { current ->
-                            list.tasks.firstOrNull { item -> item.id == current.task.id }
-                        }
+                        val updatedSelectedDetail = selectedDetail?.updatedWith(visibleTasks)
+                        val selectedTaskMissing = selectedDetail != null && updatedSelectedDetail == null
                         it.copy(
-                            tasks = list.tasks,
+                            tasks = visibleTasks,
                             sourcePath = list.sourcePath,
-                            selectedTaskDetail = if (selectedDetail != null) {
-                                selectedTask?.let { task -> selectedDetail.copy(task = task) }
-                            } else {
-                                null
-                            },
+                            selectedTaskDetail = updatedSelectedDetail,
+                            detailLoading = if (selectedTaskMissing) false else it.detailLoading,
+                            researchTaskId = if (selectedTaskMissing) null else it.researchTaskId,
                             deletingTaskId = null,
                             message = "Дело удалено",
                             isError = false,
@@ -298,7 +295,8 @@ class DailyTodoViewModel @Inject constructor(
     }
 
     fun researchSelectedTask(publishLocation: Boolean = true) {
-        val taskId = _uiState.value.selectedTaskDetail?.task?.id ?: return
+        val task = _uiState.value.selectedTaskDetail?.task ?: return
+        val taskId = task.id
         viewModelScope.launch {
             _uiState.update { it.copy(researchTaskId = taskId, message = null, isError = false) }
             var locationWarning: String? = null
@@ -308,7 +306,9 @@ class DailyTodoViewModel @Inject constructor(
                         locationWarning = error.message ?: "Геопозиция недоступна"
                     }
             }
-            sollGateway.researchTodayDailyTask(taskId).fold(
+            callDailyTaskReferences(task) { taskRef ->
+                sollGateway.researchTodayDailyTask(taskRef)
+            }.fold(
                 onSuccess = { detail ->
                     val message = detail.research?.summary ?: "Поиск завершен"
                     _uiState.update {
@@ -337,17 +337,19 @@ class DailyTodoViewModel @Inject constructor(
         viewModelScope.launch {
             val detailTaskId = _uiState.value.selectedTaskDetail?.task?.id
             _uiState.update { it.copy(attachmentTaskId = task.id, message = null, isError = false) }
-            sollGateway.uploadTodayDailyTaskAttachment(task.id, uri).fold(
+            callDailyTaskReferences(task) { taskRef ->
+                sollGateway.uploadTodayDailyTaskAttachment(taskRef, uri)
+            }.fold(
                 onSuccess = { attachment ->
                     val refreshedList = sollGateway.getTodayDailyTasks().getOrNull()
                     val refreshedDetail = if (detailTaskId == task.id) {
-                        sollGateway.getTodayDailyTaskDetail(task.id).getOrNull()
+                        getTaskDetailWithReferences(task).getOrNull()
                     } else {
                         null
                     }
                     _uiState.update {
                         it.copy(
-                            tasks = refreshedList?.tasks ?: it.tasks,
+                            tasks = refreshedList?.tasks?.withoutCompletedDailyTasks() ?: it.tasks,
                             sourcePath = refreshedList?.sourcePath ?: it.sourcePath,
                             selectedTaskDetail = refreshedDetail ?: it.selectedTaskDetail,
                             attachmentTaskId = null,
@@ -555,11 +557,74 @@ class DailyTodoViewModel @Inject constructor(
         _uiState.update { it.copy(message = null, isError = false) }
     }
 
-    private suspend fun loadTaskDetail(taskId: String, fallbackTask: SollDailyTask?, showLoading: Boolean) {
+    private suspend fun getTaskDetailWithReferences(task: SollDailyTask): Result<SollDailyTaskDetail> =
+        callDailyTaskReferences(task) { taskRef ->
+            sollGateway.getTodayDailyTaskDetail(taskRef)
+        }
+
+    private suspend fun deleteDailyTaskWithReferences(task: SollDailyTask): Result<SollDailyTaskList> {
+        val deleteResult = callDailyTaskReferences(task) { taskRef ->
+            sollGateway.deleteTodayDailyTask(taskRef)
+        }
+        if (deleteResult.isSuccess) {
+            return deleteResult
+        }
+        val deleteError = deleteResult.exceptionOrNull()
+        if (deleteError != null && !deleteError.isDailyTaskReferenceError()) {
+            return deleteResult
+        }
+        return callDailyTaskReferences(task) { taskRef ->
+            sollGateway.updateTodayDailyTask(taskRef, done = true)
+        }
+    }
+
+    private suspend fun <T> callDailyTaskReferences(
+        task: SollDailyTask,
+        call: suspend (String) -> Result<T>,
+    ): Result<T> {
+        var lastError: Throwable? = null
+        for (taskRef in dailyTaskReferenceCandidates(task)) {
+            val result = call(taskRef)
+            if (result.isSuccess) {
+                return result
+            }
+            val error = result.exceptionOrNull() ?: IllegalStateException("Не удалось выполнить действие")
+            lastError = error
+            if (!error.isDailyTaskReferenceError()) {
+                return Result.failure(error)
+            }
+        }
+        return Result.failure(lastError ?: IllegalStateException("Не удалось выполнить действие"))
+    }
+
+    private fun dailyTaskReferenceCandidates(task: SollDailyTask): List<String> {
+        val references = mutableListOf<String>()
+        fun addReference(value: String) {
+            val clean = value.trim()
+            if (clean.isNotBlank() && clean !in references) {
+                references += clean
+            }
+        }
+
+        addReference(task.id)
+        val tasks = _uiState.value.tasks
+        val indexById = tasks.indexOfFirst { it.id == task.id }
+        val taskIndex = if (indexById >= 0) {
+            indexById
+        } else {
+            tasks.indexOfFirst { it.line == task.line && it.text == task.text }
+        }
+        if (taskIndex >= 0) {
+            addReference("task-${taskIndex + 1}")
+        }
+        return references
+    }
+
+    private suspend fun loadTaskDetail(task: SollDailyTask, showLoading: Boolean) {
         if (showLoading) {
             _uiState.update { it.copy(detailLoading = true, message = null, isError = false) }
         }
-        sollGateway.getTodayDailyTaskDetail(taskId).fold(
+        getTaskDetailWithReferences(task).fold(
             onSuccess = { detail ->
                 _uiState.update {
                     it.copy(
@@ -572,9 +637,9 @@ class DailyTodoViewModel @Inject constructor(
             },
             onFailure = { error ->
                 _uiState.update {
-                    if (fallbackTask != null && error.isHttpStatus(404)) {
+                    if (error.isDailyTaskReferenceError()) {
                         it.copy(
-                            selectedTaskDetail = fallbackTask.toFallbackDetail(sourcePath = it.sourcePath),
+                            selectedTaskDetail = task.toFallbackDetail(sourcePath = it.sourcePath),
                             detailLoading = false,
                             message = null,
                             isError = false,
@@ -627,6 +692,9 @@ class DailyTodoViewModel @Inject constructor(
 private fun findCreatedTaskId(tasks: List<SollDailyTask>, existingTaskIds: Set<String>): String? =
     tasks.lastOrNull { it.id !in existingTaskIds }?.id ?: tasks.lastOrNull()?.id
 
+private fun List<SollDailyTask>.withoutCompletedDailyTasks(): List<SollDailyTask> =
+    filterNot { it.done }
+
 private fun SollDailyTask.toFallbackDetail(sourcePath: String): SollDailyTaskDetail =
     SollDailyTaskDetail(
         date = "",
@@ -634,8 +702,15 @@ private fun SollDailyTask.toFallbackDetail(sourcePath: String): SollDailyTaskDet
         task = this,
     )
 
-private fun Throwable.isHttpStatus(statusCode: Int): Boolean =
-    this is HttpException && code() == statusCode
+private fun SollDailyTaskDetail.updatedWith(tasks: List<SollDailyTask>): SollDailyTaskDetail? {
+    val currentTaskId = task.id
+    return tasks.firstOrNull { it.id == currentTaskId }?.let { updatedTask ->
+        copy(task = updatedTask)
+    }
+}
+
+private fun Throwable.isDailyTaskReferenceError(): Boolean =
+    this is HttpException && code() in setOf(400, 404)
 
 private fun String.parseTags(): List<String> =
     split(",", ";", "#")

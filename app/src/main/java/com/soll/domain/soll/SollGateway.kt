@@ -219,6 +219,8 @@ data class SollLearningItem(
     val sourceRef: String,
     val seenCount: Int,
     val tags: List<String> = emptyList(),
+    val scope: String = "",
+    val origin: String = "",
 )
 
 data class SollRoadmap(
@@ -378,6 +380,53 @@ data class SollTask(
     val requiredCapabilities: List<String> = emptyList(),
     val routingState: String = "",
 )
+
+internal fun SollTaskBoard.withoutDailyTodoTasks(): SollTaskBoard {
+    val filteredToday = today.filterNot { it.isDailyTodoTask() }
+    val filteredBlocked = blocked.filterNot { it.isDailyTodoTask() }
+    val filteredInbox = inbox.filterNot { it.isDailyTodoTask() }
+    val filteredStale = stale.filterNot { it.isDailyTodoTask() }
+    val filteredDeferred = deferred.filterNot { it.isDailyTodoTask() }
+    val filteredDoneRecent = doneRecent.filterNot { it.isDailyTodoTask() }
+    val changed = filteredToday.size != today.size ||
+        filteredBlocked.size != blocked.size ||
+        filteredInbox.size != inbox.size ||
+        filteredStale.size != stale.size ||
+        filteredDeferred.size != deferred.size ||
+        filteredDoneRecent.size != doneRecent.size
+    return copy(
+        today = filteredToday,
+        blocked = filteredBlocked,
+        inbox = filteredInbox,
+        stale = filteredStale,
+        deferred = filteredDeferred,
+        doneRecent = filteredDoneRecent,
+        counts = if (changed) {
+            SollTaskBoardCounts(
+                today = filteredToday.size,
+                blocked = filteredBlocked.size,
+                inbox = filteredInbox.size,
+                stale = filteredStale.size,
+                deferred = filteredDeferred.size,
+                doneRecent = filteredDoneRecent.size,
+            )
+        } else {
+            counts
+        },
+    )
+}
+
+internal fun SollTask.isDailyTodoTask(): Boolean =
+    id.hasDailyTodoMarker() ||
+        sourceRef.hasDailyTodoMarker() ||
+        tags.any { it.hasDailyTodoMarker() }
+
+private fun String.hasDailyTodoMarker(): Boolean {
+    val normalized = trim().lowercase()
+    return normalized.startsWith("task:daily:") ||
+        normalized.contains("daily_todo") ||
+        normalized.contains("android_daily_todo")
+}
 
 data class SollRawNote(
     val filename: String,

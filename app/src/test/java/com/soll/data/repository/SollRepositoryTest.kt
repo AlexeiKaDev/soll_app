@@ -1,12 +1,12 @@
 package com.soll.data.repository
 
-import com.soll.data.api.ChatTaskIntakeItemResponse
-import com.soll.data.api.ChatTaskIntakeResponse
-import com.soll.data.api.ChatTurnResponse
-import com.soll.data.api.ChatMessageResponse
 import com.soll.data.api.SollTaskMutationResponse
+import com.soll.domain.soll.SollLearningItem
+import com.soll.domain.soll.SollMonitoredSource
+import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
+import com.soll.domain.soll.withoutDailyTodoTasks
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -68,6 +68,19 @@ class SollRepositoryTest {
         )
 
         assertEquals("https://sales.monolith-ost.com/api/v1/soll/chat/turn", rewritten.toString())
+    }
+
+    @Test
+    fun `api prefix preserves encoded task id segments`() {
+        val rewritten = rewriteSollApiUrl(
+            "https://sales.monolith-ost.com/api/v1/daily/tasks/today/task%3Adaily%3A20260709%3Aabc".toHttpUrl(),
+            "api/v1/soll",
+        )
+
+        assertEquals(
+            "https://sales.monolith-ost.com/api/v1/soll/daily/tasks/today/task%3Adaily%3A20260709%3Aabc",
+            rewritten.toString(),
+        )
     }
 
     @Test
@@ -140,96 +153,105 @@ class SollRepositoryTest {
     }
 
     @Test
-    fun `task board fallback keeps only daily open tasks`() {
-        val list = taskBoardToDailyTaskList(
-            board = SollTaskBoard(
-                today = listOf(
-                    task("task:daily:today-1", "today", "Call client"),
-                    task("project-daily-1", "today", "Project Daily task", projectName = "Daily"),
-                ),
-                inbox = listOf(task("task:daily:inbox-1", "inbox", "task: Buy milk")),
-                stale = listOf(task("stale-1", "stale", "General task", projectName = "AI Core")),
-                deferred = emptyList(),
-                doneRecent = listOf(task("done-1", "done", "Sent report")),
+    fun `task board drops daily todo origin from every section`() {
+        val board = SollTaskBoard(
+            today = listOf(
+                task("task-1", "today", "Project task"),
+                task("task:daily:today-1", "today", "Daily marker"),
             ),
-            createdTaskId = "task:daily:inbox-1",
-            today = "2026-07-09",
-        )
+            blocked = listOf(task("task-2", "blocked", "Blocked")),
+            inbox = listOf(task("task-3", "inbox", "Inbox", sourceRef = "android_daily_todo")),
+            stale = listOf(task("task-4", "stale", "Stale", tags = listOf("daily_todo"))),
+            deferred = listOf(task("task-5", "deferred", "Deferred")),
+            doneRecent = listOf(task("task-6", "done", "Done", sourceRef = "project")),
+        ).withoutDailyTodoTasks()
 
-        assertEquals("2026-07-09", list.date)
-        assertEquals("Android daily fallback", list.sourcePath)
-        assertEquals("task:daily:inbox-1", list.createdTaskId)
-        assertEquals(listOf("task:daily:today-1", "task:daily:inbox-1"), list.tasks.map { it.id })
-        assertEquals("Buy milk", list.tasks[1].text)
-        assertEquals(listOf(false, false), list.tasks.map { it.done })
+        assertEquals(listOf("task-1"), board.today.map { it.id })
+        assertEquals(listOf("task-2"), board.blocked.map { it.id })
+        assertEquals(emptyList<String>(), board.inbox.map { it.id })
+        assertEquals(emptyList<String>(), board.stale.map { it.id })
+        assertEquals(listOf("task-5"), board.deferred.map { it.id })
+        assertEquals(listOf("task-6"), board.doneRecent.map { it.id })
+        assertEquals(4, board.totalCount)
     }
 
     @Test
-    fun `task board fallback keeps just created non daily task`() {
-        val list = taskBoardToDailyTaskList(
-            board = SollTaskBoard(
-                today = listOf(task("created-1", "today", "task: Fresh fallback", projectName = "Inbox")),
-                inbox = emptyList(),
-                stale = listOf(task("other-1", "stale", "Other task", projectName = "AI Core")),
-                deferred = emptyList(),
-                doneRecent = emptyList(),
-            ),
-            createdTaskId = "created-1",
-            today = "2026-07-09",
+    fun `source scope filter separates project and daily sources`() {
+        val sources = listOf(
+            source("project-1", SollSourceScope.PROJECT_SOLL, "project"),
+            source("daily-1", SollSourceScope.DAILY_TODO, "daily"),
+            source("legacy-daily", SollSourceScope.PROJECT_SOLL, "legacy", tags = listOf("daily_todo")),
         )
 
-        assertEquals(listOf("created-1"), list.tasks.map { it.id })
-        assertEquals("Fresh fallback", list.tasks.single().text)
+        assertEquals(
+            listOf("project-1"),
+            sources.filterForSourceScope(SollSourceScope.PROJECT_SOLL).map { it.id },
+        )
+        assertEquals(
+            listOf("daily-1", "legacy-daily"),
+            sources.filterForSourceScope(SollSourceScope.DAILY_TODO).map { it.id },
+        )
     }
 
     @Test
-    fun `chat turn task intake id is extracted from top level response`() {
-        val taskId = taskIntakeTaskId(
-            ChatTurnResponse(
-                taskIntake = ChatTaskIntakeResponse(
-                    acted = true,
-                    items = listOf(ChatTaskIntakeItemResponse(taskId = "task:chat:1")),
-                ),
-            ),
-        )
-
-        assertEquals("task:chat:1", taskId)
+    fun `learning items detect daily todo origin`() {
+        assertEquals(false, learning("project-1", sourceRef = "project/source").isDailyTodoOrigin())
+        assertEquals(true, learning("daily-1", sourceRef = "daily_todo/source").isDailyTodoOrigin())
+        assertEquals(true, learning("project-2", tags = listOf("android_daily_todo")).isDailyTodoOrigin())
     }
 
-    @Test
-    fun `chat turn task intake id falls back to assistant metadata`() {
-        val taskId = taskIntakeTaskId(
-            ChatTurnResponse(
-                assistant = ChatMessageResponse(
-                    metadata = mapOf(
-                        "task_intake" to mapOf(
-                            "items" to listOf(mapOf("task_id" to "task:chat:2")),
-                        ),
-                    ),
-                ),
-            ),
-        )
-
-        assertEquals("task:chat:2", taskId)
-    }
-
-    @Test
-    fun `daily delete fallback is limited to task board ids`() {
-        assertEquals(true, canFallbackDeleteDailyTaskId("task:chat:1"))
-        assertEquals(false, canFallbackDeleteDailyTaskId("daily-1"))
-        assertEquals(false, canFallbackDeleteDailyTaskId(""))
-    }
-
-    private fun task(id: String, status: String, title: String, projectName: String = "Daily"): SollTask =
+    private fun task(
+        id: String,
+        status: String,
+        title: String,
+        projectName: String = "Soll",
+        sourceRef: String = "test",
+        tags: List<String> = emptyList(),
+    ): SollTask =
         SollTask(
             id = id,
             title = title,
             description = "",
-            sourceRef = "test",
+            sourceRef = sourceRef,
             projectName = projectName,
             status = status,
             priority = "B",
             dueDate = null,
-            tags = emptyList(),
+            tags = tags,
+        )
+
+    private fun source(
+        id: String,
+        scope: SollSourceScope,
+        target: String,
+        tags: List<String> = emptyList(),
+    ): SollMonitoredSource =
+        SollMonitoredSource(
+            id = id,
+            name = id,
+            sourceType = "web",
+            scope = scope,
+            target = target,
+            description = "",
+            tags = tags,
+            enabled = true,
+            lastResult = "",
+            itemsSeen = 0,
+            newItemsLastCheck = 0,
+        )
+
+    private fun learning(
+        id: String,
+        sourceRef: String = "",
+        tags: List<String> = emptyList(),
+    ): SollLearningItem =
+        SollLearningItem(
+            id = id,
+            title = id,
+            status = "pending",
+            nextAction = "",
+            sourceRef = sourceRef,
+            seenCount = 0,
+            tags = tags,
         )
 }

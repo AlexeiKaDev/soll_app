@@ -168,8 +168,7 @@ class SollNotificationRepository @Inject constructor(
         val summaryId = systemNotificationSummaryId(request.channel, groupKey)
         cleanupLegacySystemNotifications(request.channel, systemNotificationId, summaryId)
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
-            .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(context, R.color.notification_icon_tint))
+            .setSmallIcon(notificationSmallIcon(request))
             .setContentTitle(request.title)
             .setContentText(request.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(request.message))
@@ -225,8 +224,7 @@ class SollNotificationRepository @Inject constructor(
             ?: systemNotificationSummaryTitle(request.channel)
         val summaryText = systemNotificationSummaryText(request.channel, unreadInChannel)
         return NotificationCompat.Builder(context, request.channel.channelId)
-            .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(context, R.color.notification_icon_tint))
+            .setSmallIcon(notificationSmallIcon(request))
             .setContentTitle(summaryTitle)
             .setContentText(summaryText)
             .setStyle(
@@ -255,6 +253,13 @@ class SollNotificationRepository @Inject constructor(
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
     }
+
+    private fun notificationSmallIcon(request: SollNotificationRequest): Int =
+        if (request.source.equals("fcm", ignoreCase = true)) {
+            R.drawable.ic_ai_robot_notification
+        } else {
+            R.drawable.ic_soll_notification
+        }
 
     private fun groupAlertBehavior(channel: SollNotificationChannel): Int =
         when (channel) {

@@ -10,7 +10,6 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.soll.R
 import com.soll.SollApplication
 import com.soll.domain.tts.TextToSpeechManager
@@ -317,8 +316,7 @@ class TtsService : Service() {
         return NotificationCompat.Builder(this, SollApplication.TTS_NOTIFICATION_CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentSubtitle)
-            .setSmallIcon(R.drawable.ic_ai_robot_notification)
-            .setColor(ContextCompat.getColor(this, R.color.notification_icon_tint))
+            .setSmallIcon(R.drawable.ic_soll_notification)
             .setLargeIcon(WidgetArtworkLoader.decodeFileArtwork(currentCoverPath))
             .setContentIntent(contentIntent)
             .setOngoing(true)

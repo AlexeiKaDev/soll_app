@@ -630,7 +630,7 @@ class MusicPlaybackService : MediaLibraryService() {
             .setNotificationId(SollApplication.MUSIC_NOTIFICATION_ID)
             .build()
             .apply {
-                setSmallIcon(R.drawable.ic_ai_robot_notification)
+                setSmallIcon(R.drawable.ic_soll_notification)
             }
         setMediaNotificationProvider(provider)
     }

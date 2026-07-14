@@ -5,6 +5,7 @@ import android.view.View
 import android.view.Window
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -152,8 +153,11 @@ fun SollTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
-        content = content
-    )
+    ) {
+        ProvideTextStyle(MaterialTheme.typography.bodyLarge) {
+            content()
+        }
+    }
 }
 
 @Suppress("DEPRECATION")

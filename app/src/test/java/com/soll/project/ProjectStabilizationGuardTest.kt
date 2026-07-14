@@ -741,6 +741,15 @@ class ProjectStabilizationGuardTest {
 
         val type = projectFile("app/src/main/java/com/soll/ui/theme/Type.kt").readText()
         val theme = projectFile("app/src/main/java/com/soll/ui/theme/Theme.kt").readText()
+        val xmlThemes = listOf(
+            projectFile("app/src/main/res/values/themes.xml").readText(),
+            projectFile("app/src/main/res/values-v27/themes.xml").readText(),
+        )
+        val widgetLayouts = listOf(
+            projectFile("app/src/main/res/layout/widget_notes.xml").readText(),
+            projectFile("app/src/main/res/layout/widget_music.xml").readText(),
+            projectFile("app/src/main/res/layout/widget_reader.xml").readText(),
+        )
 
         assertTrue(type.contains("val CarlsbergSansFamily = FontFamily("))
         assertTrue(type.contains("Font(R.font.carlsberg_sans_light, FontWeight.Light)"))
@@ -752,6 +761,10 @@ class ProjectStabilizationGuardTest {
             Regex("fontFamily\\s*=\\s*CarlsbergSansFamily").findAll(type).count() >= 15,
         )
         assertTrue(theme.contains("typography = Typography"))
+        assertTrue(theme.contains("ProvideTextStyle(MaterialTheme.typography.bodyLarge)"))
+        assertTrue(xmlThemes.all { it.contains("name=\"android:fontFamily\">@font/carlsberg_sans_light") })
+        assertTrue(widgetLayouts.all { it.contains("android:fontFamily=\"@font/carlsberg_sans_bold\"") })
+        assertTrue(widgetLayouts.all { it.contains("android:fontFamily=\"@font/carlsberg_sans_light\"") })
     }
 
     @Test

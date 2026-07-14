@@ -725,6 +725,31 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
+    fun `material typography uses bundled Carlsberg font`() {
+        listOf(
+            "app/src/main/res/font/carlsberg_sans_light.ttf",
+            "app/src/main/res/font/carlsberg_sans_bold.ttf",
+            "app/src/main/res/font/carlsberg_sans_black.ttf",
+        ).forEach { path ->
+            assertTrue("Missing Carlsberg font asset: $path", projectFile(path).exists())
+        }
+
+        val type = projectFile("app/src/main/java/com/soll/ui/theme/Type.kt").readText()
+        val theme = projectFile("app/src/main/java/com/soll/ui/theme/Theme.kt").readText()
+
+        assertTrue(type.contains("val CarlsbergSansFamily = FontFamily("))
+        assertTrue(type.contains("Font(R.font.carlsberg_sans_light, FontWeight.Light)"))
+        assertTrue(type.contains("Font(R.font.carlsberg_sans_bold, FontWeight.Bold)"))
+        assertTrue(type.contains("Font(R.font.carlsberg_sans_black, FontWeight.Black)"))
+        assertFalse(type.contains("FontFamily.Default"))
+        assertTrue(
+            "Every Material typography slot must use CarlsbergSansFamily",
+            Regex("fontFamily\\s*=\\s*CarlsbergSansFamily").findAll(type).count() >= 15,
+        )
+        assertTrue(theme.contains("typography = Typography"))
+    }
+
+    @Test
     fun `launcher icon uses soll green background`() {
         val colors = projectFile("app/src/main/res/values/colors.xml").readText()
         val foreground = projectFile("app/src/main/res/drawable/ic_launcher_foreground.xml").readText()

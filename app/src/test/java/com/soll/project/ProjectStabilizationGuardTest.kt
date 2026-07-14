@@ -275,6 +275,7 @@ class ProjectStabilizationGuardTest {
         val activityService = projectFile("app/src/main/java/com/soll/data/service/ActivityTrackingService.kt").readText()
         val notificationRepository = projectFile("app/src/main/java/com/soll/data/repository/SollNotificationRepository.kt").readText()
         val serverSyncService = projectFile("app/src/main/java/com/soll/data/service/SollServerSyncForegroundService.kt").readText()
+        val sollIcon = projectFile("app/src/main/res/drawable/ic_soll_notification.xml").readText()
 
         assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_icon"))
         assertTrue(manifest.contains("@drawable/ic_ai_robot_notification"))
@@ -291,6 +292,10 @@ class ProjectStabilizationGuardTest {
         assertTrue(notificationRepository.contains("R.drawable.ic_ai_robot_notification"))
         assertTrue(notificationRepository.contains("R.drawable.ic_soll_notification"))
         assertFalse(notificationRepository.contains(".setColor("))
+        assertTrue(sollIcon.contains("android:viewportWidth=\"24\""))
+        assertTrue(sollIcon.contains("Carlsberg Sans Bold"))
+        assertTrue(sollIcon.contains("M2.161,22.057V22.086"))
+        assertFalse(sollIcon.contains("android:scaleX=\"0.75\""))
     }
 
     @Test

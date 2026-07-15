@@ -4,6 +4,11 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 AlexGyverShow Arduino source triage:
+  - Reviewed the task-provided record for `monitored\alexgyvershow\20260707-230008-arduino-a790a76e.md`; the source artifact itself is not vendored in this isolated worktree. The record is a broad, review-only overview of Arduino boards, sensors, motors, thermal printers, weather stations and household DIY devices, without primary project links, schematics, BOMs, firmware, library details or power constraints.
+  - Decision for `soll_app`: do not add a generic Arduino module, direct board/USB-serial integration or Gyver UI dependency from this source. Keep it as a Soll desktop/server KB and candidate-discovery signal, and route only selected, reproducible projects through the existing headless `Гаджеты`/ESP connector.
+  - First deep-dive candidate: a networked environmental sensor or physical notification indicator, reusing the `Generic ESP WebSocket` profile plus Soll gadget telemetry/events and confirmation-gated controls. Firmware owns timing and hardware I/O; Android remains the setup, telemetry and control surface. Require a primary link, schematic, BOM, firmware and licenses, voltage/current/power limits, protocol payloads, safe-state behavior and real-device QA before implementation. Defer motor and thermal-printer profiles until a concrete workflow is chosen.
+
 - 2026-07-15 AIA AI development and agent-systems source triage:
   - Reviewed the task-provided record for `monitored\aia\20260711-010007-ai-0ad60b3f.md`; the source artifact itself is not vendored in this isolated worktree. The record is a research-only aggregated overview of AI coding assistants, agent environments, MCP, context engineering and controlled browser/system automation, without primary links, dated releases, code or implementation documentation.
   - Decision for `soll_app`: do not add a new Android module, MCP runtime, coding agent or autonomous browser/system control from this source. The useful themes already fit the existing desktop/server meta-coordinator, context/memory, tool-routing and approval-gated automation direction.

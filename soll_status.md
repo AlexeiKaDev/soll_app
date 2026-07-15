@@ -4,6 +4,12 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 YaFF zero-copy Protobuf evaluation:
+  - Built upstream `yandex/yaff` v0.1.0 at `d6f74675374b587ce24112c284abd54a92090221` with GCC 13/C++20 and ran its official access/space benchmarks locally. Representative mean CPU results: 10 fields YaFF Flat `6.33 ns` vs Protobuf `32.64 ns`; 100 fields `110.56 ns` vs `661.00 ns`; hot hierarchy `7.55 ns` vs `111 ns`; cold hierarchy `238 ns` vs `307 ns`.
+  - The benefit is not transferable to the current mobile runtime without a new native subsystem: Android sync is Retrofit/Moshi JSON, maps `AndroidSyncStatusResponse` to domain data, and stores the offline fallback as JSON. The app has no Protobuf, YaFF, C++, NDK or CMake data path.
+  - Decision: benchmarked and deferred. Do not add a YaFF dependency or change the JSON API. A future spike may use a trusted, checksummed internal C++ mmap snapshot/filter sidecar only after profiling proves a C++/Protobuf hotspot; direct network/Android reads are out because YaFF v0.1.0 has no Kotlin/Java binding and no verifier for hostile buffers.
+  - Focused benchmark, prototype boundary, promotion gates and value metric: `Soll/outputs/source-processing/source-item-0d75242b770a-84a6a99a52dd1e61-verification.md`.
+
 - 2026-07-15 3D VLM robotics source triage:
   - The requested `wiki/3d-vlm-robotics.md` artifact is not vendored in this isolated worktree, so the review used the task record plus the referenced public Habr article `Как Vision-Language Models учатся работать с 3D-миром` (`https://habr.com/ru/companies/ru_mts/articles/1035508/`). It is a secondary overview, not an implementation guide. Its general warning about weak VLM spatial/physical reasoning is consistent with PhyBlock (`arXiv:2506.08708`), SpinBench (`arXiv:2509.25390`) and MV-RoboBench (`arXiv:2510.19400`); RAM (`DOI:10.1126/scirobotics.aea2092`) is the closest primary manipulation result.
   - Decision for `soll_app`: defer adoption. Do not add a local VLM, 3D object database, depth/AR stack, manipulator UI or autonomous actuation. The article's combined platform and sample `query_grasp`, `query_stable_poses` and `check_collision` tools are an architectural synthesis, not a drop-in SDK; the app has camera/barcode capture and ESP gadget control but no calibrated multi-view/depth sensing, robot kinematics, gripper or motion planner.

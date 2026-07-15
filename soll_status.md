@@ -4,6 +4,12 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 Kotlin Coroutines source triage:
+  - Reviewed the task-provided record for `wiki/kotlin-coroutines.md`; the wiki artifact itself is not vendored in this isolated worktree. The excerpt maps to the Habr article `Корутины и то как они работают на низком уровне` (`https://habr.com/ru/articles/1041632/`), and the Kotlin specification confirms its central continuation-passing/state-machine explanation. The article remains an educational, simplified secondary source; cancellation and callback-bridge decisions must follow the official coroutine API.
+  - Decision for `soll_app`: do not add a feature, dependency, hand-written continuation/state-machine layer or coroutine-version upgrade. The project already uses structured coroutine scopes, Flow and `suspendCancellableCoroutine`; retain the compiler and `kotlinx-coroutines` as owners of the low-level machinery.
+  - Implementation point: use the material as an Android engineering review checklist, starting with the Camera2 bridges in `PhotoHandler` and the fused-location bridge in `LocationHandler`; compare them with the cancellation-aware patterns in `ActivityTrackingService` and `FieldMapRepository`.
+  - A later bounded hardening task must cover single-resume callback races, prompt cancellation, callback/token unregistration, timeouts, camera/image resource closure and `CancellationException` propagation with focused cancellation/race tests. This review-only task records placement and does not change production coroutine behavior.
+
 - 2026-07-15 OmniOpt optimizer-benchmark source triage:
   - Reviewed the task-provided record for `monitored\hugging-face-daily-papers\20260707-213045-omniopt-taxonomy-geometry-and-benchmarking-of-mo-2f762a3f.md`; the source artifact itself is not vendored in this isolated worktree. The primary paper and project page describe a five-stage optimizer meta-pipeline, a mechanism/effect-objective taxonomy covering 100+ methods, and a 24-optimizer benchmark across model scale, architecture, runtime, memory, stability, tuning robustness and generalization.
   - Decision for `soll_app`: do not add optimizer libraries, PyTorch/training code, model fine-tuning or benchmark execution to Android. The app contains inference and backend-mediated model surfaces, but no model-training loop; keep Android as the review/approval client through existing `Источники`, `Инсайты`, `Roadmap`, Tasks, Chat and `Ask Soll` surfaces.

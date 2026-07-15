@@ -934,15 +934,18 @@ private fun TaskCard(
                 }
             }
 
-            if (expanded && task.executionReason.isNotBlank()) {
+            task.shortHoldReason()?.let { reason ->
                 Text(
-                    text = task.executionReason,
+                    text = "Почему: $reason",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (task.executionPhase == "needs_user") {
+                    fontWeight = FontWeight.Medium,
+                    color = if (task.isExecutionBlocked()) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
@@ -1325,6 +1328,95 @@ private fun String.executionPhaseLabel(): String =
         else -> trim().replace('_', ' ')
     }
 
+internal fun SollTask.shortHoldReason(maxLength: Int = TASK_HOLD_REASON_MAX_LENGTH): String? {
+    if (!shouldExplainHold()) return null
+
+    val rawReason = sequenceOf(executionState, executionReason, routingState)
+        .map(String::trim)
+        .firstOrNull(String::isNotBlank)
+        .orEmpty()
+    val fallback = when {
+        routingState.trim() == "waiting_for_android_adb_node" -> "Ожидает подключение Android-устройства."
+        routingState.trim() in setOf("waiting_for_non_local_worker_node", "waiting_for_capable_node") ->
+            "Ожидает доступный исполнитель."
+        executionPhase.trim() == "needs_user" -> "Нужно решение пользователя."
+        executionPhase.trim() == "failed" -> "Последний запуск завершился ошибкой."
+        executionPhase.trim() == "retry_wait" -> "Ожидает повторного запуска."
+        status.trim() == "deferred" -> "Отложена вручную; причина не указана."
+        status.trim() == "stale" -> "Нет обновлений дольше установленного срока."
+        else -> "Ожидает устранения блокера."
+    }
+    val normalized = rawReason
+        .takeIf(String::isNotBlank)
+        ?.toShortReasonText()
+        .orEmpty()
+        .ifBlank { fallback }
+
+    if (normalized.length <= maxLength) return normalized
+    return normalized.take((maxLength - 1).coerceAtLeast(1)).trimEnd(' ', '.', ',', ':', ';', '-') + "…"
+}
+
+private fun SollTask.shouldExplainHold(): Boolean {
+    val normalizedStatus = status.trim().lowercase()
+    val normalizedPhase = executionPhase.trim().lowercase()
+    val normalizedState = executionState.trim().lowercase()
+    val normalizedRouting = routingState.trim().lowercase()
+    return normalizedStatus in TASK_HOLD_STATUSES ||
+        normalizedPhase in TASK_HOLD_EXECUTION_PHASES ||
+        normalizedState in TASK_HOLD_EXECUTION_PHASES ||
+        normalizedRouting.startsWith("waiting_for_")
+}
+
+private fun SollTask.isExecutionBlocked(): Boolean =
+    status.trim().lowercase() == "blocked" ||
+        executionPhase.trim().lowercase() in setOf("needs_user", "failed")
+
+private fun String.toShortReasonText(): String {
+    val compact = lineSequence()
+        .joinToString(" ") { it.trim() }
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    val withoutPrefix = TASK_HOLD_REASON_PREFIX.replace(compact, "").trim()
+    TASK_SCOPE_BLOCK_REASON.matchEntire(withoutPrefix)?.let { match ->
+        return "Проект «${match.groupValues[1]}» не разрешен для автономного выполнения."
+    }
+    return when {
+        withoutPrefix.startsWith("waiting_for_android_adb_node", ignoreCase = true) ->
+            "Ожидает подключение Android-устройства."
+        withoutPrefix.startsWith("waiting_for_non_local_worker_node", ignoreCase = true) ||
+            withoutPrefix.startsWith("waiting_for_capable_node", ignoreCase = true) ->
+            "Ожидает доступный исполнитель."
+        withoutPrefix.equals("needs_user", ignoreCase = true) ||
+            withoutPrefix.equals("waiting_approval", ignoreCase = true) ->
+            "Нужно решение пользователя."
+        withoutPrefix.startsWith("approval_expired", ignoreCase = true) ->
+            "Срок подтверждения пользователя истек."
+        withoutPrefix.equals("failed", ignoreCase = true) ->
+            "Последний запуск завершился ошибкой."
+        withoutPrefix.equals("retry_wait", ignoreCase = true) ->
+            "Ожидает повторного запуска."
+        withoutPrefix.equals("source_review_deferred", ignoreCase = true) ->
+            "Отложено до проверки источника."
+        withoutPrefix.equals("source_verification_deferred", ignoreCase = true) ->
+            "Отложено до подтверждения данных источника."
+        withoutPrefix.equals("source_triage_deferred", ignoreCase = true) ->
+            "Отложено до разбора источника."
+        withoutPrefix.equals("source_processing_deferred", ignoreCase = true) ->
+            "Отложено до обработки источника."
+        withoutPrefix.startsWith("deferred_review_only", ignoreCase = true) ->
+            "Нужна повторная проверка условий и доступа."
+        withoutPrefix.equals("blocked_external_android_token_or_device", ignoreCase = true) ->
+            "Ожидает Android-токен или подключенное устройство."
+        withoutPrefix.equals("live_telegram_e2e_deferred_server_smoke_passed", ignoreCase = true) ->
+            "Проверка Telegram отложена: серверный smoke-тест пройден."
+        withoutPrefix.equals("unity_playable_smoke_blocked_by_license", ignoreCase = true) ->
+            "Playable smoke-тест Unity ждет активную лицензию."
+        withoutPrefix.equals("cancelled", ignoreCase = true) ->
+            "Исполнение отменено."
+        else -> withoutPrefix.ifBlank { compact }
+    }
+}
+
 private fun List<String>.requiredCapabilitiesLabel(): String {
     val visible = take(2)
     val suffix = (size - visible.size).takeIf { it > 0 }?.let { " +$it" }.orEmpty()
@@ -1332,6 +1424,18 @@ private fun List<String>.requiredCapabilitiesLabel(): String {
 }
 
 private const val TASK_DESCRIPTION_COLLAPSED_LINES = 4
+private const val TASK_HOLD_REASON_MAX_LENGTH = 140
+private val TASK_HOLD_STATUSES = setOf("blocked", "deferred", "stale")
+private val TASK_HOLD_EXECUTION_PHASES = setOf("needs_user", "failed", "retry_wait")
+private val TASK_HOLD_REASON_PREFIX = Regex(
+    "^(?:(?:external[_ ]blocked|blocked|deferred|stale|needs[_ ]user|failed|retry[_ ]wait)\\s*[:\\-]\\s*)" +
+        "(?:Задача заблокирована\\.;\\s*)?",
+    RegexOption.IGNORE_CASE,
+)
+private val TASK_SCOPE_BLOCK_REASON = Regex(
+    "^Scope '([^']+)' не входит в autonomous allowlist.*$",
+    RegexOption.IGNORE_CASE,
+)
 
 internal data class TaskActionVisibility(
     val hasTaskId: Boolean,

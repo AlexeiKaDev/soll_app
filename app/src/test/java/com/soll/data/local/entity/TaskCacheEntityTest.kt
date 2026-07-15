@@ -27,6 +27,8 @@ class TaskCacheEntityTest {
             assignedNodeId = "soll-home",
             requiredCapabilities = listOf("android_adb", "usb_otg"),
             routingState = "waiting_for_android_adb_node",
+            executionPhase = "needs_user",
+            executionReason = "blocked: connect an ADB-visible phone",
         )
 
         val restored = TaskCacheEntity.fromDomain(task, updatedAt = 123L).toDomain()

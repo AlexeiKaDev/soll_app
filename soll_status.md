@@ -4,6 +4,12 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 PVS-Studio/CMake source triage:
+  - Reviewed the task-provided record for `monitored\habr\20260520-133014-pvs-studio-cmake-4db4899a.md`; the source artifact itself is not vendored in this isolated worktree. The record describes the official CMake 4.3 integration through `CMAKE_<LANG>_PVS_STUDIO` and target-level `<LANG>_PVS_STUDIO`, with analyzer warnings emitted alongside Makefile/Ninja builds.
+  - Decision for `soll_app`: do not add CMake, NDK, PVS-Studio or a native-analysis job. This repository is a Gradle/Kotlin Android project with no `CMakeLists.txt`, `.cmake` files, C/C++ sources or `externalNativeBuild` configuration; packaged JNI libraries inside AAR dependencies are upstream binaries, not locally compiled analyzer targets.
+  - Implementation point: keep the signal for a separate C/C++ firmware repository such as Aquik/ESP, and open a bounded CI spike only after that target actually uses CMake 4.3 plus a Makefile or Ninja generator. Pin the analyzer/toolchain, keep license material outside version control, and start with `CMAKE_C_PVS_STUDIO`/`CMAKE_CXX_PVS_STUDIO` or target-level properties in non-blocking build-log mode on one representative firmware target.
+  - Promotion requires a reviewed warning baseline, suppression policy, runtime/cost measurement and an explicit severity/failure threshold. Because the integrated mode does not itself preserve a standalone full report artifact, any required archival/SARIF report must be produced by a separately verified PVS-Studio reporting step; Android may later display only server-produced CI summaries and approval tasks.
+
 - 2026-07-15 Kotlin Coroutines source triage:
   - Reviewed the task-provided record for `wiki/kotlin-coroutines.md`; the wiki artifact itself is not vendored in this isolated worktree. The excerpt maps to the Habr article `Корутины и то как они работают на низком уровне` (`https://habr.com/ru/articles/1041632/`), and the Kotlin specification confirms its central continuation-passing/state-machine explanation. The article remains an educational, simplified secondary source; cancellation and callback-bridge decisions must follow the official coroutine API.
   - Decision for `soll_app`: do not add a feature, dependency, hand-written continuation/state-machine layer or coroutine-version upgrade. The project already uses structured coroutine scopes, Flow and `suspendCancellableCoroutine`; retain the compiler and `kotlinx-coroutines` as owners of the low-level machinery.

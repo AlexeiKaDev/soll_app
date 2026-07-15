@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,7 +53,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -99,6 +100,7 @@ fun TaskBoardScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var evidenceTask by remember { mutableStateOf<SollTask?>(null) }
+    var editingTask by remember { mutableStateOf<SollTask?>(null) }
     val evidencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val task = evidenceTask
         evidenceTask = null
@@ -118,6 +120,18 @@ fun TaskBoardScreen(
             snackbarHostState.showSnackbar(message)
             viewModel.clearMessage()
         }
+    }
+
+    editingTask?.let { task ->
+        TaskEditDialog(
+            task = task,
+            isSaving = uiState.actionTaskId == task.id,
+            onDismiss = { editingTask = null },
+            onSave = { title, description ->
+                viewModel.updateTask(task, title, description)
+                editingTask = null
+            },
+        )
     }
 
     Scaffold(
@@ -220,6 +234,7 @@ fun TaskBoardScreen(
                                                     evidenceTask = task
                                                     evidencePicker.launch("*/*")
                                                 },
+                                                onEdit = { editingTask = task },
                                                 onMoveToToday = { viewModel.moveToToday(task) },
                                                 onStart = { viewModel.startTask(task) },
                                                 onDone = { viewModel.completeTask(task) },
@@ -525,9 +540,6 @@ private fun RoadmapMode(
         EmptyWorkspace(text = "Roadmap еще не загружен")
         return
     }
-    val initialStageId = roadmap.stages.firstOrNull { it.id == roadmap.currentStage }?.id
-        ?: roadmap.stages.firstOrNull()?.id
-    var editingStageId by remember(roadmap.currentStage, roadmap.stages) { mutableStateOf(initialStageId) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -555,10 +567,6 @@ private fun RoadmapMode(
             item(key = "stage:${stage.id}", contentType = "roadmap-stage") {
                 RoadmapStageHeader(
                     stage = stage,
-                    expanded = editingStageId == stage.id,
-                    onToggle = {
-                        editingStageId = if (editingStageId == stage.id) null else stage.id
-                    },
                 )
             }
             items(
@@ -570,19 +578,7 @@ private fun RoadmapMode(
                     item = line,
                     isCreatingTask = uiState.roadmapLineTaskKey == roadmapLineTaskKey(stage.id, line.line),
                     onCreateTask = { viewModel.createTaskFromRoadmapLine(stage.id, line) },
-                    onUpdate = { newLine, text ->
-                        viewModel.updateRoadmapLine(stage.id, line.line, newLine, text)
-                    },
-                    onDelete = { viewModel.deleteRoadmapLine(stage.id, line.line) },
                 )
-            }
-            if (stage.id == editingStageId) {
-                item(key = "editor:${stage.id}", contentType = "roadmap-editor") {
-                    RoadmapStageEditor(
-                        stage = stage,
-                        onAdd = { line, text -> viewModel.addRoadmapLine(stage.id, line, text) },
-                    )
-                }
             }
         }
     }
@@ -621,8 +617,6 @@ private fun RoadmapReadinessCard(item: SollRoadmapReadiness) {
 @Composable
 private fun RoadmapStageHeader(
     stage: SollRoadmapStage,
-    expanded: Boolean,
-    onToggle: () -> Unit,
 ) {
     Card(shape = RoundedCornerShape(8.dp)) {
         Row(
@@ -634,53 +628,6 @@ private fun RoadmapStageHeader(
                 Text(stage.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 PassiveChip(text = stage.status)
             }
-            IconButton(onClick = onToggle) {
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Скрыть форму" else "Добавить строку",
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoadmapStageEditor(
-    stage: SollRoadmapStage,
-    onAdd: (String, String) -> Unit,
-) {
-    var line by remember(stage.id) { mutableStateOf("") }
-    var text by remember(stage.id) { mutableStateOf("") }
-    Card(shape = RoundedCornerShape(8.dp)) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("Новая строка: ${stage.label}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(
-                value = line,
-                onValueChange = { line = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Линия") },
-            )
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2,
-                label = { Text("Текст") },
-            )
-            Button(
-                onClick = {
-                    onAdd(line, text)
-                    line = ""
-                    text = ""
-                },
-                enabled = line.isNotBlank() && text.isNotBlank(),
-            ) {
-                Text("Добавить")
-            }
         }
     }
 }
@@ -690,63 +637,14 @@ private fun RoadmapLineCard(
     item: SollRoadmapLine,
     isCreatingTask: Boolean,
     onCreateTask: () -> Unit,
-    onUpdate: (String, String) -> Unit,
-    onDelete: () -> Unit,
 ) {
-    var editing by remember(item.line, item.text) { mutableStateOf(false) }
-    var line by remember(item.line) { mutableStateOf(item.line) }
-    var text by remember(item.text) { mutableStateOf(item.text) }
     Card(shape = RoundedCornerShape(8.dp)) {
-        if (editing) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = line,
-                    onValueChange = { line = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Линия") },
-                )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    label = { Text("Текст") },
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            onUpdate(line, text)
-                            editing = false
-                        },
-                        enabled = line.isNotBlank() && text.isNotBlank(),
-                    ) {
-                        Text("Сохранить")
-                    }
-                    TextButton(
-                        onClick = {
-                            line = item.line
-                            text = item.text
-                            editing = false
-                        },
-                    ) {
-                        Text("Отмена")
-                    }
-                }
-            }
-        } else {
-            RoadmapLineRow(
-                item = item,
-                isCreatingTask = isCreatingTask,
-                onCreateTask = onCreateTask,
-                onEdit = { editing = true },
-                onDelete = onDelete,
-                modifier = Modifier.padding(14.dp),
-            )
-        }
+        RoadmapLineRow(
+            item = item,
+            isCreatingTask = isCreatingTask,
+            onCreateTask = onCreateTask,
+            modifier = Modifier.padding(14.dp),
+        )
     }
 }
 
@@ -755,8 +653,6 @@ private fun RoadmapLineRow(
     item: SollRoadmapLine,
     isCreatingTask: Boolean,
     onCreateTask: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -776,8 +672,6 @@ private fun RoadmapLineRow(
             } else {
                 TextButton(onClick = onCreateTask) { Text("В задачу") }
             }
-            TextButton(onClick = onEdit) { Text("Править") }
-            TextButton(onClick = onDelete) { Text("Удалить") }
         }
     }
 }
@@ -787,58 +681,14 @@ private fun SourcesMode(
     uiState: TaskBoardUiState,
     viewModel: TaskBoardViewModel,
 ) {
-    var sourceName by remember { mutableStateOf("") }
-    var sourceTarget by remember { mutableStateOf("") }
-    var sourceType by remember { mutableStateOf(SourceTypeOption.WEB) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item(key = "source-add") {
-            Card(shape = RoundedCornerShape(8.dp)) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Новый источник Soll", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        SourceTypeOption.entries.forEach { option ->
-                            FilterChip(
-                                selected = sourceType == option,
-                                onClick = { sourceType = option },
-                                label = { Text(option.label) },
-                            )
-                        }
-                    }
-                    OutlinedTextField(
-                        value = sourceName,
-                        onValueChange = { sourceName = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("Название") },
-                    )
-                    OutlinedTextField(
-                        value = sourceTarget,
-                        onValueChange = { sourceTarget = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("URL") },
-                    )
-                    Button(
-                        onClick = {
-                            viewModel.createSource(sourceName, sourceTarget, sourceType.apiValue)
-                            sourceName = ""
-                            sourceTarget = ""
-                            sourceType = SourceTypeOption.WEB
-                        },
-                        enabled = sourceTarget.isNotBlank(),
-                    ) {
-                        Text("Добавить")
-                    }
-                }
+        if (uiState.sources.isEmpty() && !uiState.workspaceLoading) {
+            item(key = "empty-sources", contentType = "empty") {
+                EmptyWorkspace(text = "Источников Soll пока нет")
             }
         }
         items(uiState.sources, key = { it.id }) { source ->
@@ -847,10 +697,6 @@ private fun SourcesMode(
                 selected = source.id == uiState.selectedSourceId,
                 onSelect = { viewModel.selectSource(source) },
                 onCheck = { viewModel.checkSource(source) },
-                onUpdate = { name, description, tags, enabled ->
-                    viewModel.updateSource(source, name, description, tags, enabled)
-                },
-                onDelete = { viewModel.deleteSource(source) },
             )
         }
         if (uiState.sourceItems.isNotEmpty()) {
@@ -872,136 +718,60 @@ private fun SourcesMode(
     }
 }
 
-private enum class SourceTypeOption(val label: String, val apiValue: String) {
-    WEB("Web", "web"),
-    RSS("RSS", "rss"),
-    TELEGRAM("Telegram", "telegram_chat"),
-}
-
 @Composable
 private fun SourceCard(
     source: SollMonitoredSource,
     selected: Boolean,
     onSelect: () -> Unit,
     onCheck: () -> Unit,
-    onUpdate: (String, String, String, Boolean) -> Unit,
-    onDelete: () -> Unit,
 ) {
-    var editing by remember(source.id) { mutableStateOf(false) }
-    var name by remember(source.id, source.name) { mutableStateOf(source.name) }
-    var description by remember(source.id, source.description) { mutableStateOf(source.description) }
-    var tagsText by remember(source.id, source.tags) { mutableStateOf(source.tags.joinToString(", ")) }
-    var enabled by remember(source.id, source.enabled) { mutableStateOf(source.enabled) }
     Card(shape = RoundedCornerShape(8.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (editing) {
-                Text(
-                    text = source.target,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Название") },
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    label = { Text("Описание") },
-                )
-                OutlinedTextField(
-                    value = tagsText,
-                    onValueChange = { tagsText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Теги через запятую") },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Активен", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            onUpdate(name, description, tagsText, enabled)
-                            editing = false
-                        },
-                        enabled = name.isNotBlank(),
-                    ) {
-                        Text("Сохранить")
-                    }
-                    TextButton(
-                        onClick = {
-                            name = source.name
-                            description = source.description
-                            tagsText = source.tags.joinToString(", ")
-                            enabled = source.enabled
-                            editing = false
-                        },
-                    ) {
-                        Text("Отмена")
-                    }
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            source.target,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    PassiveChip(
-                        text = when {
-                            selected -> "открыт"
-                            !source.enabled -> "выкл"
-                            else -> source.lastResult
-                        },
-                    )
-                }
-                if (source.description.isNotBlank()) {
+            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(source.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        source.description,
+                        source.target,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    PassiveChip(text = source.sourceType)
-                    PassiveChip(text = "seen: ${source.itemsSeen}")
-                    if (source.newItemsLastCheck > 0) {
-                        PassiveChip(text = "+${source.newItemsLastCheck}")
-                    }
-                    source.tags.forEach { tag -> PassiveChip(text = tag) }
+                PassiveChip(
+                    text = when {
+                        selected -> "открыт"
+                        !source.enabled -> "выкл"
+                        else -> source.lastResult
+                    },
+                )
+            }
+            if (source.description.isNotBlank()) {
+                Text(
+                    source.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PassiveChip(text = source.sourceType)
+                PassiveChip(text = "seen: ${source.itemsSeen}")
+                if (source.newItemsLastCheck > 0) {
+                    PassiveChip(text = "+${source.newItemsLastCheck}")
                 }
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(onClick = onSelect) { Text("Открыть") }
-                    Button(onClick = onCheck, enabled = source.enabled) { Text("Проверить") }
-                    OutlinedButton(onClick = { editing = true }) { Text("Править") }
-                    TextButton(onClick = onDelete) { Text("Удалить") }
-                }
+                source.tags.forEach { tag -> PassiveChip(text = tag) }
+            }
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = onSelect) { Text("Открыть") }
+                Button(onClick = onCheck, enabled = source.enabled) { Text("Проверить") }
             }
         }
     }
@@ -1074,6 +844,7 @@ private fun TaskCard(
     isEvidenceRunning: Boolean,
     hasPendingEvidence: Boolean,
     hasPendingTaskAction: Boolean,
+    onEdit: () -> Unit,
     onToggleDetails: () -> Unit,
     onAttachEvidence: () -> Unit,
     onMoveToToday: () -> Unit,
@@ -1115,11 +886,16 @@ private fun TaskCard(
                         )
                     }
                 }
-                PassiveChip(
-                    text = priorityBadge.label,
-                    containerColor = priorityBadge.containerColor,
-                    contentColor = priorityBadge.contentColor,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onEdit, enabled = !isActionRunning) {
+                        Icon(Icons.Default.Edit, contentDescription = "Редактировать задачу")
+                    }
+                    PassiveChip(
+                        text = priorityBadge.label,
+                        containerColor = priorityBadge.containerColor,
+                        contentColor = priorityBadge.contentColor,
+                    )
+                }
             }
 
             if (task.description.isNotBlank()) {
@@ -1147,6 +923,27 @@ private fun TaskCard(
                 if (hasPendingTaskAction) {
                     PassiveChip(text = "Действие в очереди")
                 }
+                task.executionPhase.takeIf { it.isNotBlank() }?.let { phase ->
+                    PassiveChip(text = "Исполнение: ${phase.executionPhaseLabel()}")
+                }
+                if (task.executionAttempts > 0) {
+                    PassiveChip(text = "Попытка: ${task.executionAttempts}")
+                }
+                task.commitSha.takeIf { it.isNotBlank() }?.let { sha ->
+                    PassiveChip(text = "Commit: ${sha.take(8)}")
+                }
+            }
+
+            if (expanded && task.executionReason.isNotBlank()) {
+                Text(
+                    text = task.executionReason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (task.executionPhase == "needs_user") {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
 
             if (task.hasRoutingContext()) {
@@ -1222,6 +1019,57 @@ private fun TaskCard(
             }
         }
     }
+}
+
+@Composable
+private fun TaskEditDialog(
+    task: SollTask,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var title by remember(task.id, task.title) { mutableStateOf(task.title) }
+    var description by remember(task.id, task.description) { mutableStateOf(task.description) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Редактировать задачу") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Название") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Описание") },
+                    minLines = 3,
+                    maxLines = 8,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(title, description) },
+                enabled = title.isNotBlank() && !isSaving,
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                Text("Сохранить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
+                Text("Отмена")
+            }
+        },
+    )
 }
 
 @Composable
@@ -1455,6 +1303,25 @@ private fun String.routingStateLabel(): String =
         "queued" -> "в очереди"
         "applied" -> "применено"
         "failed" -> "ошибка маршрута"
+        else -> trim().replace('_', ' ')
+    }
+
+private fun String.executionPhaseLabel(): String =
+    when (trim()) {
+        "queued" -> "в очереди"
+        "planning" -> "планирование"
+        "ready" -> "готово к запуску"
+        "leased" -> "исполнитель назначен"
+        "running" -> "Codex работает"
+        "validating" -> "проверка"
+        "committed" -> "commit создан"
+        "integrating" -> "интеграция"
+        "succeeded" -> "готово"
+        "retry_wait" -> "повтор"
+        "needs_user" -> "нужно решение"
+        "failed" -> "ошибка"
+        "cancelled" -> "отменено"
+        "reverted" -> "откачено"
         else -> trim().replace('_', ' ')
     }
 

@@ -428,7 +428,7 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
-    fun `task workspace keeps roadmap and source mutation controls`() {
+    fun `task workspace keeps roadmap and sources as mobile lists`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
         val appNavigation = projectFile("app/src/main/java/com/soll/presentation/navigation/AppNavigation.kt").readText().normalizeLineEndings()
         val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt").readText().normalizeLineEndings()
@@ -599,7 +599,13 @@ class ProjectStabilizationGuardTest {
         assertTrue(screen.contains("items = stage.lines"))
         assertTrue(screen.contains("contentType = { \"roadmap-line\" }"))
         assertTrue(screen.contains("RoadmapLineCard"))
-        assertTrue(screen.contains("RoadmapStageEditor"))
+        assertFalse(screen.contains("RoadmapStageEditor"))
+        assertFalse(screen.contains("key = \"source-add\""))
+        assertFalse(screen.contains("Text(\"Новый источник Soll\""))
+        assertFalse(screen.contains("Text(\"Править\")"))
+        assertFalse(screen.contains("Text(\"Удалить\")"))
+        assertTrue(screen.contains("TaskEditDialog("))
+        assertTrue(api.contains("@PATCH(\"api/v1/tasks/{task_id}\")"))
         assertFalse(screen.contains("private fun RoadmapStageCard("))
         assertFalse(screen.contains("private sealed interface RoadmapRow"))
         assertFalse(screen.contains("roadmapRows("))
@@ -621,8 +627,8 @@ class ProjectStabilizationGuardTest {
         assertTrue(viewModel.contains("sollGateway.listSources(SollSourceScope.PROJECT_SOLL)"))
         assertTrue(viewModel.contains("sollGateway.createSource(name, target, SollSourceScope.PROJECT_SOLL, sourceType)"))
         assertFalse(viewModel.contains("sollGateway.listSources().fold"))
-        assertTrue(screen.contains("private enum class SourceTypeOption"))
-        assertTrue(screen.contains("TELEGRAM(\"Telegram\", \"telegram_chat\")"))
+        assertFalse(screen.contains("private enum class SourceTypeOption"))
+        assertFalse(screen.contains("TELEGRAM(\"Telegram\", \"telegram_chat\")"))
         assertTrue(viewModel.contains("internal fun SollTask.matchesTaskQuery(query: String)"))
         assertTrue(viewModel.contains("return filter { task -> task.matchesTaskQuery(needle) }"))
         assertFalse(viewModel.substringAfter("private fun List<SollTask>.filterByQuery").substringBefore("internal fun SollTask.matchesTaskQuery").contains("joinToString"))
@@ -634,6 +640,11 @@ class ProjectStabilizationGuardTest {
         assertTrue(screen.contains("task.hasRoutingContext()"))
         assertTrue(screen.contains("routingState.routingStateLabel()"))
         assertTrue(screen.contains("requiredCapabilities.requiredCapabilitiesLabel()"))
+        assertTrue(screen.contains("phase.executionPhaseLabel()"))
+        assertTrue(screen.contains("task.executionAttempts"))
+        assertTrue(screen.contains("task.commitSha"))
+        assertTrue(api.contains("@Json(name = \"execution_phase\")"))
+        assertTrue(api.contains("@Json(name = \"commit_sha\")"))
         assertTrue(viewModel.contains("internal fun SollTask.hasRoutingContext()"))
         assertTrue(viewModel.contains("assignedNodeId.orEmpty().contains"))
         assertTrue(viewModel.contains("requiredCapabilities.any"))
@@ -741,6 +752,15 @@ class ProjectStabilizationGuardTest {
 
         val type = projectFile("app/src/main/java/com/soll/ui/theme/Type.kt").readText()
         val theme = projectFile("app/src/main/java/com/soll/ui/theme/Theme.kt").readText()
+        val xmlThemes = listOf(
+            projectFile("app/src/main/res/values/themes.xml").readText(),
+            projectFile("app/src/main/res/values-v27/themes.xml").readText(),
+        )
+        val widgetLayouts = listOf(
+            projectFile("app/src/main/res/layout/widget_notes.xml").readText(),
+            projectFile("app/src/main/res/layout/widget_music.xml").readText(),
+            projectFile("app/src/main/res/layout/widget_reader.xml").readText(),
+        )
 
         assertTrue(type.contains("val CarlsbergSansFamily = FontFamily("))
         assertTrue(type.contains("Font(R.font.carlsberg_sans_light, FontWeight.Light)"))
@@ -752,6 +772,10 @@ class ProjectStabilizationGuardTest {
             Regex("fontFamily\\s*=\\s*CarlsbergSansFamily").findAll(type).count() >= 15,
         )
         assertTrue(theme.contains("typography = Typography"))
+        assertTrue(theme.contains("ProvideTextStyle(MaterialTheme.typography.bodyLarge)"))
+        assertTrue(xmlThemes.all { it.contains("name=\"android:fontFamily\">@font/carlsberg_sans_light") })
+        assertTrue(widgetLayouts.all { it.contains("android:fontFamily=\"@font/carlsberg_sans_bold\"") })
+        assertTrue(widgetLayouts.all { it.contains("android:fontFamily=\"@font/carlsberg_sans_light\"") })
     }
 
     @Test

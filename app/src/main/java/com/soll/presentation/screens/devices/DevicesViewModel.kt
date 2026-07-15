@@ -2167,7 +2167,8 @@ private fun SollProtocolSchema.protocolStatusText(): String =
     if (compatible) {
         val discoveryVersion = gadgetDiscovery?.version?.takeIf { it.isNotBlank() } ?: "без версии discovery"
         val workerCount = workerContracts.size
-        "Контракт совместим: $version / $discoveryVersion, workers=$workerCount, token_refresh готов."
+        val pqc = security.pqcStatus.ifBlank { "unknown" }
+        "Контракт совместим: $version / $discoveryVersion, workers=$workerCount, token_refresh готов, PQC=$pqc."
     } else {
         warnings.joinToString(separator = "\n").ifBlank { "Контракт протокола требует проверки." }
     }

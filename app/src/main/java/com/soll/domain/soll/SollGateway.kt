@@ -7,6 +7,8 @@ import com.soll.domain.device.GadgetCloudHistory
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
+import com.soll.domain.modelchat.ModelChatRequest
+import com.soll.domain.modelchat.ModelChatResponse
 
 data class SollHealth(
     val status: String,
@@ -379,6 +381,17 @@ data class SollTask(
     val assignedNodeId: String? = null,
     val requiredCapabilities: List<String> = emptyList(),
     val routingState: String = "",
+    val executionRunId: String = "",
+    val executionPhase: String = "",
+    val executionReason: String = "",
+    val riskClass: String = "",
+    val acceptanceCriteria: List<String> = emptyList(),
+    val testPlan: List<String> = emptyList(),
+    val baseSha: String = "",
+    val commitSha: String = "",
+    val rollbackSha: String = "",
+    val executionAttempts: Int = 0,
+    val executionUpdatedAt: String? = null,
 )
 
 internal fun SollTaskBoard.withoutDailyTodoTasks(): SollTaskBoard {
@@ -623,6 +636,7 @@ interface SollGateway {
     ): Result<SollRawNote>
 
     suspend fun uploadRawFile(uri: Uri): Result<SollRawUpload>
+    suspend fun updateTask(taskId: String, title: String, description: String): Result<SollTask>
     suspend fun setTaskStatus(taskId: String, status: String): Result<SollTask>
     suspend fun moveTaskToToday(taskId: String): Result<SollTask>
     suspend fun completeTask(taskId: String): Result<SollTask>
@@ -668,6 +682,7 @@ interface SollGateway {
     suspend fun processDownloadedBook(filePath: String? = null): Result<SollBookProcessResult>
     suspend fun cancelBookSession(): Result<SollBookActionResult>
     suspend fun askMetaCoordinator(request: MetaCoordinatorRequest): Result<MetaCoordinatorResponse>
+    suspend fun askModelChat(request: ModelChatRequest): Result<ModelChatResponse>
     suspend fun getProtocolSchema(): Result<SollProtocolSchema>
     suspend fun getMeshStatus(): Result<SollMeshStatus>
     suspend fun getMeshOutbox(limit: Int = 20): Result<List<SollMeshOutboxItem>>

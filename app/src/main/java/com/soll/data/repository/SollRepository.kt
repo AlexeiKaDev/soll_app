@@ -93,6 +93,7 @@ import com.soll.data.api.SollTaskResponse
 import com.soll.data.api.SecurePayloadEnvelopeRequest
 import com.soll.data.api.SourceItemResponse
 import com.soll.data.api.SourceItemTaskRequest
+import com.soll.data.api.TaskUpdateRequest
 import com.soll.data.api.TaskGraphEdgeResponse
 import com.soll.data.api.TaskGraphNodeResponse
 import com.soll.data.api.TaskGraphResponse
@@ -100,6 +101,10 @@ import com.soll.domain.metacoordinator.MetaCoordinatorFallback
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
 import com.soll.domain.metacoordinator.MetaCoordinatorServerBridge
+import com.soll.domain.modelchat.ModelChatFallback
+import com.soll.domain.modelchat.ModelChatRequest
+import com.soll.domain.modelchat.ModelChatResponse
+import com.soll.domain.modelchat.ModelChatServerBridge
 import com.soll.domain.device.GadgetCloudCommand
 import com.soll.domain.device.GadgetCloudEvent
 import com.soll.domain.device.GadgetCloudHistory
@@ -153,6 +158,7 @@ import com.soll.domain.soll.SollMeshStatus
 import com.soll.domain.soll.SollProtocolAuth
 import com.soll.domain.soll.SollProtocolBootstrap
 import com.soll.domain.soll.SollProtocolSchema
+import com.soll.domain.soll.SollProtocolSecurity
 import com.soll.domain.soll.SollProtocolTransport
 import com.soll.domain.soll.SollProtocolWorkerContract
 import com.soll.domain.soll.SollRawNote
@@ -543,6 +549,23 @@ class SollRepository @Inject constructor(
         ).taskResponse().toDomain()
     }
 
+    override suspend fun updateTask(
+        taskId: String,
+        title: String,
+        description: String,
+    ): Result<SollTask> = runSuspendCatching {
+        val cleanTitle = title.trim()
+        require(cleanTitle.isNotBlank()) { "Название задачи не задано" }
+        service().updateTask(
+            authorization = writeAuthorizationHeader(),
+            taskId = taskId.encodedSollPathSegment(fieldName = "task_id"),
+            request = TaskUpdateRequest(
+                title = cleanTitle,
+                description = description.trim(),
+            ),
+        ).taskResponse().toDomain()
+    }
+
     override suspend fun moveTaskToToday(taskId: String): Result<SollTask> = runSuspendCatching {
         service().moveTaskToToday(
             authorizationHeader(),
@@ -835,6 +858,26 @@ class SollRepository @Inject constructor(
             ).toDomain(safeRequest)
         }.recover { error ->
             MetaCoordinatorFallback.unavailable(
+                request = safeRequest,
+                reason = error.message ?: "ошибка подключения",
+            )
+        }
+    }
+
+    override suspend fun askModelChat(
+        request: ModelChatRequest,
+    ): Result<ModelChatResponse> {
+        val safeRequest = request.safeForServer()
+        return runSuspendCatching {
+            service().askAssistant(
+                authorization = authorizationHeader(),
+                request = AssistantAskRequest(
+                    question = ModelChatServerBridge.toAssistantQuestion(safeRequest),
+                    allowWikiUpdates = false,
+                ),
+            ).toDomain(safeRequest)
+        }.recover { error ->
+            ModelChatFallback.unavailable(
                 request = safeRequest,
                 reason = error.message ?: "ошибка подключения",
             )
@@ -1540,6 +1583,17 @@ class SollRepository @Inject constructor(
             assignedNodeId = assignedNodeId,
             requiredCapabilities = requiredCapabilities,
             routingState = routingState,
+            executionRunId = executionRunId,
+            executionPhase = executionPhase,
+            executionReason = executionReason,
+            riskClass = riskClass,
+            acceptanceCriteria = acceptanceCriteria,
+            testPlan = testPlan,
+            baseSha = baseSha,
+            commitSha = commitSha,
+            rollbackSha = rollbackSha,
+            executionAttempts = executionAttempts,
+            executionUpdatedAt = executionUpdatedAt,
         )
 
     private fun RawFileResponse.toDomain(): SollRawNote =
@@ -1665,10 +1719,22 @@ class SollRepository @Inject constructor(
             contradictions = contradictions,
         )
 
+    private fun AssistantAskResponse.toDomain(request: ModelChatRequest): ModelChatResponse =
+        ModelChatServerBridge.fromAssistantAnswer(
+            request = request,
+            answer = answer,
+        )
+
     private fun SollProtocolSchemaResponse.toDomain(): SollProtocolSchema =
         SollProtocolSchema(
             version = version,
             auth = auth.toDomain(),
+            security = SollProtocolSecurity(
+                pqcStatus = security.postQuantum.status,
+                pqcProtectionActive = security.postQuantum.protectionActive,
+                pqcTarget = security.postQuantum.target,
+                pqcMigrationPhases = security.postQuantum.migrationPhases,
+            ),
             gadgetCommandRoutes = scopes["gadget:commands"].orEmpty(),
             androidTransport = transports["android"]?.toDomain() ?: SollProtocolTransport(),
             workerContracts = workerContracts.mapValues { (_, contract) -> contract.toDomain() },

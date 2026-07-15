@@ -1,6 +1,7 @@
 package com.soll.presentation.screens.chat
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
@@ -8,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,11 +37,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -48,6 +52,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -79,9 +85,11 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +97,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.ContextCompat
 import com.soll.R
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -631,6 +640,9 @@ private fun ChatMessageBubble(
     completedActionIds: Set<String>,
     onAction: (ChatActionUi) -> Unit,
 ) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var contextMenuVisible by remember(message.id) { mutableStateOf(false) }
     val background = if (message.isFromUser) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -655,33 +667,66 @@ private fun ChatMessageBubble(
             SollAvatar()
             Spacer(modifier = Modifier.size(8.dp))
         }
-        Column(
+        Box(
             modifier = Modifier
-                .fillMaxWidth(if (message.isFromUser) 0.80f else 0.78f)
-                .background(background, bubbleShape)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+                .fillMaxWidth(if (message.isFromUser) 0.80f else 0.78f),
         ) {
-            if (message.isFromUser) {
-                LinkifiedChatText(
-                    text = message.content,
-                    color = foreground,
-                    linkColor = foreground.copy(alpha = 0.96f),
-                    style = MaterialTheme.typography.bodyMedium,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(background, bubbleShape)
+                    .pointerInput(message.id) {
+                        detectTapGestures(onLongPress = { contextMenuVisible = true })
+                    }
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                if (message.isFromUser) {
+                    LinkifiedChatText(
+                        text = message.content,
+                        color = foreground,
+                        linkColor = foreground.copy(alpha = 0.96f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    ChatBubbleMeta(
+                        text = formatChatTimeLabel(message.createdAt),
+                        isUser = true,
+                        color = foreground,
+                    )
+                } else {
+                    AssistantMessageContent(
+                        message = message,
+                        isBusy = isBusy,
+                        busyActionId = busyActionId,
+                        completedActionIds = completedActionIds,
+                        foreground = foreground,
+                        onAction = onAction,
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = contextMenuVisible,
+                onDismissRequest = { contextMenuVisible = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Копировать") },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = {
+                        clipboard.setText(AnnotatedString(message.content))
+                        contextMenuVisible = false
+                    },
                 )
-                ChatBubbleMeta(
-                    text = formatChatTimeLabel(message.createdAt),
-                    isUser = true,
-                    color = foreground,
-                )
-            } else {
-                AssistantMessageContent(
-                    message = message,
-                    isBusy = isBusy,
-                    busyActionId = busyActionId,
-                    completedActionIds = completedActionIds,
-                    foreground = foreground,
-                    onAction = onAction,
+                DropdownMenuItem(
+                    text = { Text("Поделиться") },
+                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                    onClick = {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, message.content)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Поделиться сообщением"))
+                        contextMenuVisible = false
+                    },
                 )
             }
         }

@@ -175,6 +175,13 @@ interface SollApiService {
         @Path("status") status: String,
     ): SollTaskMutationResponse
 
+    @PATCH("api/v1/tasks/{task_id}")
+    suspend fun updateTask(
+        @Header("Authorization") authorization: String?,
+        @Path("task_id", encoded = true) taskId: String,
+        @Body request: TaskUpdateRequest,
+    ): SollTaskMutationResponse
+
     @POST("api/v1/tasks/{task_id}/today")
     suspend fun moveTaskToToday(
         @Header("Authorization") authorization: String? = null,
@@ -953,6 +960,11 @@ data class DailyTaskUpdateRequest(
     val done: Boolean,
 )
 
+data class TaskUpdateRequest(
+    val title: String,
+    val description: String,
+)
+
 data class SollTaskBoardCountsResponse(
     val today: Int = 0,
     val blocked: Int = 0,
@@ -1001,6 +1013,28 @@ data class SollTaskResponse(
     val requiredCapabilities: List<String> = emptyList(),
     @Json(name = "routing_state")
     val routingState: String = "",
+    @Json(name = "execution_run_id")
+    val executionRunId: String = "",
+    @Json(name = "execution_phase")
+    val executionPhase: String = "",
+    @Json(name = "execution_reason")
+    val executionReason: String = "",
+    @Json(name = "risk_class")
+    val riskClass: String = "",
+    @Json(name = "acceptance_criteria")
+    val acceptanceCriteria: List<String> = emptyList(),
+    @Json(name = "test_plan")
+    val testPlan: List<String> = emptyList(),
+    @Json(name = "base_sha")
+    val baseSha: String = "",
+    @Json(name = "commit_sha")
+    val commitSha: String = "",
+    @Json(name = "rollback_sha")
+    val rollbackSha: String = "",
+    @Json(name = "execution_attempts")
+    val executionAttempts: Int = 0,
+    @Json(name = "execution_updated_at")
+    val executionUpdatedAt: String? = null,
 )
 
 data class SollTaskMutationResponse(
@@ -1041,6 +1075,28 @@ data class SollTaskMutationResponse(
     val requiredCapabilities: List<String> = emptyList(),
     @Json(name = "routing_state")
     val routingState: String = "",
+    @Json(name = "execution_run_id")
+    val executionRunId: String = "",
+    @Json(name = "execution_phase")
+    val executionPhase: String = "",
+    @Json(name = "execution_reason")
+    val executionReason: String = "",
+    @Json(name = "risk_class")
+    val riskClass: String = "",
+    @Json(name = "acceptance_criteria")
+    val acceptanceCriteria: List<String> = emptyList(),
+    @Json(name = "test_plan")
+    val testPlan: List<String> = emptyList(),
+    @Json(name = "base_sha")
+    val baseSha: String = "",
+    @Json(name = "commit_sha")
+    val commitSha: String = "",
+    @Json(name = "rollback_sha")
+    val rollbackSha: String = "",
+    @Json(name = "execution_attempts")
+    val executionAttempts: Int = 0,
+    @Json(name = "execution_updated_at")
+    val executionUpdatedAt: String? = null,
     val task: SollTaskResponse? = null,
 ) {
     fun taskResponse(): SollTaskResponse {
@@ -1072,6 +1128,17 @@ data class SollTaskMutationResponse(
             assignedNodeId = assignedNodeId,
             requiredCapabilities = requiredCapabilities,
             routingState = routingState,
+            executionRunId = executionRunId,
+            executionPhase = executionPhase,
+            executionReason = executionReason,
+            riskClass = riskClass,
+            acceptanceCriteria = acceptanceCriteria,
+            testPlan = testPlan,
+            baseSha = baseSha,
+            commitSha = commitSha,
+            rollbackSha = rollbackSha,
+            executionAttempts = executionAttempts,
+            executionUpdatedAt = executionUpdatedAt,
         )
     }
 }
@@ -1485,12 +1552,27 @@ data class AssistantAskResponse(
 data class SollProtocolSchemaResponse(
     val version: String = "",
     val auth: SollProtocolAuthResponse = SollProtocolAuthResponse(),
+    val security: SollProtocolSecurityResponse = SollProtocolSecurityResponse(),
     val scopes: Map<String, List<String>> = emptyMap(),
     val transports: Map<String, SollProtocolTransportResponse> = emptyMap(),
     @Json(name = "worker_contracts")
     val workerContracts: Map<String, SollProtocolWorkerContractResponse> = emptyMap(),
     @Json(name = "gadget_discovery")
     val gadgetDiscovery: GadgetDiscoverySchemaResponse? = null,
+)
+
+data class SollProtocolSecurityResponse(
+    @Json(name = "post_quantum")
+    val postQuantum: SollProtocolPqcResponse = SollProtocolPqcResponse(),
+)
+
+data class SollProtocolPqcResponse(
+    val status: String = "unknown",
+    @Json(name = "protection_active")
+    val protectionActive: Boolean = false,
+    val target: String = "",
+    @Json(name = "migration_phases")
+    val migrationPhases: List<String> = emptyList(),
 )
 
 data class MeshStatusResponse(

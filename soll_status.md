@@ -1,8 +1,142 @@
 # soll_app Status
 
-Last updated: 2026-07-08 00:16 Europe/Chisinau
+Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-15 OmniOpt optimizer-benchmark source triage:
+  - Reviewed the task-provided record for `monitored\hugging-face-daily-papers\20260707-213045-omniopt-taxonomy-geometry-and-benchmarking-of-mo-2f762a3f.md`; the source artifact itself is not vendored in this isolated worktree. The primary paper and project page describe a five-stage optimizer meta-pipeline, a mechanism/effect-objective taxonomy covering 100+ methods, and a 24-optimizer benchmark across model scale, architecture, runtime, memory, stability, tuning robustness and generalization.
+  - Decision for `soll_app`: do not add optimizer libraries, PyTorch/training code, model fine-tuning or benchmark execution to Android. The app contains inference and backend-mediated model surfaces, but no model-training loop; keep Android as the review/approval client through existing `Источники`, `Инсайты`, `Roadmap`, Tasks, Chat and `Ask Soll` surfaces.
+  - Implementation point: keep OmniOpt as a desktop/server ML-training KB and evaluation cookbook. Create a bounded optimizer spike only when Soll owns a concrete training or fine-tuning workload; use AdamW as the reference and compare only 2-3 constraint-matched candidates on the same model, data, initialization/seeds, schedule and tuning budget, recording validation quality, steps/time-to-target, peak optimizer memory, step cost, divergence/gradient stability, hyperparameter sensitivity and held-out transfer.
+  - Do not adopt the paper's global tiers as runtime defaults. Promote an optimizer only after its code/license and target-architecture support are verified and a reproducible workload-specific gain exceeds the extra complexity and compute; Android may display server-produced benchmark summaries and explicit approve/reject tasks, but must not select or execute training optimizers.
+
+- 2026-07-15 multiplayer interactive world-model source triage:
+  - Reviewed the task-provided record for `monitored\hugging-face-daily-papers\20260707-213045-multiplayer-interactive-world-models-with-repres-18709be4.md`; the source artifact itself is not vendored in this isolated worktree. The record is a review-only research signal about representation-autoencoder world models conditioned on multiple participants' actions, without the full paper, code, datasets, license, hardware profile or reproducible results needed for adoption.
+  - Decision for `soll_app`: do not add model training, latent simulation, multiplayer rollout execution or GPU dependencies to Android, and do not treat game/simulation agents as a drop-in upgrade for the existing LLM meta-coordinator. Keep Android as the review and approval client through existing `Источники`, `Инсайты`, `Roadmap`, Tasks, Chat and `Ask Soll` surfaces.
+  - Implementation point, if the primary artifacts validate the claim: an isolated desktop/server research sandbox next to the existing agent-evaluation contour. Start with one synthetic, non-sensitive cooperative environment and an offline adapter that records synchronized observations and per-agent actions; compare the learned joint rollout against a deterministic scenario/test baseline on state or frame prediction, participant/action controllability, cross-agent consistency, long-rollout stability, latency, memory and GPU cost.
+  - Do not connect the model to production task execution or autonomous device control during the spike. Promote it into the Soll meta-coordinator only if a concrete simulation use case outperforms the simpler baseline, reproduced results justify the operational cost, and generated scenarios remain traceable, review-gated and disposable.
+
+- 2026-07-15 AIA AI developer-tools source triage:
+  - Reviewed the task-provided record for `monitored\aia\20260708-220008-ai-developer-tools-a5895398.md`; the source artifact itself is not vendored in this isolated worktree. The record is a broad, review-only topic map covering agentic IDEs, coding assistants, Computer Use, MCP, Deep Research, context engineering and vibe-coding risks, without a concrete release, primary documentation, comparison, code or reproducible practice.
+  - Decision for `soll_app`: do not create another Android module, embed a coding agent/MCP host, or grant autonomous computer/browser control from this source. Merge the signal with the existing `ai-0ad60b3f` desktop/server KB taxonomy instead of creating a duplicate roadmap initiative; Android remains the review, status and approval client through existing Chat, Tasks, `Ask Soll`, `Источники` and automation surfaces.
+  - Implementation plan: select one concrete non-sensitive Soll development workflow, collect primary documentation for its candidate tools, and run a desktop/server context-engineering and coding-agent evaluation on 3-5 representative tasks. Compare task completion, relevant-context precision, unnecessary edits, test results, time/cost, permission scope, audit trail and rollback against the current `rg`/manual workflow. Generated changes must remain review- and test-gated with no automatic deploy.
+  - Promote a result into implementation only if that evaluation shows a measurable benefit. Keep MCP credentials and tool execution server-side, expose only summaries/diffs/status and explicit approve/reject actions to Android, and split Computer Use, Deep Research or a specific IDE into separate deep dives only when each has a primary source and a concrete Soll use case.
+
+- 2026-07-15 AlexGyverShow Arduino source triage:
+  - Reviewed the task-provided record for `monitored\alexgyvershow\20260707-230008-arduino-a790a76e.md`; the source artifact itself is not vendored in this isolated worktree. The record is a broad, review-only overview of Arduino boards, sensors, motors, thermal printers, weather stations and household DIY devices, without primary project links, schematics, BOMs, firmware, library details or power constraints.
+  - Decision for `soll_app`: do not add a generic Arduino module, direct board/USB-serial integration or Gyver UI dependency from this source. Keep it as a Soll desktop/server KB and candidate-discovery signal, and route only selected, reproducible projects through the existing headless `Гаджеты`/ESP connector.
+  - First deep-dive candidate: a networked environmental sensor or physical notification indicator, reusing the `Generic ESP WebSocket` profile plus Soll gadget telemetry/events and confirmation-gated controls. Firmware owns timing and hardware I/O; Android remains the setup, telemetry and control surface. Require a primary link, schematic, BOM, firmware and licenses, voltage/current/power limits, protocol payloads, safe-state behavior and real-device QA before implementation. Defer motor and thermal-printer profiles until a concrete workflow is chosen.
+
+- 2026-07-15 AIA AI development and agent-systems source triage:
+  - Reviewed the task-provided record for `monitored\aia\20260711-010007-ai-0ad60b3f.md`; the source artifact itself is not vendored in this isolated worktree. The record is a research-only aggregated overview of AI coding assistants, agent environments, MCP, context engineering and controlled browser/system automation, without primary links, dated releases, code or implementation documentation.
+  - Decision for `soll_app`: do not add a new Android module, MCP runtime, coding agent or autonomous browser/system control from this source. The useful themes already fit the existing desktop/server meta-coordinator, context/memory, tool-routing and approval-gated automation direction.
+  - Keep the item as a Soll desktop/server KB and architecture-evaluation candidate. Revisit only after a concrete workflow and primary documentation are available; compare candidate tools on context boundaries, connector permissions, confirmation gates, auditability and rollback. Android should remain the review/approval client through existing Chat, Tasks, `Ask Soll`, `Источники` and automation-status surfaces, without owning connector credentials or unrestricted action execution.
+
+- 2026-07-15 scheduler `vector_reindex` incident `9590445f373f4df7` triage:
+  - The reported run completed a bounded batch in `23.9s`: `+47`, updated `3`, deleted `0`, with `20067` documents in the index. `batch partial, продолжим следующим запуском` is continuation status, not a runtime exception.
+  - A post-incident read-only health check at `2026-07-15T15:43:11.739687` returned `status=healthy`, `scheduler_running=true`, `vault_accessible=true`, and `jobs_count=16`; the scheduler is operational.
+  - Detailed `/api/v1/scheduler/*`, `/api/v1/vector/*`, and `/api/v1/logs` checks are authentication-protected (`401 Not authenticated`). No credentials were read and no approval-first scheduler rerun was attempted from this isolated Android worktree.
+  - No Android code change is warranted: `vector_reindex` is implemented by the Soll server, while `soll_app` only consumes scheduler health. Focused Android contract validation passed with `SollServerSyncWorkerTest` (`BUILD SUCCESSFUL`).
+
+- 2026-07-15 Habr delegation/task-brief source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260523-143001-item-e723ba31.md`; it is a medium-usefulness, research-only process note about better delegation through explicit context, tools, tradeoffs, decomposition, acceptance criteria and verification, with `evidence_level=weak_summary`.
+  - Decision for `soll_app`: do not add a new Android module or prompt engine. Apply the idea in desktop/server task-creation and meta-coordinator templates for source-, roadmap- and agent-generated tasks, initially serializing the brief into the existing task `description` as context, goal, required/desirable outcomes, constraints, available tools, tradeoffs, stages, acceptance criteria and a separate verification step.
+  - Android should keep displaying and editing the resulting brief through the existing Tasks contract (`title`, `description`, `sourceRef`, status and routing metadata). Optional structured checklist fields should be added only through a later backward-compatible server API change; no app code is needed from this source now.
+
+- 2026-07-15 Yandex iOS media-feed source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\ios-media-feed-yandex.md`; it is a medium-usefulness, research-only engineering note about autoplay, adjacent-item preloading, player/container lifecycle, memory/network limits and production observability for a large iOS media feed.
+  - Decision for `soll_app`: do not add a video-feed/player subsystem now because the current Android product has no concrete autoplay media-feed requirement; existing Chat and `Источники` content remains text/image digest and article cards.
+  - If a media-feed use case is approved later, implement it in the existing `Источники` lane, extracting that UI from `TaskBoardScreen` into a dedicated sources/media-feed presentation module. Extend the server-driven source-item contract and pagination first, then add bounded Media3 player reuse, cancellation/preloading policy, lifecycle and memory limits, plus metrics for stalls, blank frames and autoplay failures.
+
+- 2026-07-15 Habr multi-provider LLM bot source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260516-100016-llm-a80dd931.md`; it is a medium-usefulness, research-only Habr excerpt about switching between Groq/Llama and Google Gemma/Gemini in a Telegram bot, marked `needs_deep_dive=true` and `evidence_level=weak_summary`.
+  - Decision for `soll_app`: do not add direct Groq/Google SDKs, API keys, client-side provider routing or prompt-only persona switching to Android. Provider/model selection, rate limits, fallback and conversation isolation belong in the existing desktop/server meta-coordinator/provider router.
+  - The current backend-mediated `askModelChat` contract is already the correct Android integration point; no app code is needed from this source. Android may later show provider/model metadata returned by the server, but must not own provider secrets or routing state.
+
+- 2026-07-14 Llama/Meta model chat client contract:
+  - Added a minimal backend-mediated model chat client surface without Android-side provider secrets: `domain/modelchat/ModelChatModels.kt`, `SollGateway.askModelChat(...)`, and `SollRepository.askModelChat(...)`.
+  - The Android app does not call Meta/Llama directly and does not store `MODEL_API_KEY`; it sends a sanitized request through the existing Soll backend `/api/v1/assistant/ask`, with `providerHint=LLAMA` as a server-side routing hint.
+  - `ModelChatRequest.safeForServer()` drops private messages before prompt serialization; `ModelChatServerBridge` explicitly keeps provider keys server-side; fallback does not ask Android for keys.
+  - Focused validation passed with explicit SDK env: `.\gradlew.bat :app:testDebugUnitTest --tests com.soll.domain.modelchat.ModelChatModelsTest --tests com.soll.domain.metacoordinator.MetaCoordinatorModelsTest --tests com.soll.data.repository.SollRepositoryTest` -> `BUILD SUCCESSFUL`.
+
+- 2026-07-14 Habr deploy automation source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260702-143009-item-15e48b34.md`; it is a high-usefulness Habr summary about automating repetitive deployment setup around server provisioning, Nginx, SSL, fail2ban/users, GitHub and CI/CD, marked `actionability=research_only`, `needs_deep_dive=true`, and `evidence_level=credible_secondary`.
+  - Decision for `soll_app`: do not add deployment scripts, Nginx/SSL/fail2ban configuration, GitHub deploy controls, SSH keys or direct server mutation flows into Android. The implementation point is a desktop/server DevOps spike for the Soll/Soll_app deployment pipeline: audit the current deploy steps, verify the original scripts/repo/license, adapt only non-secret automation into a test environment, and require manual approval before production use.
+  - Android should only consume deploy status, checklist items, tasks, alerts or approve/reject prompts through existing `Tasks`, `Chat`, `Инсайты`, `Roadmap`, `Источники` and `Ask Soll` surfaces.
+
+- 2026-07-14 AI startup niche Habr source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260513-191538-item-eea80802.md`; it is a medium-usefulness Habr summary about using AI agents, GitHub repositories, SaaS validators and pain-mining tools to search for a startup niche, marked `actionability=research_only`, `needs_deep_dive=true`, and `evidence_level=weak_summary`.
+  - Decision for `soll_app`: do not add an automatic "choose startup niche" feature, SaaS-validator integrations, Reddit/app-review mining, or autonomous business-decision logic into Android now. The implementation point is a desktop/server market-research workflow after deep-dive verification: collect cited tools, define niche scoring criteria, attach evidence, surface risks, and require human approval before turning ideas into roadmap/tasks.
+  - Android should only consume the resulting source cards, insight summaries, opportunity tasks and approve/reject prompts through existing `Источники`, `Инсайты`, `Roadmap`, `Tasks`, `Chat` and `Ask Soll` surfaces.
+
+- 2026-07-14 3D factory model QA Habr source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260702-183012-3d-a0eee0f5.md`; it is a medium-usefulness Habr summary about industrial 3D/CAD model QA, contractor deliverable checks and object tag discipline for engineering-data systems, marked `actionability=research_only`, `needs_deep_dive=true`, and `evidence_level=weak_summary`.
+  - Decision for `soll_app`: do not add AVEVA/CAD integrations, local 3D model viewing, plant-model validation, or engineering-data registry logic to Android now. The implementation point is a desktop/server guideline or QA checklist for model/tag deliverables after a deeper methodology review.
+  - Android should only support capture/review around the existing Scanner, Raw Note, Field Map, Tasks and `Источники` surfaces: scan asset tags, attach photos/notes/location evidence, and show server-produced QA findings or tasks.
+
+- 2026-07-13 AgenticDataBench source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\hugging-face-daily-papers\20260705-203016-agenticdatabench-a-comprehensive-benchmark-for-d-2763da91.md`; it is a high-usefulness Hugging Face Daily Papers note about an arXiv/open-source benchmark for LLM data agents with skill tags, datasets and gold answers, marked `actionability=implementation_ready` and `needs_deep_dive=true`.
+  - Decision for `soll_app`: do not add AgenticDataBench, data-science agent execution, dataset runners or benchmark UI into Android. The implementation point is a desktop/server internal eval harness for Soll source-monitoring/KB agents: 5-10 synthetic/non-sensitive tasks, skill labels, expected outputs, regression metrics and manual review before task/wiki updates.
+  - Android should only consume resulting summaries, source cards, eval status or approve/reject tasks through existing `Источники`, `Инсайты`, `Tasks`, `Chat` and `Ask Soll` surfaces.
+
+- 2026-07-13 Claude Managed Digest source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\claude-managed-digest.md`; it is a research-only note about Claude Managed Agents as a backend-style source digest engine, with observed Console/Test run rough edges and risks around agentic automation, web monitoring, prompt injection and credential exposure.
+  - Decision for `soll_app`: do not add Claude Managed Agents SDKs, credentials, shell access, direct web monitoring or autonomous wiki mutation into Android. The implementation point is a desktop/server read-only digest-agent prototype after official-doc/access verification: allowlisted sources only, no secrets, no shell, hard cost/time limits, markdown output with citations into raw/outputs, and manual confirmation before writing wiki/tasks.
+  - Android should only consume server-produced digest cards, source items, tasks and approve/reject prompts through existing Chat, Tasks, Sources and Ask Soll surfaces; `docs/soll_app-superassistant-roadmap-2026-05-06.md` now records that placement.
+
+- 2026-07-13 Claude Mythos release source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\claude-mythos-release.md`; it is a marketing/release-monitoring signal about Claude Mythos access after Opus, with missing API/pricing/access details in the original secondary source.
+  - Cross-checked official Claude docs on 2026-07-13: Claude Fable 5 is the generally available high-capability model, while Claude Mythos 5 is limited/invitation-only through Project Glasswing and carries model-specific data-retention constraints.
+  - Decision for `soll_app`: do not add direct Anthropic/Mythos model IDs, SDK wiring, keys or model selection UI into Android. If evaluated later, implement only in desktop/server LLM provider routing with access checks, benchmark gates, fallback/refusal handling, cost controls and data-retention policy; Android should consume only existing `Ask Soll`, `Инсайты`, `Roadmap` or `Источники` summaries through the current Soll API.
+
+- 2026-07-13 Claude Science Habr source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260701-173523-claude-science-90d35df4.md`; it is a medium-usefulness Habr summary of Anthropic Claude Science as a scientific research workbench with multi-agent coordination, scientific database/tool integrations and reproducible outputs, with `actionability=research_only`.
+  - Decision for `soll_app`: do not add Claude Science, Anthropic-specific scientific database connectors, local Jupyter/R/PubMed workflows or scientific data processing into Android now. The implementation point is a desktop/server research sandbox only after verifying official docs, access model, privacy boundaries and dataset handling.
+  - Android should only consume validated results later through existing `Инсайты`, `Roadmap`, `Источники` or `Ask Soll` surfaces; keep sensitive datasets, external-tool credentials and reproducibility artifacts server-side/desktop-side.
+
+- 2026-07-13 Cloudflare/Supabase source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\cloudflare-supabase.md`; it is a practical serverless/backend note about Cloudflare Workers as an API/cache layer in front of Supabase/PostgreSQL, not a mobile feature request.
+  - Decision for `soll_app`: do not add Supabase SDK, Cloudflare Worker code, direct Supabase keys, or a visible news-aggregator module to Android. The implementation point is a desktop/server infrastructure spike behind the existing Soll API contract: Worker can cache/read selected public or low-risk datasets, but Android should keep talking to `https://sales.monolith-ost.com/api/v1/soll`.
+  - If this is revisited later, gate it with secret isolation, CORS policy, cache TTL/fallback testing, Cloudflare Logs/Supabase Audit monitoring, and explicit server-side schema ownership; Android only consumes the resulting existing `Источники`, `Инсайты`, `Roadmap`, `Tasks` or `Ask Soll` surfaces.
+
+- 2026-07-13 ClustMetaLearn source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\clustmetalearn.md`; it is a weak-summary signal about meta-learning for choosing clustering algorithms, CVI metrics and hyperparameter ranges for tabular datasets.
+  - Decision for `soll_app`: do not add a local ClustMetaLearn/Django/Celery/MLflow stack or Android clustering runtime now. The implementation point is a desktop/server sandbox on anonymized CSV metadata for Soll notes, sources and projects, after verifying the full paper, repo and license.
+  - Android should only consume validated results later through existing `Инсайты`, `Roadmap`, `Источники` or `Ask Soll` surfaces; no private notes should be sent to an external web app.
+
+- 2026-07-13 CodeGraph Habr source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260523-160001-codegraph-claude-code-grep-8a6a6a06.md`; it is a high-usefulness Habr overview of a local CodeGraph/MCP approach using tree-sitter and SQLite for symbol search, context and impact analysis, with `actionability=research_only`.
+  - Decision for `soll_app`: do not add CodeGraph, MCP, tree-sitter or SQLite code-index tooling as an Android runtime dependency or visible mobile module. The safe implementation point is a desktop/server dev-only project-intelligence spike: index `D:\Projects\soll_app` in an isolated local environment, compare `status/search/context/impact` against `rg` on 3-5 real questions, and record the result in Soll wiki/tasks before any integration.
+  - `docs/soll_app-superassistant-roadmap-2026-05-06.md` now records this placement near the existing server meta-coordinator, automation and imported source signals.
+
+- 2026-07-13 CV retail challenges source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\cv-retail-challenges.md`; it is an early product-opportunity signal from retail CV: YOLO/2D planogram detection is common, while reliable shelf counting, customer-path analytics, self-checkout anti-fraud, queue analytics and hot-zone placement still need research/prototype validation.
+  - Decision for `soll_app`: do not add local YOLO/VLM inference, multi-camera tracking, surveillance anti-fraud, queue/staffing optimization or heatmap placement logic into the Android app now. The safe implementation point is the existing Scanner/Raw Note/task-evidence lane: Android may capture EAN/photo/shelf-audit evidence and display server-returned findings, while CV processing, privacy/retention policy, model evaluation and retail-specific workflows stay server-side until a concrete pilot exists.
+  - `docs/soll_app-superassistant-roadmap-2026-05-06.md` now records this placement near Scanner Tool and imported source signals.
+
+- 2026-07-13 MonoGame Content Pipeline source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260526-073001-content-pipeline-monogame-da3a9972.md`; it is a medium-usefulness Habr opinion note about avoiding MonoGame Content Pipeline for small MonoGame/FNA projects, with `actionability=research_only`.
+  - Decision for `soll_app`: do not implement in the Android/Kotlin runtime and do not add MonoGame/FNA/XNB tooling here. Keep it as a KB/architecture note tagged `gamedev`, `monogame`, `asset-pipeline`; only revisit XNAssets/SpriteFontPlus/FontStashSharp if a separate MonoGame/FNA prototype appears.
+  - `docs/soll_app-superassistant-roadmap-2026-05-06.md` now records this as external gamedev knowledge, not an app feature.
+
+- 2026-07-13 Crashprobe Python source triage:
+  - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260606-160013-crashprobe-python-92848d5f.md`; it is a weak Habr summary for Python error/thread debugging with `actionability=research_only`.
+  - Decision for `soll_app`: do not implement in the Android/Kotlin app runtime and do not add a dependency here. If a later deep dive verifies the repo, license and thread/traceback behavior, the only fit is dev-only Python diagnostics for desktop/server scripts or one-shot tool wrappers, not mobile UI/runtime.
+  - `docs/soll_app-superassistant-roadmap-2026-05-06.md` now records this placement near the existing server automation and agent-control signals.
+
+- 2026-07-13 Cursor iPhone source triage:
+  - Read source `D:\Projects\Soll\Soll\wiki\cursor-iphone-app-1.md`; it is a weak/unverified product signal about mobile UX for coding agents, background execution, PR results and sandbox/approval guardrails.
+  - Decision for `soll_app`: implement through the existing Chat/Tasks/Assistant control surfaces as a read-only/approval-gated server-agent lane. Do not add local mobile code generation, local agent launch, direct git automation, secret access or automatic deploy/merge from Android.
+  - `docs/soll_app-superassistant-roadmap-2026-05-06.md` now records this placement next to the existing server meta-coordinator, smart commit watchdog and automation-page guidance.
+
+- 2026-07-13 AI-core/source-monitor task-board recheck:
+  - Live Soll server health is healthy on `127.0.0.1:49237`: `scheduler_running=true`, `vault_accessible=true`, `jobs_count=16`, runtime PID `73448`.
+  - Live vLLM endpoints answer: `qwen3-coder:30b` on `127.0.0.1:17200` and `bge-base-en` on `127.0.0.1:17201`.
+  - Direct `SystemHealthSummaryService.summary()` shows `source_monitor.errors=0`, `active_error_sources=[]`, `enabled_total=51`, `due=6`, `last_checked_at=2026-07-13T00:30:07.075522`.
+  - `local_llm_release_doctor.py --json --report ''` still returns `status=blocked`: runtime endpoints are available, but the launch-plan backend check reports WSL distro `Ubuntu-24.04` not runnable / Docker unavailable; context index is now fresh (`stale=false`, `302` docs).
+  - `ai_core_doctor.py --no-persist` returns `status=failed` in this sandbox: source/context checks pass, but vector/architecture/task-board probes hit `OperationalError: unable to open database file` or temp-file `PermissionError` under `D:\Projects\Soll\Soll\.soll`.
+  - Runtime incident ledger still contains old source-monitor incident ids `6316b9c1ebbfff84`, `2b897f1f7c0549dc`, and `b632381e20f10261`, but there is no fresh source-monitor incident because live `source_monitor_errors=0`. The only current live health warning is Android push without tokens, incident `cd3a617521fef11b`.
+  - Server task-board mirror already shows source-monitor repair rows as `done` (`runtime-incident/service/source_monitor/health_summary/source-monitor-errors`, `runtime-incident/scheduler/sources/source-check-timeout`, `runtime-incident/scheduler/sources/source-monitor-errors`). Umbrella target `6b68064deed64ee7b6f6d852a978cbcf` is still `in_progress`; closing it from this `soll_app` workspace is blocked by filesystem permissions on `D:\Projects\Soll\Soll\.soll` and by API auth, so the writable local record is this status note.
 
 - 2026-07-06 Android chat visible but no push banner:
   - Root cause narrowed after live user confirmation: the message reaches the Android chat, so Desktop -> Monolith relay -> Android sync/chat is alive; the missing part is Android system notification display/alerting.

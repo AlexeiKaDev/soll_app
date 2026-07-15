@@ -266,6 +266,32 @@ class TaskBoardViewModel @Inject constructor(
         }
     }
 
+    fun updateTask(task: SollTask, title: String, description: String) {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) {
+            _uiState.update { it.copy(message = "Название задачи не может быть пустым", isError = true) }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(actionTaskId = task.id, message = null, isError = false) }
+            sollGateway.updateTask(task.id, cleanTitle, description.trim()).fold(
+                onSuccess = {
+                    _uiState.update {
+                        it.copy(
+                            actionTaskId = null,
+                            message = "Задача обновлена",
+                            isError = false,
+                        )
+                    }
+                    refresh(showLoading = false)
+                },
+                onFailure = { error ->
+                    refreshAfterTaskConflict(error.message ?: "Не удалось обновить задачу")
+                },
+            )
+        }
+    }
+
     fun startTask(task: SollTask) {
         runTaskAction(
             task = task,

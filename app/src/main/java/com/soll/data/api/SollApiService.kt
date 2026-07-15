@@ -175,6 +175,13 @@ interface SollApiService {
         @Path("status") status: String,
     ): SollTaskMutationResponse
 
+    @PATCH("api/v1/tasks/{task_id}")
+    suspend fun updateTask(
+        @Header("Authorization") authorization: String?,
+        @Path("task_id", encoded = true) taskId: String,
+        @Body request: TaskUpdateRequest,
+    ): SollTaskMutationResponse
+
     @POST("api/v1/tasks/{task_id}/today")
     suspend fun moveTaskToToday(
         @Header("Authorization") authorization: String? = null,
@@ -953,6 +960,11 @@ data class DailyTaskUpdateRequest(
     val done: Boolean,
 )
 
+data class TaskUpdateRequest(
+    val title: String,
+    val description: String,
+)
+
 data class SollTaskBoardCountsResponse(
     val today: Int = 0,
     val blocked: Int = 0,
@@ -1485,12 +1497,27 @@ data class AssistantAskResponse(
 data class SollProtocolSchemaResponse(
     val version: String = "",
     val auth: SollProtocolAuthResponse = SollProtocolAuthResponse(),
+    val security: SollProtocolSecurityResponse = SollProtocolSecurityResponse(),
     val scopes: Map<String, List<String>> = emptyMap(),
     val transports: Map<String, SollProtocolTransportResponse> = emptyMap(),
     @Json(name = "worker_contracts")
     val workerContracts: Map<String, SollProtocolWorkerContractResponse> = emptyMap(),
     @Json(name = "gadget_discovery")
     val gadgetDiscovery: GadgetDiscoverySchemaResponse? = null,
+)
+
+data class SollProtocolSecurityResponse(
+    @Json(name = "post_quantum")
+    val postQuantum: SollProtocolPqcResponse = SollProtocolPqcResponse(),
+)
+
+data class SollProtocolPqcResponse(
+    val status: String = "unknown",
+    @Json(name = "protection_active")
+    val protectionActive: Boolean = false,
+    val target: String = "",
+    @Json(name = "migration_phases")
+    val migrationPhases: List<String> = emptyList(),
 )
 
 data class MeshStatusResponse(

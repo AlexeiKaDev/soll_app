@@ -14,6 +14,7 @@ object SollProtocolContract {
 data class SollProtocolSchema(
     val version: String,
     val auth: SollProtocolAuth = SollProtocolAuth(),
+    val security: SollProtocolSecurity = SollProtocolSecurity(),
     val gadgetCommandRoutes: List<String> = emptyList(),
     val androidTransport: SollProtocolTransport = SollProtocolTransport(),
     val workerContracts: Map<String, SollProtocolWorkerContract> = emptyMap(),
@@ -30,6 +31,13 @@ data class SollProtocolSchema(
     val compatible: Boolean
         get() = warnings.isEmpty()
 }
+
+data class SollProtocolSecurity(
+    val pqcStatus: String = "unknown",
+    val pqcProtectionActive: Boolean = false,
+    val pqcTarget: String = "",
+    val pqcMigrationPhases: List<String> = emptyList(),
+)
 
 data class SollProtocolBootstrap(
     val version: String,

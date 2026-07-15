@@ -7,6 +7,8 @@ import com.soll.domain.device.GadgetCloudHistory
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
+import com.soll.domain.modelchat.ModelChatRequest
+import com.soll.domain.modelchat.ModelChatResponse
 
 data class SollHealth(
     val status: String,
@@ -623,6 +625,7 @@ interface SollGateway {
     ): Result<SollRawNote>
 
     suspend fun uploadRawFile(uri: Uri): Result<SollRawUpload>
+    suspend fun updateTask(taskId: String, title: String, description: String): Result<SollTask>
     suspend fun setTaskStatus(taskId: String, status: String): Result<SollTask>
     suspend fun moveTaskToToday(taskId: String): Result<SollTask>
     suspend fun completeTask(taskId: String): Result<SollTask>
@@ -668,6 +671,7 @@ interface SollGateway {
     suspend fun processDownloadedBook(filePath: String? = null): Result<SollBookProcessResult>
     suspend fun cancelBookSession(): Result<SollBookActionResult>
     suspend fun askMetaCoordinator(request: MetaCoordinatorRequest): Result<MetaCoordinatorResponse>
+    suspend fun askModelChat(request: ModelChatRequest): Result<ModelChatResponse>
     suspend fun getProtocolSchema(): Result<SollProtocolSchema>
     suspend fun getMeshStatus(): Result<SollMeshStatus>
     suspend fun getMeshOutbox(limit: Int = 20): Result<List<SollMeshOutboxItem>>

@@ -68,6 +68,7 @@ class ProjectStabilizationGuardTest {
         val schema20 = projectFile("app/schemas/com.soll.data.local.SollDatabase/20.json").readText()
         val schema21 = projectFile("app/schemas/com.soll.data.local.SollDatabase/21.json").readText()
         val schema22 = projectFile("app/schemas/com.soll.data.local.SollDatabase/22.json").readText()
+        val schema23 = projectFile("app/schemas/com.soll.data.local.SollDatabase/23.json").readText()
 
         assertFalse(appModule.contains("fallbackToDestructiveMigration()"))
         assertTrue(appModule.contains("migration1To2"))
@@ -75,9 +76,11 @@ class ProjectStabilizationGuardTest {
         assertTrue(appModule.contains("migration19To20"))
         assertTrue(appModule.contains("migration20To21"))
         assertTrue(appModule.contains("migration21To22"))
+        assertTrue(appModule.contains("migration22To23"))
         assertTrue(schema20.contains("\"version\": 20"))
         assertTrue(schema21.contains("\"version\": 21"))
         assertTrue(schema22.contains("\"version\": 22"))
+        assertTrue(schema23.contains("\"version\": 23"))
         listOf(
             "approval_id",
             "tool_job_id",
@@ -102,6 +105,10 @@ class ProjectStabilizationGuardTest {
         ).forEach { column ->
             assertTrue(appModule.contains("ADD COLUMN `$column`"))
             assertTrue(schema22.contains("\"columnName\": \"$column\""))
+        }
+        listOf("execution_phase", "execution_reason").forEach { column ->
+            assertTrue(appModule.contains("ADD COLUMN `$column`"))
+            assertTrue(schema23.contains("\"columnName\": \"$column\""))
         }
     }
 

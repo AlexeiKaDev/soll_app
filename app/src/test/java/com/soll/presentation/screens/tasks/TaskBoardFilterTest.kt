@@ -122,6 +122,58 @@ class TaskBoardFilterTest {
         assertFalse(rejected.canReject)
     }
 
+    @Test
+    fun `held task reason is concise and strips technical prefix`() {
+        val held = task(id = "blocked-1", status = "blocked").copy(
+            executionPhase = "needs_user",
+            executionReason = "blocked: Android device is not connected and the hardware smoke cannot run",
+        )
+
+        assertEquals(
+            "Android device is not connected and the hardware smoke cannot run",
+            held.shortHoldReason(),
+        )
+        assertTrue(held.copy(executionReason = "x".repeat(200)).shortHoldReason()!!.length <= 140)
+    }
+
+    @Test
+    fun `held task reason uses clear routing and status fallbacks`() {
+        assertEquals(
+            "Ожидает подключение Android-устройства.",
+            task(
+                id = "routed-1",
+                status = "in_progress",
+                routingState = "waiting_for_android_adb_node",
+            ).shortHoldReason(),
+        )
+        assertEquals(
+            "Отложена вручную; причина не указана.",
+            task(id = "deferred-1", status = "deferred").shortHoldReason(),
+        )
+        assertEquals(
+            "Нет обновлений дольше установленного срока.",
+            task(id = "stale-1", status = "stale").shortHoldReason(),
+        )
+        assertEquals(null, task(id = "today-1", status = "today").shortHoldReason())
+    }
+
+    @Test
+    fun `held task reason explains autonomous scope and source deferral`() {
+        assertEquals(
+            "Проект «MonoSales» не разрешен для автономного выполнения.",
+            task(id = "scope-1", status = "blocked").copy(
+                executionState = "external_blocked: Задача заблокирована.; " +
+                    "Scope 'MonoSales' не входит в autonomous allowlist (soll, soll_app).",
+            ).shortHoldReason(),
+        )
+        assertEquals(
+            "Отложено до проверки источника.",
+            task(id = "source-1", status = "deferred").copy(
+                executionState = "source_review_deferred",
+            ).shortHoldReason(),
+        )
+    }
+
     private fun task(
         id: String,
         status: String,

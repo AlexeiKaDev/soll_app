@@ -65,6 +65,12 @@ data class TaskCacheEntity(
     @ColumnInfo(name = "routing_state")
     val routingState: String,
 
+    @ColumnInfo(name = "execution_phase")
+    val executionPhase: String,
+
+    @ColumnInfo(name = "execution_reason")
+    val executionReason: String,
+
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long,
 ) {
@@ -89,6 +95,8 @@ data class TaskCacheEntity(
             assignedNodeId = assignedNodeId,
             requiredCapabilities = JSONArray(requiredCapabilitiesJson).toStringList(),
             routingState = routingState,
+            executionPhase = executionPhase,
+            executionReason = executionReason,
         )
 
     companion object {
@@ -113,6 +121,8 @@ data class TaskCacheEntity(
                 assignedNodeId = task.assignedNodeId,
                 requiredCapabilitiesJson = JSONArray(task.requiredCapabilities).toString(),
                 routingState = task.routingState,
+                executionPhase = task.executionPhase,
+                executionReason = task.executionReason,
                 updatedAt = updatedAt,
             )
     }

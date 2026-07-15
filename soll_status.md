@@ -4,6 +4,12 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 Habr Yandex YTsaurus GPU-render source audit:
+  - Reviewed `source-item/0d75242b770a/e916238e51d2cfd0` against the public Habr article and official YTsaurus GPU operation/statistics documentation. The article's working path requires one allocated GPU plus a compatible driver overlay, NVIDIA compute/modeset and DRM devices, Vulkan ICD, Xorg DDX on a virtual display, a same-GPU swapchain path, and software `ffmpeg` encoding when the GPU has no NVENC; platform support for Xorg on GPU hosts is a prerequisite, not Android code.
+  - The requested test-cluster acceptance criterion is not met. The raw source is absent from this isolated worktree, `yt` and Docker are unavailable, local `nvidia-smi` fails to initialize NVML, and no approved YTsaurus endpoint, GPU pool, container layer, render scene or product baseline is in scope. Actual operations, successful cluster trials and rendered frames are all `0`.
+  - Decision: `audited_and_deferred_no_test_cluster`. Do not simulate success and do not add YTsaurus, Porto/Docker, NVIDIA/Vulkan/X11/Unity dependencies or cluster credentials to Android. Reopen only for a concrete Soll-owned render workload and an owner-approved non-production GPU cluster; require an unprivileged admission job with `gpu_limit=1` and `pool_trees=[gpu]`, three bounded `vkcube` passes, one verified scene artifact, YTsaurus GPU statistics, cleanup evidence and a measured baseline improvement.
+  - Focused audit, exact device/graphics-stack contract, trial evidence checklist and value metric: `Soll/outputs/source-processing/source-item-0d75242b770a-e916238e51d2cfd0-verification.md`.
+
 - 2026-07-15 YaFF zero-copy Protobuf evaluation:
   - Built upstream `yandex/yaff` v0.1.0 at `d6f74675374b587ce24112c284abd54a92090221` with GCC 13/C++20 and ran its official access/space benchmarks locally. Representative mean CPU results: 10 fields YaFF Flat `6.33 ns` vs Protobuf `32.64 ns`; 100 fields `110.56 ns` vs `661.00 ns`; hot hierarchy `7.55 ns` vs `111 ns`; cold hierarchy `238 ns` vs `307 ns`.
   - The benefit is not transferable to the current mobile runtime without a new native subsystem: Android sync is Retrofit/Moshi JSON, maps `AndroidSyncStatusResponse` to domain data, and stores the offline fallback as JSON. The app has no Protobuf, YaFF, C++, NDK or CMake data path.

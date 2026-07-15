@@ -1013,6 +1013,28 @@ data class SollTaskResponse(
     val requiredCapabilities: List<String> = emptyList(),
     @Json(name = "routing_state")
     val routingState: String = "",
+    @Json(name = "execution_run_id")
+    val executionRunId: String = "",
+    @Json(name = "execution_phase")
+    val executionPhase: String = "",
+    @Json(name = "execution_reason")
+    val executionReason: String = "",
+    @Json(name = "risk_class")
+    val riskClass: String = "",
+    @Json(name = "acceptance_criteria")
+    val acceptanceCriteria: List<String> = emptyList(),
+    @Json(name = "test_plan")
+    val testPlan: List<String> = emptyList(),
+    @Json(name = "base_sha")
+    val baseSha: String = "",
+    @Json(name = "commit_sha")
+    val commitSha: String = "",
+    @Json(name = "rollback_sha")
+    val rollbackSha: String = "",
+    @Json(name = "execution_attempts")
+    val executionAttempts: Int = 0,
+    @Json(name = "execution_updated_at")
+    val executionUpdatedAt: String? = null,
 )
 
 data class SollTaskMutationResponse(
@@ -1053,6 +1075,28 @@ data class SollTaskMutationResponse(
     val requiredCapabilities: List<String> = emptyList(),
     @Json(name = "routing_state")
     val routingState: String = "",
+    @Json(name = "execution_run_id")
+    val executionRunId: String = "",
+    @Json(name = "execution_phase")
+    val executionPhase: String = "",
+    @Json(name = "execution_reason")
+    val executionReason: String = "",
+    @Json(name = "risk_class")
+    val riskClass: String = "",
+    @Json(name = "acceptance_criteria")
+    val acceptanceCriteria: List<String> = emptyList(),
+    @Json(name = "test_plan")
+    val testPlan: List<String> = emptyList(),
+    @Json(name = "base_sha")
+    val baseSha: String = "",
+    @Json(name = "commit_sha")
+    val commitSha: String = "",
+    @Json(name = "rollback_sha")
+    val rollbackSha: String = "",
+    @Json(name = "execution_attempts")
+    val executionAttempts: Int = 0,
+    @Json(name = "execution_updated_at")
+    val executionUpdatedAt: String? = null,
     val task: SollTaskResponse? = null,
 ) {
     fun taskResponse(): SollTaskResponse {
@@ -1084,6 +1128,17 @@ data class SollTaskMutationResponse(
             assignedNodeId = assignedNodeId,
             requiredCapabilities = requiredCapabilities,
             routingState = routingState,
+            executionRunId = executionRunId,
+            executionPhase = executionPhase,
+            executionReason = executionReason,
+            riskClass = riskClass,
+            acceptanceCriteria = acceptanceCriteria,
+            testPlan = testPlan,
+            baseSha = baseSha,
+            commitSha = commitSha,
+            rollbackSha = rollbackSha,
+            executionAttempts = executionAttempts,
+            executionUpdatedAt = executionUpdatedAt,
         )
     }
 }

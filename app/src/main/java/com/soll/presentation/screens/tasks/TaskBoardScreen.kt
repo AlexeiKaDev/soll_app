@@ -923,6 +923,27 @@ private fun TaskCard(
                 if (hasPendingTaskAction) {
                     PassiveChip(text = "Действие в очереди")
                 }
+                task.executionPhase.takeIf { it.isNotBlank() }?.let { phase ->
+                    PassiveChip(text = "Исполнение: ${phase.executionPhaseLabel()}")
+                }
+                if (task.executionAttempts > 0) {
+                    PassiveChip(text = "Попытка: ${task.executionAttempts}")
+                }
+                task.commitSha.takeIf { it.isNotBlank() }?.let { sha ->
+                    PassiveChip(text = "Commit: ${sha.take(8)}")
+                }
+            }
+
+            if (expanded && task.executionReason.isNotBlank()) {
+                Text(
+                    text = task.executionReason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (task.executionPhase == "needs_user") {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
 
             if (task.hasRoutingContext()) {
@@ -1282,6 +1303,25 @@ private fun String.routingStateLabel(): String =
         "queued" -> "в очереди"
         "applied" -> "применено"
         "failed" -> "ошибка маршрута"
+        else -> trim().replace('_', ' ')
+    }
+
+private fun String.executionPhaseLabel(): String =
+    when (trim()) {
+        "queued" -> "в очереди"
+        "planning" -> "планирование"
+        "ready" -> "готово к запуску"
+        "leased" -> "исполнитель назначен"
+        "running" -> "Codex работает"
+        "validating" -> "проверка"
+        "committed" -> "commit создан"
+        "integrating" -> "интеграция"
+        "succeeded" -> "готово"
+        "retry_wait" -> "повтор"
+        "needs_user" -> "нужно решение"
+        "failed" -> "ошибка"
+        "cancelled" -> "отменено"
+        "reverted" -> "откачено"
         else -> trim().replace('_', ' ')
     }
 

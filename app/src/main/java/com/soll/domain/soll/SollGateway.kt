@@ -381,6 +381,17 @@ data class SollTask(
     val assignedNodeId: String? = null,
     val requiredCapabilities: List<String> = emptyList(),
     val routingState: String = "",
+    val executionRunId: String = "",
+    val executionPhase: String = "",
+    val executionReason: String = "",
+    val riskClass: String = "",
+    val acceptanceCriteria: List<String> = emptyList(),
+    val testPlan: List<String> = emptyList(),
+    val baseSha: String = "",
+    val commitSha: String = "",
+    val rollbackSha: String = "",
+    val executionAttempts: Int = 0,
+    val executionUpdatedAt: String? = null,
 )
 
 internal fun SollTaskBoard.withoutDailyTodoTasks(): SollTaskBoard {

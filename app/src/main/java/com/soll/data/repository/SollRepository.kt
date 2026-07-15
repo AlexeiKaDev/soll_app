@@ -1583,6 +1583,17 @@ class SollRepository @Inject constructor(
             assignedNodeId = assignedNodeId,
             requiredCapabilities = requiredCapabilities,
             routingState = routingState,
+            executionRunId = executionRunId,
+            executionPhase = executionPhase,
+            executionReason = executionReason,
+            riskClass = riskClass,
+            acceptanceCriteria = acceptanceCriteria,
+            testPlan = testPlan,
+            baseSha = baseSha,
+            commitSha = commitSha,
+            rollbackSha = rollbackSha,
+            executionAttempts = executionAttempts,
+            executionUpdatedAt = executionUpdatedAt,
         )
 
     private fun RawFileResponse.toDomain(): SollRawNote =

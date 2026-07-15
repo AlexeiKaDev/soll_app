@@ -4,6 +4,11 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 AIA AI development and agent-systems source triage:
+  - Reviewed the task-provided record for `monitored\aia\20260711-010007-ai-0ad60b3f.md`; the source artifact itself is not vendored in this isolated worktree. The record is a research-only aggregated overview of AI coding assistants, agent environments, MCP, context engineering and controlled browser/system automation, without primary links, dated releases, code or implementation documentation.
+  - Decision for `soll_app`: do not add a new Android module, MCP runtime, coding agent or autonomous browser/system control from this source. The useful themes already fit the existing desktop/server meta-coordinator, context/memory, tool-routing and approval-gated automation direction.
+  - Keep the item as a Soll desktop/server KB and architecture-evaluation candidate. Revisit only after a concrete workflow and primary documentation are available; compare candidate tools on context boundaries, connector permissions, confirmation gates, auditability and rollback. Android should remain the review/approval client through existing Chat, Tasks, `Ask Soll`, `Источники` and automation-status surfaces, without owning connector credentials or unrestricted action execution.
+
 - 2026-07-15 scheduler `vector_reindex` incident `9590445f373f4df7` triage:
   - The reported run completed a bounded batch in `23.9s`: `+47`, updated `3`, deleted `0`, with `20067` documents in the index. `batch partial, продолжим следующим запуском` is continuation status, not a runtime exception.
   - A post-incident read-only health check at `2026-07-15T15:43:11.739687` returned `status=healthy`, `scheduler_running=true`, `vault_accessible=true`, and `jobs_count=16`; the scheduler is operational.

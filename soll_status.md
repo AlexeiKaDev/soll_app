@@ -4,6 +4,12 @@ Last updated: 2026-07-15 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-15 scheduler `vector_reindex` incident `9590445f373f4df7` triage:
+  - The reported run completed a bounded batch in `23.9s`: `+47`, updated `3`, deleted `0`, with `20067` documents in the index. `batch partial, продолжим следующим запуском` is continuation status, not a runtime exception.
+  - A post-incident read-only health check at `2026-07-15T15:43:11.739687` returned `status=healthy`, `scheduler_running=true`, `vault_accessible=true`, and `jobs_count=16`; the scheduler is operational.
+  - Detailed `/api/v1/scheduler/*`, `/api/v1/vector/*`, and `/api/v1/logs` checks are authentication-protected (`401 Not authenticated`). No credentials were read and no approval-first scheduler rerun was attempted from this isolated Android worktree.
+  - No Android code change is warranted: `vector_reindex` is implemented by the Soll server, while `soll_app` only consumes scheduler health. Focused Android contract validation passed with `SollServerSyncWorkerTest` (`BUILD SUCCESSFUL`).
+
 - 2026-07-15 Habr delegation/task-brief source triage:
   - Read source `D:\Projects\Soll\Soll\raw\monitored\habr\20260523-143001-item-e723ba31.md`; it is a medium-usefulness, research-only process note about better delegation through explicit context, tools, tradeoffs, decomposition, acceptance criteria and verification, with `evidence_level=weak_summary`.
   - Decision for `soll_app`: do not add a new Android module or prompt engine. Apply the idea in desktop/server task-creation and meta-coordinator templates for source-, roadmap- and agent-generated tasks, initially serializing the brief into the existing task `description` as context, goal, required/desirable outcomes, constraints, available tools, tradeoffs, stages, acceptance criteria and a separate verification step.

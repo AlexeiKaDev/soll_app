@@ -1331,7 +1331,7 @@ private fun String.executionPhaseLabel(): String =
 internal fun SollTask.shortHoldReason(maxLength: Int = TASK_HOLD_REASON_MAX_LENGTH): String? {
     if (!shouldExplainHold()) return null
 
-    val rawReason = sequenceOf(executionState, executionReason, routingState)
+    val rawReason = sequenceOf(executionReason, executionState, routingState)
         .map(String::trim)
         .firstOrNull(String::isNotBlank)
         .orEmpty()

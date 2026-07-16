@@ -1,8 +1,14 @@
 # soll_app Status
 
-Last updated: 2026-07-15 Europe/Chisinau
+Last updated: 2026-07-16 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-16 Hugging Face PEFT v0.16.0 mesh/offline transport source triage:
+  - Read `D:\Projects\Soll\Soll\raw\monitored\hugging-face-peft-releases\20260703-193122-0-16-0-lora-fa-randlora-c-a-and-much-more-3d3c1ec3.md` and checked the official release. It covers LoRA-FA, RandLoRA, C3A, quantization, adapter hotswapping and compatibility; the only offline-related changelog item is a test of `HF_HUB_OFFLINE` model-cache behavior, not Meshtastic or message transport.
+  - The record's `mesh_resilience` domain and "Extract as Meshtastic/offline status or note/task transport idea" next step came from the explicit heuristic fallback `No providers available`. Treat that cross-domain mapping as a false positive: do not add PEFT, PyTorch, adapter training or a new Android transport from this source.
+  - `soll_app` already has server-backed mesh status, outbox counters, claim/ACK/retry and an allowlist for `status`/`brief`/`note`/`task` payload types. Keep that contour independent of PEFT and do not duplicate it.
+  - A future real Meshtastic slice should use a compact versioned allowlisted envelope with a stable message ID, type, timestamp/TTL, priority and bounded body/reference; deduplicate by ID and ACK a note/task only after durable local insertion. It requires an official Meshtastic/protocol source, server contract changes and real-device loss/retry/size tests before implementation; command execution remains out of scope.
 
 - 2026-07-15 Habr Yandex YTsaurus GPU-render source audit:
   - Reviewed `source-item/0d75242b770a/e916238e51d2cfd0` against the public Habr article and official YTsaurus GPU operation/statistics documentation. The article's working path requires one allocated GPU plus a compatible driver overlay, NVIDIA compute/modeset and DRM devices, Vulkan ICD, Xorg DDX on a virtual display, a same-GPU swapchain path, and software `ffmpeg` encoding when the GPU has no NVENC; platform support for Xorg on GPU hosts is a prerequisite, not Android code.
@@ -45,7 +51,6 @@ Last updated: 2026-07-15 Europe/Chisinau
   - Source-processing decision: retain the four source references as one deferred adapter-routing cluster and do not create duplicate Today work for the repeated release recommendations.
   - Deferral gate: do not open an adapter-routing implementation until desktop/server Soll has a local PEFT/LoRA adapter registry, an adapter-serving profile, a reproducible base-vs-adapter eval suite, and an approval-gated rollback/provenance policy. A later bounded spike must verify base-model compatibility and artifact identity, serving resource/fallback behavior, quality, latency, memory and recovery before promotion.
   - Decision for `soll_app`: do not add PEFT dependencies, LoRA weights, adapter loading/routing, or model-selection state to Android. The app may later display only server-produced registry/routing status, eval summaries and explicit approval tasks through existing Soll API surfaces.
-
 - 2026-07-15 PVS-Studio/CMake source triage:
   - Reviewed the task-provided record for `monitored\habr\20260520-133014-pvs-studio-cmake-4db4899a.md`; the source artifact itself is not vendored in this isolated worktree. The record describes the official CMake 4.3 integration through `CMAKE_<LANG>_PVS_STUDIO` and target-level `<LANG>_PVS_STUDIO`, with analyzer warnings emitted alongside Makefile/Ninja builds.
   - Decision for `soll_app`: do not add CMake, NDK, PVS-Studio or a native-analysis job. This repository is a Gradle/Kotlin Android project with no `CMakeLists.txt`, `.cmake` files, C/C++ sources or `externalNativeBuild` configuration; packaged JNI libraries inside AAR dependencies are upstream binaries, not locally compiled analyzer targets.

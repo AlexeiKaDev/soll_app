@@ -125,6 +125,7 @@ class TaskBoardFilterTest {
     @Test
     fun `held task reason is concise and strips technical prefix`() {
         val held = task(id = "blocked-1", status = "blocked").copy(
+            executionState = "needs_user",
             executionPhase = "needs_user",
             executionReason = "blocked: Android device is not connected and the hardware smoke cannot run",
         )

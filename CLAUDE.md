@@ -83,3 +83,14 @@ class MyHandler(
 - OEM-specific restrictions (MIUI, EMUI) may kill background services - see `docs/plan.md` for mitigation strategies
 - Long polling timeout is 30 seconds (configured in OkHttpClient)
 - BootReceiver restarts service after device reboot if autostart enabled
+
+## Task Completion Chat Protocol
+
+Before reporting that a Soll task is complete, follow
+[`docs/task-completion-chat-protocol.md`](docs/task-completion-chat-protocol.md).
+Do not send a bare "task done" acknowledgement. The final chat message must say
+what changed, list the affected files, report tests, state the actual commit and
+push status, and say whether the server or Android app needs a reload/restart.
+Use the documented reload procedure whenever a server reload is required, and
+only report it as successful after health/readiness and task-specific smoke
+checks pass.

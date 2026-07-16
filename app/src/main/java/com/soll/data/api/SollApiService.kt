@@ -282,6 +282,14 @@ interface SollApiService {
         @Query("limit") limit: Int = 20,
     ): List<SourceItemResponse>
 
+    @GET("api/v1/sources/{source_id}/items/page")
+    suspend fun listSourceItemsPage(
+        @Header("Authorization") authorization: String? = null,
+        @Path("source_id") sourceId: String,
+        @Query("cursor") cursor: String? = null,
+        @Query("limit") limit: Int = 50,
+    ): SourceItemsPageResponse
+
     @POST("api/v1/sources/{source_id}/items/{item_id}/task")
     suspend fun createTaskFromSourceItem(
         @Header("Authorization") authorization: String? = null,
@@ -1293,8 +1301,51 @@ data class SourceItemResponse(
     val contentPreview: String = "",
     val summary: String = "",
     val usefulness: String = "medium",
+    val reasoning: String = "",
+    @Json(name = "evidence_level")
+    val evidenceLevel: String = "unknown",
+    @Json(name = "project_fit")
+    val projectFit: String = "unknown",
+    val actionability: String = "research_only",
+    @Json(name = "dual_use_risk")
+    val dualUseRisk: String = "none",
+    @Json(name = "dual_use_action")
+    val dualUseAction: String = "allow",
+    @Json(name = "safe_next_step")
+    val safeNextStep: String = "",
+    @Json(name = "needs_deep_dive")
+    val needsDeepDive: Boolean = false,
+    @Json(name = "raw_file")
+    val rawFile: String? = null,
+    @Json(name = "notified_at")
+    val notifiedAt: String? = null,
+    @Json(name = "last_status")
+    val lastStatus: String = "new",
+    @Json(name = "audit_ref")
+    val auditRef: String = "",
+    @Json(name = "evidence_ref")
+    val evidenceRef: String = "",
+    @Json(name = "verification_artifact")
+    val verificationArtifact: String = "",
+    @Json(name = "status_reason")
+    val statusReason: String = "",
+    @Json(name = "delivery_status")
+    val deliveryStatus: String = "unknown",
     @Json(name = "link_preview")
-    val linkPreview: Map<String, Any?> = emptyMap(),
+    val linkPreview: Map<String, Any?>? = null,
+)
+
+data class SourceItemsPageResponse(
+    val items: List<SourceItemResponse> = emptyList(),
+    @Json(name = "next_cursor")
+    val nextCursor: String = "",
+    @Json(name = "has_more")
+    val hasMore: Boolean = false,
+    val total: Int = 0,
+    @Json(name = "source_enabled")
+    val sourceEnabled: Boolean = true,
+    @Json(name = "disabled_reason")
+    val disabledReason: String = "",
 )
 
 data class SourceItemTaskRequest(

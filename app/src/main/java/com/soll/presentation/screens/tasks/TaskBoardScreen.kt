@@ -747,11 +747,19 @@ private fun SourcesMode(
         }
         if (uiState.sourceItems.isNotEmpty()) {
             item(key = "source-items-title") {
-                Text("Последние материалы Soll", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Материалы Soll: ${uiState.sourceItems.size} из ${uiState.sourceItemsTotal}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
+            val sourceEnabled = uiState.sources
+                .firstOrNull { it.id == uiState.selectedSourceId }
+                ?.enabled == true && uiState.sourceDisabledReason.isBlank()
             items(uiState.sourceItems, key = { it.itemId }) { item ->
                 SourceItemCard(
                     item = item,
+                    sourceEnabled = sourceEnabled,
                     isCreatingTask = uiState.sourceItemTaskId == item.itemId,
                     onCreateTask = {
                         uiState.selectedSourceId?.let { sourceId ->
@@ -759,6 +767,20 @@ private fun SourcesMode(
                         }
                     },
                 )
+            }
+            if (uiState.sourceItemsHasMore) {
+                item(key = "source-items-more", contentType = "source-items-more") {
+                    Button(
+                        onClick = viewModel::loadMoreSourceItems,
+                        enabled = !uiState.sourceItemsLoadingMore,
+                    ) {
+                        if (uiState.sourceItemsLoadingMore) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text("Загрузить ещё")
+                    }
+                }
             }
         }
     }
@@ -786,8 +808,8 @@ private fun SourceCard(
                 }
                 PassiveChip(
                     text = when {
-                        selected -> "открыт"
                         !source.enabled -> "выкл"
+                        selected -> "открыт"
                         else -> source.lastResult
                     },
                 )
@@ -826,6 +848,7 @@ private fun SourceCard(
 @Composable
 private fun SourceItemCard(
     item: SollSourceItem,
+    sourceEnabled: Boolean,
     isCreatingTask: Boolean,
     onCreateTask: () -> Unit,
 ) {
@@ -848,22 +871,81 @@ private fun SourceItemCard(
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    PassiveChip(text = item.lastStatus.sourceItemStatusLabel())
+                    PassiveChip(text = item.actionability.sourceItemActionabilityLabel())
                     PassiveChip(text = item.usefulness)
+                    PassiveChip(text = item.deliveryStatus.sourceItemDeliveryLabel())
+                    if (item.needsDeepDive) {
+                        PassiveChip(text = "глубокий разбор")
+                    }
                     item.linkPreview["site_name"]?.toString()?.takeIf { it.isNotBlank() }?.let { PassiveChip(text = it) }
                 }
-                Button(
-                    onClick = onCreateTask,
-                    enabled = !isCreatingTask,
-                ) {
-                    if (isCreatingTask) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(6.dp))
+                item.visibleReason.takeIf { it.isNotBlank() }?.let { reason ->
+                    Text(
+                        reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                item.safeNextStep.takeIf { it.isNotBlank() && !item.isTerminal }?.let { nextStep ->
+                    Text(
+                        nextStep,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    item.auditRef.takeIf { it.isNotBlank() }?.let { PassiveChip(text = "audit: ${it.substringAfterLast('/')}" ) }
+                    item.verificationArtifact.takeIf { it.isNotBlank() }?.let { PassiveChip(text = "evidence: ${it.substringAfterLast('/')}" ) }
+                }
+                when {
+                    !sourceEnabled -> PassiveChip(text = "Источник отключен")
+                    item.isTerminal -> PassiveChip(text = "Обработано: ${item.lastStatus.sourceItemStatusLabel()}")
+                    !item.canCreateTask -> PassiveChip(text = "Требуется ручная проверка")
+                    else -> Button(
+                        onClick = onCreateTask,
+                        enabled = !isCreatingTask,
+                    ) {
+                        if (isCreatingTask) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text("В задачу")
                     }
-                    Text("В задачу")
                 }
             }
         }
     }
+}
+
+private fun String.sourceItemStatusLabel(): String = when (trim().lowercase()) {
+    "new" -> "новый"
+    "changed" -> "обновлён"
+    "task_created" -> "задача создана"
+    "implemented", "done" -> "внедрён"
+    "deferred", "source_processing_deferred", "source_review_deferred" -> "отложен"
+    "blocked" -> "заблокирован"
+    "duplicate" -> "дубликат"
+    "rejected" -> "отклонён"
+    "ignored", "suppressed" -> "пропущен"
+    else -> ifBlank { "неизвестно" }
+}
+
+private fun String.sourceItemActionabilityLabel(): String = when (trim().lowercase()) {
+    "implementation_ready" -> "готов к реализации"
+    "discard" -> "не использовать"
+    else -> "требует анализа"
+}
+
+private fun String.sourceItemDeliveryLabel(): String = when (trim().lowercase()) {
+    "notified" -> "уведомление создано"
+    "delivered", "sent" -> "доставлено"
+    "not_notified", "pending", "queued" -> "не доставлено"
+    "failed" -> "ошибка доставки"
+    else -> "доставка неизвестна"
 }
 
 @Composable

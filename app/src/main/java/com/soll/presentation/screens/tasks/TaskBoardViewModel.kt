@@ -12,6 +12,7 @@ import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollRoadmap
 import com.soll.domain.soll.SollRoadmapLine
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceItemsPage
 import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoardCounts
@@ -95,6 +96,10 @@ data class TaskBoardUiState(
     val sourceItems: List<SollSourceItem> = emptyList(),
     val selectedSourceId: String? = null,
     val sourceItemTaskId: String? = null,
+    val sourceItemsHasMore: Boolean = false,
+    val sourceItemsTotal: Int = 0,
+    val sourceItemsLoadingMore: Boolean = false,
+    val sourceDisabledReason: String = "",
     val roadmapLineTaskKey: String? = null,
     val workspaceLoading: Boolean = false,
     val taskCounts: SollTaskBoardCounts? = null,
@@ -190,7 +195,7 @@ class TaskBoardViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(TaskBoardUiState(isLoading = true))
     val uiState: StateFlow<TaskBoardUiState> = _uiState.asStateFlow()
-    private val sourceItemsCache = mutableMapOf<String, List<SollSourceItem>>()
+    private val sourceItemsCache = mutableMapOf<String, SollSourceItemsPage>()
 
     init {
         observePendingTaskEvidence()
@@ -769,16 +774,19 @@ class TaskBoardViewModel @Inject constructor(
                     val sourceIds = sources.mapTo(mutableSetOf()) { it.id }
                     sourceItemsCache.keys.retainAll(sourceIds)
                     val selected = sourceId?.takeIf { it in sourceIds } ?: sources.firstOrNull()?.id
-                    val items = selected?.let { id ->
-                        sourceItemsCache[id] ?: sollGateway.listSourceItems(id, limit = 20)
-                            .getOrElse { emptyList() }
-                            .also { loaded -> sourceItemsCache[id] = loaded }
-                    }.orEmpty()
+                    val page = selected?.let { id ->
+                        sourceItemsCache[id] ?: sollGateway.listSourceItemsPage(id, limit = SOURCE_ITEM_PAGE_SIZE)
+                            .getOrNull()
+                            ?.also { loaded -> sourceItemsCache[id] = loaded }
+                    }
                     _uiState.update {
                         it.copy(
                             sources = sources,
                             selectedSourceId = selected,
-                            sourceItems = items,
+                            sourceItems = page?.items.orEmpty(),
+                            sourceItemsHasMore = page?.hasMore == true,
+                            sourceItemsTotal = page?.total ?: 0,
+                            sourceDisabledReason = page?.disabledReason.orEmpty(),
                             workspaceLoading = false,
                         )
                     }
@@ -797,17 +805,20 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun selectSource(source: SollMonitoredSource) {
-        val cachedItems = sourceItemsCache[source.id]
+        val cachedPage = sourceItemsCache[source.id]
         _uiState.update {
             it.copy(
                 selectedSourceId = source.id,
-                sourceItems = cachedItems ?: emptyList(),
-                workspaceLoading = cachedItems == null,
+                sourceItems = cachedPage?.items.orEmpty(),
+                sourceItemsHasMore = cachedPage?.hasMore == true,
+                sourceItemsTotal = cachedPage?.total ?: 0,
+                sourceDisabledReason = cachedPage?.disabledReason.orEmpty(),
+                workspaceLoading = cachedPage == null,
                 message = null,
                 isError = false,
             )
         }
-        if (cachedItems == null) {
+        if (cachedPage == null) {
             loadSourceItems(source.id)
         }
     }
@@ -948,12 +959,36 @@ class TaskBoardViewModel @Inject constructor(
                 }
                 return@launch
             }
+            if (!projectSource.enabled || !item.canCreateTask) {
+                _uiState.update {
+                    it.copy(
+                        sourceItemTaskId = null,
+                        message = if (!projectSource.enabled) {
+                            "Источник отключен: создание задач недоступно"
+                        } else {
+                            "Материал уже обработан: ${item.lastStatus}"
+                        },
+                        isError = true,
+                    )
+                }
+                return@launch
+            }
             _uiState.update { it.copy(sourceItemTaskId = item.itemId, message = null, isError = false) }
             sollGateway.createTaskFromSourceItem(sourceId, item.itemId).fold(
                 onSuccess = {
+                    sourceItemsCache[sourceId]?.let { cached ->
+                        sourceItemsCache[sourceId] = cached.copy(
+                            items = cached.items.map { cachedItem ->
+                                if (cachedItem.itemId == item.itemId) cachedItem.copy(lastStatus = "task_created") else cachedItem
+                            },
+                        )
+                    }
                     _uiState.update {
                         it.copy(
                             sourceItemTaskId = null,
+                            sourceItems = it.sourceItems.map { current ->
+                                if (current.itemId == item.itemId) current.copy(lastStatus = "task_created") else current
+                            },
                             message = "Задача создана из материала",
                             isError = false,
                         )
@@ -975,7 +1010,7 @@ class TaskBoardViewModel @Inject constructor(
 
     private fun loadSourceItems(sourceId: String) {
         viewModelScope.launch {
-            val items = sollGateway.listSourceItems(sourceId, limit = 20).getOrElse { error ->
+            val page = sollGateway.listSourceItemsPage(sourceId, limit = SOURCE_ITEM_PAGE_SIZE).getOrElse { error ->
                 _uiState.update {
                     if (it.selectedSourceId == sourceId) {
                         it.copy(
@@ -989,11 +1024,14 @@ class TaskBoardViewModel @Inject constructor(
                 }
                 return@launch
             }
-            sourceItemsCache[sourceId] = items
+            sourceItemsCache[sourceId] = page
             _uiState.update {
                 if (it.selectedSourceId == sourceId) {
                     it.copy(
-                        sourceItems = items,
+                        sourceItems = page.items,
+                        sourceItemsHasMore = page.hasMore,
+                        sourceItemsTotal = page.total,
+                        sourceDisabledReason = page.disabledReason,
                         workspaceLoading = false,
                         message = null,
                         isError = false,
@@ -1002,6 +1040,48 @@ class TaskBoardViewModel @Inject constructor(
                     it
                 }
             }
+        }
+    }
+
+    fun loadMoreSourceItems() {
+        val sourceId = _uiState.value.selectedSourceId ?: return
+        val cached = sourceItemsCache[sourceId] ?: return
+        if (!cached.hasMore || cached.nextCursor.isBlank() || _uiState.value.sourceItemsLoadingMore) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(sourceItemsLoadingMore = true, message = null, isError = false) }
+            sollGateway.listSourceItemsPage(
+                sourceId = sourceId,
+                cursor = cached.nextCursor,
+                limit = SOURCE_ITEM_PAGE_SIZE,
+            ).fold(
+                onSuccess = { page ->
+                    val merged = (cached.items + page.items).distinctBy { it.itemId }
+                    val updated = page.copy(items = merged)
+                    sourceItemsCache[sourceId] = updated
+                    _uiState.update {
+                        if (it.selectedSourceId == sourceId) {
+                            it.copy(
+                                sourceItems = merged,
+                                sourceItemsHasMore = page.hasMore,
+                                sourceItemsTotal = page.total,
+                                sourceItemsLoadingMore = false,
+                                sourceDisabledReason = page.disabledReason,
+                            )
+                        } else {
+                            it.copy(sourceItemsLoadingMore = false)
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            sourceItemsLoadingMore = false,
+                            message = error.message ?: "Не удалось загрузить следующие материалы",
+                            isError = true,
+                        )
+                    }
+                },
+            )
         }
     }
 
@@ -1383,6 +1463,7 @@ private fun String.parseTags(): List<String> =
 private val IDEA_TASK_MARKERS = listOf("idea", "идея", "ideas", "opportunity", "ниша")
 private const val DEFAULT_TASK_BOARD_SECTION_LIMIT = 80
 private const val MAX_TASK_BOARD_SECTION_LIMIT = 500
+private const val SOURCE_ITEM_PAGE_SIZE = 50
 private const val TASK_REFRESH_INTERVAL_MS = 30_000L
 private const val GRAPH_DESCENDANT_LIMIT = 700
 

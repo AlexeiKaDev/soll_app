@@ -152,6 +152,7 @@ import com.soll.domain.soll.SollRoadmapLine
 import com.soll.domain.soll.SollRoadmapReadiness
 import com.soll.domain.soll.SollRoadmapStage
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceItemsPage
 import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollGadgetDiscoverySchema
 import com.soll.domain.soll.SollMeshOutboxItem
@@ -793,6 +794,43 @@ class SollRepository @Inject constructor(
                 .orEmpty()
                 .take(limit.coerceIn(1, 100))
         }
+
+    override suspend fun listSourceItemsPage(
+        sourceId: String,
+        cursor: String,
+        limit: Int,
+    ): Result<SollSourceItemsPage> = runSuspendCatching {
+        val cleanSourceId = sourceId.trim()
+        require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
+        service().listSourceItemsPage(
+            authorization = readAuthorizationHeader(),
+            sourceId = cleanSourceId,
+            cursor = cursor.trim().takeIf { it.isNotBlank() },
+            limit = limit.coerceIn(1, 200),
+        ).let { response ->
+            SollSourceItemsPage(
+                items = response.items.map { it.toDomain() },
+                nextCursor = response.nextCursor,
+                hasMore = response.hasMore,
+                total = response.total,
+                sourceEnabled = response.sourceEnabled,
+                disabledReason = response.disabledReason,
+            )
+        }
+    }.recoverCatching { error ->
+        if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
+        val snapshotItems = getAndroidSyncStatus().getOrThrow()
+            .sourceItemsBySource[sourceId.trim()]
+            .orEmpty()
+        SollSourceItemsPage(
+            items = if (cursor.isBlank()) snapshotItems else emptyList(),
+            nextCursor = "",
+            hasMore = false,
+            total = snapshotItems.size,
+            sourceEnabled = true,
+            disabledReason = "",
+        )
+    }
 
     override suspend fun createSource(
         name: String,
@@ -1518,7 +1556,23 @@ class SollRepository @Inject constructor(
             contentPreview = contentPreview,
             summary = summary,
             usefulness = usefulness,
-            linkPreview = linkPreview,
+            reasoning = reasoning,
+            evidenceLevel = evidenceLevel,
+            projectFit = projectFit,
+            actionability = actionability,
+            dualUseRisk = dualUseRisk,
+            dualUseAction = dualUseAction,
+            safeNextStep = safeNextStep,
+            needsDeepDive = needsDeepDive,
+            rawFile = rawFile.orEmpty(),
+            notifiedAt = notifiedAt.orEmpty(),
+            lastStatus = lastStatus,
+            auditRef = auditRef,
+            evidenceRef = evidenceRef,
+            verificationArtifact = verificationArtifact,
+            statusReason = statusReason,
+            deliveryStatus = deliveryStatus,
+            linkPreview = linkPreview.orEmpty(),
         )
 
     private fun SollDeviceResponse.toDomain(): SollDevice =

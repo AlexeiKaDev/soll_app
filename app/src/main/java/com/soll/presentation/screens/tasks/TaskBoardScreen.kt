@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -79,6 +80,7 @@ import com.soll.domain.soll.SollRoadmapReadiness
 import com.soll.domain.soll.SollRoadmapStage
 import com.soll.domain.soll.SollSourceItem
 import com.soll.domain.soll.SollTask
+import com.soll.domain.soll.SollTaskGraphNode
 import com.soll.ui.components.PassiveChip
 import com.soll.ui.components.RemoteLinkPreviewImage
 
@@ -191,8 +193,12 @@ fun TaskBoardScreen(
                             TaskBoardFilters(
                                 searchQuery = uiState.searchQuery,
                                 selectedPriority = uiState.selectedPriority,
+                                graphRoots = uiState.taskGraph?.projectFilterNodes().orEmpty(),
+                                selectedGraphNodeId = uiState.selectedGraphNodeId,
+                                graphQueryLoading = uiState.graphQueryLoading,
                                 onSearchQueryChange = viewModel::updateSearchQuery,
                                 onPriorityChange = viewModel::selectPriority,
+                                onGraphNodeChange = viewModel::selectGraphNode,
                             )
 
                             ScrollableTabRow(selectedTabIndex = uiState.selectedTab.ordinal, edgePadding = 12.dp) {
@@ -358,8 +364,12 @@ private fun TaskWorkspaceTabs(
 private fun TaskBoardFilters(
     searchQuery: String,
     selectedPriority: TaskPriorityFilter,
+    graphRoots: List<SollTaskGraphNode>,
+    selectedGraphNodeId: String?,
+    graphQueryLoading: Boolean,
     onSearchQueryChange: (String) -> Unit,
     onPriorityChange: (TaskPriorityFilter) -> Unit,
+    onGraphNodeChange: (String?) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -396,6 +406,42 @@ private fun TaskBoardFilters(
                     ),
                 )
             }
+        }
+        if (graphRoots.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Проект",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FilterChip(
+                    selected = selectedGraphNodeId == null,
+                    onClick = { onGraphNodeChange(null) },
+                    label = { Text("Все") },
+                )
+                graphRoots.forEach { node ->
+                    FilterChip(
+                        selected = selectedGraphNodeId == node.id,
+                        onClick = { onGraphNodeChange(node.id) },
+                        enabled = !graphQueryLoading,
+                        label = {
+                            Text(
+                                text = node.label,
+                                modifier = Modifier.widthIn(max = 180.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        if (graphQueryLoading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }
 }

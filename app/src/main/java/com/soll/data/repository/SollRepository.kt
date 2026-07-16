@@ -97,6 +97,7 @@ import com.soll.data.api.TaskUpdateRequest
 import com.soll.data.api.TaskGraphEdgeResponse
 import com.soll.data.api.TaskGraphNodeResponse
 import com.soll.data.api.TaskGraphResponse
+import com.soll.data.local.dao.TaskGraphCacheDao
 import com.soll.domain.metacoordinator.MetaCoordinatorFallback
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
@@ -181,6 +182,7 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.TimeZone
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -199,6 +201,7 @@ import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
 
 @Singleton
 class SollRepository @Inject constructor(
@@ -206,6 +209,7 @@ class SollRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val okHttpClient: OkHttpClient,
     private val moshi: Moshi,
+    private val taskGraphCacheDao: TaskGraphCacheDao,
 ) : SollGateway {
     private val androidSyncStatusJsonAdapter by lazy {
         moshi.adapter(AndroidSyncStatusResponse::class.java)
@@ -594,16 +598,80 @@ class SollRepository @Inject constructor(
         ).taskResponse().toDomain()
     }
 
-    override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> = runSuspendCatching {
-        service().getTaskGraph(
-            authorization = readAuthorizationHeader(),
-            includeDone = includeDone,
-            maxNodes = 700,
-        ).toDomain()
-    }.recoverCatching { error ->
-        if (!error.isHttpStatus(404)) throw error
-        val syncStatus = getAndroidSyncStatus().getOrThrow()
-        buildTaskGraphFromBoard(syncStatus.tasks, includeDone = includeDone)
+    override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> {
+        val liveResult = runSuspendCatching {
+            service().getTaskGraph(
+                authorization = readAuthorizationHeader(),
+                includeDone = includeDone,
+                maxNodes = 700,
+            ).toDomain()
+        }
+        if (liveResult.isSuccess) {
+            val graph = liveResult.getOrThrow()
+            cacheTaskGraphBestEffort(graph, includeDone)
+            return liveResult
+        }
+
+        var terminalResult = liveResult
+        if (liveResult.exceptionOrNull()?.isHttpStatus(404) == true) {
+            terminalResult = runSuspendCatching {
+                val syncStatus = getAndroidSyncStatus().getOrThrow()
+                buildTaskGraphFromBoard(syncStatus.tasks, includeDone = includeDone)
+            }
+            if (terminalResult.isSuccess) {
+                val graph = terminalResult.getOrThrow()
+                cacheTaskGraphBestEffort(graph, includeDone)
+                return terminalResult
+            }
+        }
+
+        return cachedTaskGraphOrNull(includeDone)?.let(Result.Companion::success) ?: terminalResult
+    }
+
+    private suspend fun cacheTaskGraphBestEffort(graph: SollTaskGraph, includeDone: Boolean) {
+        try {
+            val scope = taskGraphCacheScope(includeDone)
+            val cached = taskGraphCacheDao.readGraph(scope)
+            if (cached?.hasSameTaskGraphContent(graph) == true) return
+            taskGraphCacheDao.replaceGraph(
+                scope = scope,
+                includeDone = includeDone,
+                graph = graph,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.w(error, "Task graph cache update failed")
+        }
+    }
+
+    private suspend fun cachedTaskGraphOrNull(includeDone: Boolean): SollTaskGraph? =
+        try {
+            taskGraphCacheDao.readGraph(taskGraphCacheScope(includeDone))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.w(error, "Task graph cache read failed")
+            null
+        }
+
+    override suspend fun getTaskGraphDescendants(
+        ancestorId: String,
+        includeDone: Boolean,
+        kind: String?,
+        limit: Int,
+    ): Result<List<SollTaskGraphNode>> = runSuspendCatching {
+        require(ancestorId.isNotBlank()) { "Task graph ancestor ID must not be blank" }
+        require(limit in 1..TASK_GRAPH_DESCENDANT_LIMIT) {
+            "Task graph descendant limit must be between 1 and $TASK_GRAPH_DESCENDANT_LIMIT"
+        }
+        taskGraphCacheDao.readReachableNodes(
+            scope = taskGraphCacheScope(includeDone),
+            ancestorId = ancestorId,
+            kind = kind,
+            limit = limit,
+        )?.map { it.toDomain() }
+            ?: error("Task graph cache is not available")
     }
 
     override suspend fun getLearningItems(status: String?, limit: Int): Result<List<SollLearningItem>> =
@@ -2148,12 +2216,24 @@ private fun SollTask.subprojectLabel(): String =
 private fun graphNodeId(kind: String, label: String): String =
     "$kind:${label.hashCode() and Int.MAX_VALUE}"
 
+private fun taskGraphCacheScope(includeDone: Boolean): String =
+    if (includeDone) TASK_GRAPH_SCOPE_ALL else TASK_GRAPH_SCOPE_OPEN
+
+private fun SollTaskGraph.hasSameTaskGraphContent(other: SollTaskGraph): Boolean =
+    totalTasks == other.totalTasks &&
+        truncated == other.truncated &&
+        nodes.sortedBy { it.id } == other.nodes.sortedBy { it.id } &&
+        edges.sortedBy { it.id } == other.edges.sortedBy { it.id }
+
 private const val SOLL_CACHE_PREFS = "soll_server_cache"
 private const val KEY_ANDROID_SYNC_STATUS_JSON = "android_sync_status_json"
 private const val KEY_ANDROID_SYNC_STATUS_CACHED_AT = "android_sync_status_cached_at"
 private const val TASK_BOARD_SECTION_LIMIT = 80
 private const val TASK_BOARD_MIN_SECTION_LIMIT = 20
 private const val TASK_BOARD_MAX_SECTION_LIMIT = 500
+private const val TASK_GRAPH_SCOPE_OPEN = "open"
+private const val TASK_GRAPH_SCOPE_ALL = "all"
+private const val TASK_GRAPH_DESCENDANT_LIMIT = 700
 private const val DEVICE_TOKEN_REFRESH_SAFETY_MS = 2 * 60_000L
 private const val SOURCE_TYPE_WEB = "web"
 private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")

@@ -643,6 +643,12 @@ interface SollGateway {
     suspend fun deferTask(taskId: String): Result<SollTask>
     suspend fun rejectTask(taskId: String): Result<SollTask>
     suspend fun getTaskGraph(includeDone: Boolean = false): Result<SollTaskGraph>
+    suspend fun getTaskGraphDescendants(
+        ancestorId: String,
+        includeDone: Boolean = false,
+        kind: String? = null,
+        limit: Int = 700,
+    ): Result<List<SollTaskGraphNode>>
     suspend fun getLearningItems(status: String? = "pending", limit: Int = 80): Result<List<SollLearningItem>>
     suspend fun updateLearningItemStatus(itemId: String, status: String): Result<SollLearningItem?>
     suspend fun createTaskFromLearningItem(itemId: String): Result<SollTask?>

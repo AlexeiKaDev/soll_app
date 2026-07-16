@@ -15,6 +15,8 @@ import com.soll.domain.soll.SollSourceItem
 import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoardCounts
+import com.soll.domain.soll.SollTaskGraph
+import com.soll.domain.soll.SollTaskGraphNode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,6 +100,10 @@ data class TaskBoardUiState(
     val taskCounts: SollTaskBoardCounts? = null,
     val taskBoardLimitPerSection: Int? = null,
     val requestedTaskBoardLimitPerSection: Int = DEFAULT_TASK_BOARD_SECTION_LIMIT,
+    val taskGraph: SollTaskGraph? = null,
+    val selectedGraphNodeId: String? = null,
+    val graphDescendants: List<SollTaskGraphNode> = emptyList(),
+    val graphQueryLoading: Boolean = false,
 ) {
     val openCount: Int
         get() = taskCounts?.openCount ?: displayedOpenCount
@@ -251,7 +257,7 @@ class TaskBoardViewModel @Inject constructor(
                     }
                 }
             )
-            refreshSelectedWorkspace(showLoading = false)
+            refreshSelectedWorkspace(showLoading = showLoading)
         }
     }
 
@@ -416,10 +422,110 @@ class TaskBoardViewModel @Inject constructor(
     fun selectMode(mode: TaskWorkspaceMode) {
         _uiState.update { it.copy(selectedMode = mode) }
         when (mode) {
-            TaskWorkspaceMode.TASKS -> Unit
+            TaskWorkspaceMode.TASKS -> if (_uiState.value.taskGraph == null) {
+                loadTaskGraph(showLoading = false)
+            }
             TaskWorkspaceMode.INSIGHTS -> loadInsights()
             TaskWorkspaceMode.ROADMAP -> loadRoadmap()
             TaskWorkspaceMode.SOURCES -> loadSources()
+        }
+    }
+
+    fun loadTaskGraph(showLoading: Boolean = true) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    workspaceLoading = showLoading,
+                    graphQueryLoading = false,
+                    message = null,
+                    isError = false,
+                )
+            }
+            sollGateway.getTaskGraph(includeDone = false).fold(
+                onSuccess = { graph ->
+                    val selectedId = _uiState.value.selectedGraphNodeId
+                        ?.takeIf { id -> graph.nodes.any { it.id == id } }
+                    _uiState.update {
+                        it.copy(
+                            taskGraph = graph,
+                            selectedGraphNodeId = selectedId,
+                            graphDescendants = if (selectedId == null) emptyList() else it.graphDescendants,
+                            workspaceLoading = false,
+                        ).deriveTaskList()
+                    }
+                    selectedId?.let(::selectGraphNode)
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            workspaceLoading = false,
+                            graphQueryLoading = false,
+                            message = error.message ?: "Не удалось загрузить связи задач",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun selectGraphNode(nodeId: String?) {
+        if (nodeId == null) {
+            _uiState.update {
+                it.copy(
+                    selectedGraphNodeId = null,
+                    graphDescendants = emptyList(),
+                    graphQueryLoading = false,
+                    message = null,
+                    isError = false,
+                ).deriveTaskList()
+            }
+            return
+        }
+        if (nodeId.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    selectedGraphNodeId = nodeId,
+                    graphDescendants = emptyList(),
+                    graphQueryLoading = true,
+                    message = null,
+                    isError = false,
+                )
+            }
+            sollGateway.getTaskGraphDescendants(
+                ancestorId = nodeId,
+                includeDone = false,
+                limit = GRAPH_DESCENDANT_LIMIT,
+            ).fold(
+                onSuccess = { descendants ->
+                    _uiState.update {
+                        if (it.selectedGraphNodeId != nodeId) {
+                            it
+                        } else {
+                            it.copy(
+                                graphDescendants = descendants,
+                                graphQueryLoading = false,
+                            ).deriveTaskList()
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        if (it.selectedGraphNodeId != nodeId) {
+                            it
+                        } else {
+                            it.copy(
+                                selectedGraphNodeId = null,
+                                graphDescendants = emptyList(),
+                                graphQueryLoading = false,
+                                message = error.message ?: "Не удалось получить связанные задачи",
+                                isError = true,
+                            ).deriveTaskList()
+                        }
+                    }
+                },
+            )
         }
     }
 
@@ -1025,7 +1131,9 @@ class TaskBoardViewModel @Inject constructor(
     private fun refreshSelectedWorkspace(showLoading: Boolean) {
         if (_uiState.value.workspaceLoading) return
         when (_uiState.value.selectedMode) {
-            TaskWorkspaceMode.TASKS -> Unit
+            TaskWorkspaceMode.TASKS -> if (_uiState.value.taskGraph == null || showLoading) {
+                loadTaskGraph(showLoading = false)
+            }
             TaskWorkspaceMode.INSIGHTS -> loadInsights(showLoading = showLoading)
             TaskWorkspaceMode.ROADMAP -> loadRoadmap(showLoading = showLoading)
             TaskWorkspaceMode.SOURCES -> loadSources(showLoading = showLoading)
@@ -1151,7 +1259,10 @@ internal fun TaskBoardUiState.deriveTaskList(): TaskBoardUiState {
         TaskTab.DONE -> doneRecent
     }
     return copy(
-        visibleTasks = base.filterByPriority(selectedPriority).filterByQuery(searchQuery),
+        visibleTasks = base
+            .filterByGraphSelection(this)
+            .filterByPriority(selectedPriority)
+            .filterByQuery(searchQuery),
         ideaCount = ideaTaskIndex.size,
     )
 }
@@ -1213,6 +1324,18 @@ private fun List<SollTask>.filterByPriority(filter: TaskPriorityFilter): List<So
         filter { it.priority.normalizedTaskPriorityLabel() == filter.label }
     }
 
+private fun List<SollTask>.filterByGraphSelection(state: TaskBoardUiState): List<SollTask> {
+    val selectedNodeId = state.selectedGraphNodeId ?: return this
+    val matchingTaskIds = buildSet {
+        state.taskGraph?.nodes
+            ?.firstOrNull { it.id == selectedNodeId }
+            ?.taskId
+            ?.let(::add)
+        state.graphDescendants.mapNotNullTo(this) { it.taskId }
+    }
+    return filter { it.id in matchingTaskIds }
+}
+
 private fun List<SollTask>.filterByQuery(query: String): List<SollTask> {
     val needle = query.trim()
     if (needle.isBlank()) return this
@@ -1261,3 +1384,18 @@ private val IDEA_TASK_MARKERS = listOf("idea", "идея", "ideas", "opportunity
 private const val DEFAULT_TASK_BOARD_SECTION_LIMIT = 80
 private const val MAX_TASK_BOARD_SECTION_LIMIT = 500
 private const val TASK_REFRESH_INTERVAL_MS = 30_000L
+private const val GRAPH_DESCENDANT_LIMIT = 700
+
+internal fun SollTaskGraph.rootNodes(): List<SollTaskGraphNode> {
+    val childIds = edges.mapTo(mutableSetOf()) { it.target }
+    return nodes.filterNot { it.id in childIds }.sortedWith(
+        compareBy<SollTaskGraphNode> { it.kind }.thenBy { it.label.lowercase() },
+    )
+}
+
+internal fun SollTaskGraph.projectFilterNodes(): List<SollTaskGraphNode> {
+    val roots = rootNodes()
+    return roots.filter { it.kind.equals("project", ignoreCase = true) }
+        .ifEmpty { roots.filterNot { it.kind.equals("source", ignoreCase = true) } }
+        .ifEmpty { roots }
+}

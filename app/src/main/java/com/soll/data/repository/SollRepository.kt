@@ -133,6 +133,7 @@ import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
 import com.soll.domain.soll.SollBriefing
 import com.soll.domain.soll.SollChatActionResult
+import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollChatSession
 import com.soll.domain.soll.SollDailyTask
@@ -417,11 +418,14 @@ class SollRepository @Inject constructor(
         val cleanAction = action.trim()
         require(cleanActionId.isNotBlank()) { "ID действия не задан" }
         require(cleanAction.isNotBlank()) { "Тип действия не задан" }
+        val policy = requireNotNull(SollChatActionPolicyRegistry.resolve(cleanAction)) {
+            "Действие не разрешено локальной политикой Android: $cleanAction"
+        }
         service().executeChatAction(
             authorization = readAuthorizationHeader(),
             actionId = cleanActionId.encodedSollPathSegment(fieldName = "action_id"),
             request = ChatActionExecuteRequest(
-                action = cleanAction,
+                action = policy.type,
                 taskId = taskId?.trim()?.takeIf { it.isNotBlank() },
                 sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
             ),

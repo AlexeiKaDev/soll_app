@@ -367,6 +367,31 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `chat action parser rejects unknown action types`() {
+        val message = chatMessage(
+            content = "Untrusted action",
+            metadata = mapOf(
+                "actions" to listOf(
+                    mapOf(
+                        "id" to "shell:1",
+                        "type" to "shell.execute",
+                        "label" to "Run",
+                    ),
+                    mapOf(
+                        "id" to "notice:1",
+                        "type" to " NOTICE.ACK ",
+                    ),
+                ),
+            ),
+        )
+
+        val actions = message.actionUis()
+
+        assertEquals(listOf("notice:1"), actions.map { it.id })
+        assertEquals(listOf("notice.ack"), actions.map { it.type })
+    }
+
+    @Test
     fun `completed chat action metadata hides stale action buttons`() {
         val taskMessage = chatMessage(
             content = "Registered task",

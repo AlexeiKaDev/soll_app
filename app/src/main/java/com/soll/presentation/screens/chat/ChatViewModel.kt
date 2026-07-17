@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.voice.AndroidSpeechRecognizerAdapter
+import com.soll.domain.assistant.CapabilityRegistry
+import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollGateway
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -61,6 +63,7 @@ class ChatViewModel @Inject constructor(
     private val sollGateway: SollGateway,
     private val sttAdapter: AndroidSpeechRecognizerAdapter,
     private val settingsRepository: SettingsRepository,
+    private val capabilityRegistry: CapabilityRegistry,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -300,6 +303,22 @@ class ChatViewModel @Inject constructor(
     }
 
     fun executeAction(action: ChatActionUi) {
+        val policy = SollChatActionPolicyRegistry.resolve(action.type)
+        val capabilityDecision = policy?.let { capabilityRegistry.checkCommand(it.capabilityId) }
+        if (policy == null || capabilityDecision?.allowed != true) {
+            val reason = capabilityDecision?.message
+                ?.takeIf { it.isNotBlank() }
+                ?: "Действие не разрешено локальной политикой Android."
+            _uiState.update {
+                it.copy(
+                    isSending = false,
+                    actionFeedback = "Действие заблокировано",
+                    actionInFlightId = null,
+                    error = reason,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -311,7 +330,7 @@ class ChatViewModel @Inject constructor(
             }
             sollGateway.executeChatAction(
                 actionId = action.id,
-                action = action.type,
+                action = policy.type,
                 taskId = action.taskId,
                 sessionId = _uiState.value.sessionId,
             ).fold(
@@ -496,10 +515,10 @@ private fun Any?.asActionMaps(): List<Map<*, *>> =
 private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
     val action = this
     if (action.isCompletedActionMap()) return null
-    val type = action["type"]?.toString().orEmpty().ifBlank {
+    val rawType = action["type"]?.toString().orEmpty().ifBlank {
         action["action"]?.toString().orEmpty()
     }
-    if (type.isBlank()) return null
+    val type = SollChatActionPolicyRegistry.resolve(rawType)?.type ?: return null
     val taskId = action["task_id"]?.toString()?.takeIf { it.isNotBlank() }
     val approvalId = action["approval_id"]?.toString()?.takeIf { it.isNotBlank() }
     val id = action["id"]?.toString()?.takeIf { it.isNotBlank() }

@@ -297,6 +297,17 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `slash path opening is a required chat link contract`() {
+        val slashPathUrl = "https://example.com/api/v1/soll/roadmap"
+
+        assertEquals(
+            listOf(slashPathUrl),
+            extractChatLinks("Открыть $slashPathUrl"),
+        )
+        assertTrue(isOpenableChatUrl(slashPathUrl))
+    }
+
+    @Test
     fun `link preview loader rejects redirect responses`() {
         assertFalse(isPreviewRedirectStatus(200))
         assertFalse(isPreviewRedirectStatus(204))

@@ -43,6 +43,14 @@ class AppLaunchTargetsTest {
     }
 
     @Test
+    fun `slash tasks path opens exact task board destination`() {
+        assertEquals(
+            Routes.TASKS,
+            AppLaunchTargets.fromExtras(section = "/tasks", logsTab = null)?.section,
+        )
+    }
+
+    @Test
     fun `pairing launch extras open settings`() {
         assertEquals(
             AppLaunchTargets.SECTION_SETTINGS,

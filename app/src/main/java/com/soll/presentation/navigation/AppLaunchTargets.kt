@@ -21,6 +21,7 @@ object AppLaunchTargets {
 
     fun fromExtras(section: String?, logsTab: String?): AppLaunchCommand? =
         when (section) {
+            "/$SECTION_TASKS" -> AppLaunchCommand(section = SECTION_TASKS)
             SECTION_CHAT -> AppLaunchCommand(section = SECTION_CHAT)
             SECTION_TASKS -> AppLaunchCommand(section = SECTION_TASKS)
             SECTION_LOGS -> AppLaunchCommand(

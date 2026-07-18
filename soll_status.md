@@ -1,8 +1,14 @@
 # soll_app Status
 
-Last updated: 2026-07-16 Europe/Chisinau
+Last updated: 2026-07-18 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-18 roadmap/execution status reconciliation (`e5c9d70de7b442cbbcfb80172e94c370`):
+  - Validated the isolated worktree at the required base `28d2d6d08554a426d0144d0179f593df3cf46a28`. It was clean before this status-only slice. The locally visible 2026-07-18 result is the Bonsai 27B feasibility batch: its commit changes one contract test plus documentation, the roadmap entry and its verification artifact, with `0` changes under `app/src/main`.
+  - Confirmed that the roadmap already records `task:chat:962471563b17ded7b120` and keeps Android production integration deferred. The preceding slash-path result remains backed by its committed verification artifact. A fresh combined smoke passed `9/9` tests: `QwenBonsaiAndroidFeasibilityTest` `1/1` and `AppLaunchTargetsTest` `8/8`.
+  - Project status is `validated` with `medium` confidence. Confidence is intentionally not high because `daily/2026-07-18.md`, the Soll task-board/project-memory mirrors and the separate `D:\Projects\Soll` working tree are not present inside this isolated worktree and were not accessed across the repository boundary.
+  - Measured value: `2` latest result records audited, `1` stale status date reconciled, `1` focused audit artifact attached and `0` Android production files changed. Evidence: `Soll/outputs/source-processing/task-e5c9d70de7b442cbbcfb80172e94c370-status-audit.md`.
 
 - 2026-07-16 Hugging Face PEFT v0.16.0 mesh/offline transport source triage:
   - Read `D:\Projects\Soll\Soll\raw\monitored\hugging-face-peft-releases\20260703-193122-0-16-0-lora-fa-randlora-c-a-and-much-more-3d3c1ec3.md` and checked the official release. It covers LoRA-FA, RandLoRA, C3A, quantization, adapter hotswapping and compatibility; the only offline-related changelog item is a test of `HF_HUB_OFFLINE` model-cache behavior, not Meshtastic or message transport.

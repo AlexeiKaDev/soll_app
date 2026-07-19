@@ -1,0 +1,211 @@
+{
+  "prototype_id": "soll-paperpilot-literature-search-v1",
+  "version": 1,
+  "task_id": "51efb9a76b94469e86a3fd8b9181918a",
+  "source_ref": "source-item/9011e13c06d6/d4d88b2dcc5eb63f",
+  "mode": "proposal_only",
+  "anchor_paper": {
+    "title": "Multi-Turn Agentic Scientific Literature Search via Workflow Induction",
+    "canonical_id": "arxiv:2607.00597v2",
+    "source_url": "https://huggingface.co/papers/2607.00597"
+  },
+  "session": {
+    "session_id": "synthetic-paperpilot-session-001",
+    "query": "Find successor work that evaluates editable literature-search workflows",
+    "turn": 1,
+    "state": "awaiting_approval",
+    "privacy_label": "public_synthetic"
+  },
+  "workflow": {
+    "revision": 1,
+    "terminal_node_id": "n9",
+    "nodes": [
+      {
+        "id": "n1",
+        "operator": "keyword_search",
+        "inputs": [],
+        "input_types": [],
+        "output_type": "paper_set",
+        "params": {
+          "query": "editable workflow scientific literature search",
+          "top_k": 20
+        }
+      },
+      {
+        "id": "n2",
+        "operator": "citation_expand",
+        "inputs": [
+          "n1"
+        ],
+        "input_types": [
+          "paper_set"
+        ],
+        "output_type": "paper_set",
+        "params": {
+          "direction": "forward",
+          "max_papers": 20,
+          "max_hops": 1
+        }
+      },
+      {
+        "id": "n3",
+        "operator": "union",
+        "inputs": [
+          "n1",
+          "n2"
+        ],
+        "input_types": [
+          "paper_set",
+          "paper_set"
+        ],
+        "output_type": "paper_set",
+        "params": {}
+      },
+      {
+        "id": "n4",
+        "operator": "dedupe",
+        "inputs": [
+          "n3"
+        ],
+        "input_types": [
+          "paper_set"
+        ],
+        "output_type": "paper_set",
+        "params": {
+          "keys": [
+            "doi",
+            "arxiv_id",
+            "normalized_title"
+          ]
+        }
+      },
+      {
+        "id": "n5",
+        "operator": "filter",
+        "inputs": [
+          "n4"
+        ],
+        "input_types": [
+          "paper_set"
+        ],
+        "output_type": "paper_set",
+        "params": {
+          "published_from": 2024,
+          "language": "en",
+          "require_abstract": true
+        }
+      },
+      {
+        "id": "n6",
+        "operator": "score",
+        "inputs": [
+          "n5"
+        ],
+        "input_types": [
+          "paper_set"
+        ],
+        "output_type": "scored_paper_set",
+        "params": {
+          "features": [
+            "query_similarity",
+            "citation_relation",
+            "workflow_evidence"
+          ]
+        }
+      },
+      {
+        "id": "n7",
+        "operator": "top_k",
+        "inputs": [
+          "n6"
+        ],
+        "input_types": [
+          "scored_paper_set"
+        ],
+        "output_type": "paper_set",
+        "params": {
+          "k": 10
+        }
+      },
+      {
+        "id": "n8",
+        "operator": "rerank",
+        "inputs": [
+          "n7"
+        ],
+        "input_types": [
+          "paper_set"
+        ],
+        "output_type": "paper_set",
+        "params": {
+          "query": "successor work with explicit editable workflow evaluation",
+          "top_k": 5,
+          "max_runs": 1
+        }
+      },
+      {
+        "id": "n9",
+        "operator": "extract_evidence",
+        "inputs": [
+          "n8"
+        ],
+        "input_types": [
+          "paper_set"
+        ],
+        "output_type": "evidence_set",
+        "params": {
+          "required_fields": [
+            "paper_id",
+            "canonical_url",
+            "matched_intent",
+            "supporting_snippet",
+            "producing_node_id"
+          ]
+        }
+      }
+    ]
+  },
+  "feedback_contract": {
+    "allowed_actions": [
+      "ask_user",
+      "update_query",
+      "add_node",
+      "modify_node",
+      "remove_node",
+      "finalize"
+    ],
+    "new_revision_required": true,
+    "reapproval_required_after_change": true
+  },
+  "policy": {
+    "network_access": "disabled",
+    "external_side_effects": "forbidden",
+    "provider_credentials_on_android": false,
+    "allowed_execution_location": "server_after_explicit_approval",
+    "requires_approval_before": [
+      "execute_external_search",
+      "persist_workflow",
+      "create_task"
+    ],
+    "forbidden_capabilities": [
+      "shell",
+      "arbitrary_code",
+      "arbitrary_url_fetch",
+      "workflow_generated_tool_names"
+    ]
+  },
+  "limits": {
+    "max_candidate_papers": 50,
+    "max_returned_papers": 10,
+    "max_workflow_nodes": 9,
+    "max_citation_hops": 2,
+    "max_rerank_runs": 1,
+    "max_runtime_seconds": 60
+  },
+  "observed_side_effects": {
+    "external_search_runs": 0,
+    "provider_calls": 0,
+    "persistent_writes": 0,
+    "task_board_writes": 0
+  }
+}

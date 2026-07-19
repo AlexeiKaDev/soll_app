@@ -4,10 +4,17 @@ Last updated: 2026-07-19 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-19 llama.cpp b9895 binary release smoke (`c923fe6aa418475dab3f7f5b8e45b702`):
+  - Pinned official release `b9895` at `defa95c306598bff66640c64dc8788adf90b72ea`, the three-commit update over b9892 containing the ngram-map prompt-shrink out-of-bounds read fix plus Vulkan validation and OpenCL optimizations.
+  - Downloaded the Windows x64 CPU and Android arm64 CPU archives into the ignored repository cache and matched both published byte counts and SHA-256 digests. `llama-cli.exe` and `llama-server.exe` executed as `9895 (defa95c30)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
+  - Added a b9895 release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. The same platform families were already present in b9892, so the measured release value is the fixed runtime delta rather than a new Soll platform family.
+  - Kept the Soll backend route as the Android runtime default. The task constraints prohibit deployment, so binaries remain in the ignored local cache and are not packaged into the APK or sent to an external environment.
+  - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 22 targets configured, 0 deployed/APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-26ee7982c11e651e-verification.md`.
+
 - 2026-07-19 llama.cpp b9892 binary release smoke (`16a254d3e2ef4721bc9ca139ca2fa520`):
   - Downloaded the official Windows x64 CPU and Android arm64 CPU archives into the ignored repository build cache and matched both published SHA-256 digests. `llama-cli.exe` and `llama-server.exe` both executed as `9892 (ee445f93d)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
   - Added a pinned release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. Accelerator variants remain explicit; PowerPC has no release asset, while openEuler and macOS KleidiAI jobs are disabled in b9892.
-  - Kept the Soll backend route as the Android runtime default. The standalone upstream tarball is not packaged into the APK and no local LLM/NDK/JNI product path was introduced. ADB was unavailable, so the Android evidence is archive/ABI smoke rather than device inference.
+  - Kept the Soll backend route as the Android runtime default. The standalone upstream tarball is not packaged into the APK and no local LLM/NDK/JNI product path was introduced. The host SDK has ADB, but no device was connected, so the Android evidence is archive/ABI smoke rather than device inference.
   - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 22 targets configured, 0 APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-fd72a4b7d45cc93b-verification.md`.
 
 - 2026-07-19 OpenAI Shell + Skills + Compaction Soll agent prototype (`c9c7dd0a17b8478194f43deb6b94e25a`):

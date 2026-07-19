@@ -21,6 +21,6 @@ pwsh -NoProfile -File tools/llama-cpp/Invoke-LlamaCppVerifiedModel.ps1 `
   -ModelPath D:\approved\model.gguf -- -p "smoke" -n 1
 ```
 
-Direct model loading through the archived `b9892` or `b9895` binaries is not an
-approved Soll workflow. Those manifests and scripts remain only as historical
-release evidence.
+Direct model loading through the archived `b9892`, `b9895` or `b9898` binaries
+is not an approved Soll workflow. Those manifests and scripts remain only as
+historical release evidence.

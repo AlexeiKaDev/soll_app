@@ -4,6 +4,13 @@ Last updated: 2026-07-19 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-19 llama.cpp b9898 binary release smoke (`fc4ed0d15e83406abd702e47040d3a99`):
+  - Pinned official release `b9898` at `3d4cbdf18a72c97648c15e2dc060013c186cd36c`, including the SYCL AOT double-type fix from upstream PR `#25081`.
+  - Downloaded the Windows x64 CPU and Android arm64 CPU archives into the ignored repository cache and matched both published byte counts and SHA-256 digests. `llama-cli.exe` and `llama-server.exe` executed as `9898 (3d4cbdf18)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
+  - Added a CI-compatible b9898 smoke runner and release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. All 24 manifest entries match the official release metadata; openEuler and macOS KleidiAI remain unavailable release signals.
+  - Kept the Soll backend route as the Android runtime default. Binaries remain in the ignored local cache and are not packaged into the APK. ADB reported no connected device, so Android evidence is package/ABI validation rather than device inference.
+  - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 24/24 binary packages pinned, 22 targets configured, 0 deployed/APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-e06555e37f16c034-verification.md`.
+
 - 2026-07-19 llama.cpp b9895 binary release smoke (`c923fe6aa418475dab3f7f5b8e45b702`):
   - Pinned official release `b9895` at `defa95c306598bff66640c64dc8788adf90b72ea`, the three-commit update over b9892 containing the ngram-map prompt-shrink out-of-bounds read fix plus Vulkan validation and OpenCL optimizations.
   - Downloaded the Windows x64 CPU and Android arm64 CPU archives into the ignored repository cache and matched both published byte counts and SHA-256 digests. `llama-cli.exe` and `llama-server.exe` executed as `9895 (defa95c30)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.

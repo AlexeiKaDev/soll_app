@@ -1,8 +1,14 @@
 # soll_app Status
 
-Last updated: 2026-07-18 Europe/Chisinau
+Last updated: 2026-07-19 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-19 OpenAI Shell + Skills + Compaction Soll agent prototype (`c9c7dd0a17b8478194f43deb6b94e25a`):
+  - Added a transport-neutral agent context assembler with an explicit three-capability profile, allowlisted shell tool IDs, progressive skill disclosure and deterministic long-run compaction.
+  - Preserved the mobile safety boundary: the context contains no executable command strings, does not run a shell and does not introduce an Android-side autonomous loop or external integration.
+  - Focused smoke passed `4/4` tests with `0` failures/errors; it covers the explicit capability set, shell allowlist rejection, selective skill loading and preservation of objective/state/evidence plus the recent event tail.
+  - Measured value: `3/3` source patterns implemented, `4/4` focused tests passed, `0` raw shell command fields and `0` runtime/external side effects. Evidence: `Soll/outputs/source-processing/task-c9c7dd0a17b8478194f43deb6b94e25a-shell-skills-compaction-audit.md`.
 
 - 2026-07-18 roadmap/execution status reconciliation (`e5c9d70de7b442cbbcfb80172e94c370`):
   - Validated the isolated worktree at the required base `28d2d6d08554a426d0144d0179f593df3cf46a28`. It was clean before this status-only slice. The locally visible 2026-07-18 result is the Bonsai 27B feasibility batch: its commit changes one contract test plus documentation, the roadmap entry and its verification artifact, with `0` changes under `app/src/main`.

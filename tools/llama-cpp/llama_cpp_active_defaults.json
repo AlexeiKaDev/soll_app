@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "release": {
+    "tag": "b10068",
+    "commit": "571d0d540df04f25298d0e159e520d9fc62ed121",
+    "publishedAt": "2026-07-18T13:36:42Z",
+    "downloadBaseUrl": "https://github.com/ggml-org/llama.cpp/releases/download/b10068/",
+    "securityBaseline": "b9917"
+  },
+  "policy": {
+    "defaultSmokeTargets": [
+      "windows-x64-cpu",
+      "android-arm64-cpu"
+    ],
+    "downloadCache": "build/llama-b10068",
+    "verifySha256": true,
+    "packageIntoAndroidApp": false,
+    "androidRuntimeDefault": "soll-backend-route",
+    "standaloneAndroidBinaryUse": "upstream-harness-or-adb-smoke-only",
+    "minimumSafeRelease": 9917,
+    "requireModelAllowlist": true,
+    "modelAllowlist": "tools/llama-cpp/approved_models.json",
+    "modelLoadingEntryPoint": "tools/llama-cpp/Invoke-LlamaCppVerifiedModel.ps1"
+  },
+  "targets": [
+    {
+      "id": "android-arm64-cpu",
+      "os": "android",
+      "arch": "arm64",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b10068-bin-android-arm64.tar.gz",
+          "bytes": 74800431,
+          "sha256": "f1e95b622f3bff7019ca042b7818dd2fa9421ec3e08bd87c74218646ba0e8110"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-cpu",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "cpu",
+      "versionPattern": "version: 10068 \\(571d0d540\\)",
+      "packages": [
+        {
+          "asset": "llama-b10068-bin-win-cpu-x64.zip",
+          "bytes": 18007324,
+          "sha256": "01d5f30876acfb4a0be59396710f450213495c7181d8fbcce2fad045835ceb89"
+        }
+      ]
+    }
+  ]
+}

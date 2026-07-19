@@ -4,6 +4,12 @@ Last updated: 2026-07-19 Europe/Chisinau
 
 ## Current Changes
 
+- 2026-07-19 llama.cpp b9892 binary release smoke (`16a254d3e2ef4721bc9ca139ca2fa520`):
+  - Downloaded the official Windows x64 CPU and Android arm64 CPU archives into the ignored repository build cache and matched both published SHA-256 digests. `llama-cli.exe` and `llama-server.exe` both executed as `9892 (ee445f93d)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
+  - Added a pinned release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. Accelerator variants remain explicit; PowerPC has no release asset, while openEuler and macOS KleidiAI jobs are disabled in b9892.
+  - Kept the Soll backend route as the Android runtime default. The standalone upstream tarball is not packaged into the APK and no local LLM/NDK/JNI product path was introduced. ADB was unavailable, so the Android evidence is archive/ABI smoke rather than device inference.
+  - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 22 targets configured, 0 APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-fd72a4b7d45cc93b-verification.md`.
+
 - 2026-07-19 OpenAI Shell + Skills + Compaction Soll agent prototype (`c9c7dd0a17b8478194f43deb6b94e25a`):
   - Added a transport-neutral agent context assembler with an explicit three-capability profile, allowlisted shell tool IDs, progressive skill disclosure and deterministic long-run compaction.
   - Preserved the mobile safety boundary: the context contains no executable command strings, does not run a shell and does not introduce an Android-side autonomous loop or external integration.

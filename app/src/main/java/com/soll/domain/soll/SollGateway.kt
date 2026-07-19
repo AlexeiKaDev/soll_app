@@ -304,6 +304,17 @@ data class SollSourceItem(
         get() = statusReason.ifBlank { reasoning }
 }
 
+internal fun ByteArray.isSollVoiceWav(): Boolean =
+    size > 44 &&
+        this[0] == 'R'.code.toByte() &&
+        this[1] == 'I'.code.toByte() &&
+        this[2] == 'F'.code.toByte() &&
+        this[3] == 'F'.code.toByte() &&
+        this[8] == 'W'.code.toByte() &&
+        this[9] == 'A'.code.toByte() &&
+        this[10] == 'V'.code.toByte() &&
+        this[11] == 'E'.code.toByte()
+
 data class SollSourceItemsPage(
     val items: List<SollSourceItem>,
     val nextCursor: String,
@@ -649,6 +660,8 @@ interface SollGateway {
         sessionId: String? = null,
         runAssistant: Boolean = true,
     ): Result<Pair<SollChatMessage, SollChatMessage?>>
+
+    suspend fun synthesizeVoice(text: String): Result<ByteArray>
 
     suspend fun executeChatAction(
         actionId: String,

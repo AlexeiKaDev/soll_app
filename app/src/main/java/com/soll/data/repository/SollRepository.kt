@@ -97,6 +97,7 @@ import com.soll.data.api.TaskUpdateRequest
 import com.soll.data.api.TaskGraphEdgeResponse
 import com.soll.data.api.TaskGraphNodeResponse
 import com.soll.data.api.TaskGraphResponse
+import com.soll.data.api.VoiceSynthesisRequest
 import com.soll.data.local.dao.TaskGraphCacheDao
 import com.soll.domain.metacoordinator.MetaCoordinatorFallback
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
@@ -173,6 +174,7 @@ import com.soll.domain.soll.SollTaskGraph
 import com.soll.domain.soll.SollTaskGraphEdge
 import com.soll.domain.soll.SollTaskGraphNode
 import com.soll.domain.soll.buildSollDeviceTokenSignature
+import com.soll.domain.soll.isSollVoiceWav
 import com.soll.domain.soll.withoutDailyTodoTasks
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -185,6 +187,8 @@ import java.time.ZoneOffset
 import java.util.TimeZone
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -406,6 +410,23 @@ class SollRepository @Inject constructor(
             ),
         )
         response.message.toDomain() to response.assistant?.toDomain()
+    }
+
+    override suspend fun synthesizeVoice(text: String): Result<ByteArray> = runSuspendCatching {
+        val cleanText = text.trim()
+        require(cleanText.isNotBlank()) { "Текст для озвучивания пуст" }
+        require(cleanText.length <= MAX_CHAT_VOICE_TEXT_CHARS) { "Ответ слишком длинный для озвучивания" }
+        service().synthesizeVoice(
+            authorization = ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader(),
+            request = VoiceSynthesisRequest(text = cleanText),
+        ).use { response ->
+            val declaredLength = response.contentLength()
+            require(declaredLength in -1..MAX_CHAT_VOICE_AUDIO_BYTES) { "Голосовой ответ слишком большой" }
+            val audio = withContext(Dispatchers.IO) { response.bytes() }
+            require(audio.size <= MAX_CHAT_VOICE_AUDIO_BYTES) { "Голосовой ответ слишком большой" }
+            require(audio.isSollVoiceWav()) { "Сервер вернул поврежденный голосовой ответ" }
+            audio
+        }
     }
 
     override suspend fun executeChatAction(
@@ -2294,6 +2315,8 @@ private const val TASK_GRAPH_SCOPE_ALL = "all"
 private const val TASK_GRAPH_DESCENDANT_LIMIT = 700
 private const val DEVICE_TOKEN_REFRESH_SAFETY_MS = 2 * 60_000L
 private const val SOURCE_TYPE_WEB = "web"
+private const val MAX_CHAT_VOICE_TEXT_CHARS = 1_200
+private const val MAX_CHAT_VOICE_AUDIO_BYTES = 25L * 1024L * 1024L
 private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")
 
 fun normalizeSollBaseUrl(rawUrl: String): String {

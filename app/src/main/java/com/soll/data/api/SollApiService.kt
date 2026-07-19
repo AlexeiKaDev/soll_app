@@ -13,6 +13,7 @@ import retrofit2.http.Part
 import retrofit2.http.PUT
 import retrofit2.http.Query
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 
 interface SollApiService {
     @GET("api/v1/health")
@@ -127,6 +128,12 @@ interface SollApiService {
         @Header("Authorization") authorization: String? = null,
         @Body request: ChatTurnRequest,
     ): ChatTurnResponse
+
+    @POST("api/v1/voice/synthesize")
+    suspend fun synthesizeVoice(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: VoiceSynthesisRequest,
+    ): ResponseBody
 
     @POST("api/v1/chat/actions/{action_id}/execute")
     suspend fun executeChatAction(
@@ -966,6 +973,10 @@ data class DailyTaskCreateRequest(
 
 data class DailyTaskUpdateRequest(
     val done: Boolean,
+)
+
+data class VoiceSynthesisRequest(
+    val text: String,
 )
 
 data class TaskUpdateRequest(

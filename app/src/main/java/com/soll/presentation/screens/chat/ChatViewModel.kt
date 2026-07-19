@@ -8,6 +8,9 @@ import com.soll.domain.assistant.CapabilityRegistry
 import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.tts.AssistantVoicePlaybackPhase
+import com.soll.domain.tts.AssistantVoicePlaybackState
+import com.soll.domain.tts.AssistantVoicePlayer
 import com.soll.domain.tts.TextToSpeechManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -35,6 +39,8 @@ data class ChatUiState(
     val isVoiceListening: Boolean = false,
     val voicePartialText: String = "",
     val voiceError: String? = null,
+    val voiceLoadingMessageId: Long? = null,
+    val voicePlayback: AssistantVoicePlaybackState = AssistantVoicePlaybackState(),
     val error: String? = null,
     val actionFeedback: String? = null,
     val actionInFlightId: String? = null,
@@ -66,14 +72,21 @@ class ChatViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val capabilityRegistry: CapabilityRegistry,
     private val ttsManager: TextToSpeechManager,
+    private val assistantVoicePlayer: AssistantVoicePlayer,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private var refreshInFlight = false
     private var lastSpokenMessageId = 0L
+    private var voiceRequestJob: Job? = null
+    private var voiceRequestGeneration = 0L
+    private var voiceFallbackMessageId: Long? = null
+    private var voiceFallbackText = ""
+    private var voiceFallbackHandled = false
 
     init {
         observeVoiceInput()
+        observeVoicePlayback()
         refresh()
         observeServerUpdates()
     }
@@ -303,8 +316,47 @@ class ChatViewModel @Inject constructor(
         if (message.isFromUser) return
         val spoken = assistantSpeechText(message.content)
         if (spoken.isBlank()) return
+        val current = _uiState.value
+        val playbackIsActive = current.voicePlayback.messageId == message.id &&
+            current.voicePlayback.phase in setOf(
+                AssistantVoicePlaybackPhase.PREPARING,
+                AssistantVoicePlaybackPhase.PLAYING,
+            )
+        if (current.voiceLoadingMessageId == message.id || playbackIsActive) {
+            stopVoiceOutput()
+            return
+        }
         lastSpokenMessageId = maxOf(lastSpokenMessageId, message.id)
-        ttsManager.speakAssistantResponse(spoken)
+        stopVoiceOutput()
+        val generation = ++voiceRequestGeneration
+        voiceFallbackMessageId = message.id
+        voiceFallbackText = spoken
+        voiceFallbackHandled = false
+        _uiState.update { it.copy(voiceLoadingMessageId = message.id) }
+        voiceRequestJob = viewModelScope.launch {
+            val audioResult = sollGateway.synthesizeVoice(spoken)
+            if (generation != voiceRequestGeneration) return@launch
+            _uiState.update { it.copy(voiceLoadingMessageId = null) }
+            val audio = audioResult.getOrElse {
+                fallbackToSystemVoice(message.id, spoken)
+                return@launch
+            }
+            if (!assistantVoicePlayer.play(message.id, audio)) {
+                fallbackToSystemVoice(message.id, spoken)
+            }
+        }
+    }
+
+    private fun stopVoiceOutput() {
+        voiceRequestGeneration += 1
+        voiceRequestJob?.cancel()
+        voiceRequestJob = null
+        voiceFallbackMessageId = null
+        voiceFallbackText = ""
+        voiceFallbackHandled = false
+        assistantVoicePlayer.stop()
+        ttsManager.stop()
+        _uiState.update { it.copy(voiceLoadingMessageId = null) }
     }
 
     fun onScrollRequestHandled(token: Int) {
@@ -416,6 +468,36 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun observeVoicePlayback() {
+        viewModelScope.launch {
+            assistantVoicePlayer.state.collect { playback ->
+                _uiState.update { it.copy(voicePlayback = playback) }
+                when (playback.phase) {
+                    AssistantVoicePlaybackPhase.ERROR -> {
+                        val messageId = playback.messageId
+                        if (messageId != null && messageId == voiceFallbackMessageId) {
+                            fallbackToSystemVoice(messageId, voiceFallbackText)
+                        }
+                    }
+                    AssistantVoicePlaybackPhase.IDLE -> {
+                        if (_uiState.value.voiceLoadingMessageId == null) {
+                            voiceFallbackMessageId = null
+                            voiceFallbackText = ""
+                            voiceFallbackHandled = false
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun fallbackToSystemVoice(messageId: Long, text: String) {
+        if (voiceFallbackHandled || voiceFallbackMessageId != messageId || text.isBlank()) return
+        voiceFallbackHandled = true
+        ttsManager.speakAssistantResponse(text)
+    }
+
     private fun speakLatestAssistantMessage(messages: List<SollChatMessage>, afterId: Long?) {
         if (!settingsRepository.voiceChatResponsesEnabled || afterId == null) return
         messages.asSequence()
@@ -426,6 +508,11 @@ class ChatViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        voiceRequestGeneration += 1
+        voiceRequestJob?.cancel()
+        voiceFallbackMessageId = null
+        voiceFallbackText = ""
+        assistantVoicePlayer.stop()
         sttAdapter.destroy()
         ttsManager.stop()
         super.onCleared()

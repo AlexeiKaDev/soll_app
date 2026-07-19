@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.Rule
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -356,6 +357,14 @@ fun SettingsScreen(
                         description = "Выполнять ручную голосовую команду только после фразы «Солл»",
                         checked = uiState.voiceWakePhraseRequired,
                         onCheckedChange = viewModel::setVoiceWakePhraseRequired,
+                    )
+
+                    VoicePolicyRow(
+                        icon = Icons.AutoMirrored.Filled.VolumeUp,
+                        title = "Озвучивать ответы в чате",
+                        description = "Произносить новые ответы Soll, сохраняя полный текст в чате",
+                        checked = uiState.voiceChatResponsesEnabled,
+                        onCheckedChange = viewModel::setVoiceChatResponsesEnabled,
                     )
                 }
             }

@@ -8,6 +8,7 @@ import com.soll.domain.assistant.CapabilityRegistry
 import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.tts.TextToSpeechManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,10 +65,12 @@ class ChatViewModel @Inject constructor(
     private val sttAdapter: AndroidSpeechRecognizerAdapter,
     private val settingsRepository: SettingsRepository,
     private val capabilityRegistry: CapabilityRegistry,
+    private val ttsManager: TextToSpeechManager,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private var refreshInFlight = false
+    private var lastSpokenMessageId = 0L
 
     init {
         observeVoiceInput()
@@ -186,6 +189,7 @@ class ChatViewModel @Inject constructor(
                         scrollToBottomReason = scrollReason,
                     )
                 }
+                speakLatestAssistantMessage(messages = displayable, afterId = afterId)
             } finally {
                 refreshInFlight = false
             }
@@ -253,6 +257,9 @@ class ChatViewModel @Inject constructor(
                             scrollToBottomReason = ChatScrollReason.USER_SEND,
                         )
                     }
+                    if (assistant != null && settingsRepository.voiceChatResponsesEnabled) {
+                        speakMessage(assistant)
+                    }
                     refresh(showLoading = false, afterIdOverride = previousLastId)
                 },
                 onFailure = { error ->
@@ -290,6 +297,14 @@ class ChatViewModel @Inject constructor(
 
     fun dismissVoiceError() {
         _uiState.update { it.copy(voiceError = null) }
+    }
+
+    fun speakMessage(message: SollChatMessage) {
+        if (message.isFromUser) return
+        val spoken = assistantSpeechText(message.content)
+        if (spoken.isBlank()) return
+        lastSpokenMessageId = maxOf(lastSpokenMessageId, message.id)
+        ttsManager.speakAssistantResponse(spoken)
     }
 
     fun onScrollRequestHandled(token: Int) {
@@ -401,8 +416,18 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun speakLatestAssistantMessage(messages: List<SollChatMessage>, afterId: Long?) {
+        if (!settingsRepository.voiceChatResponsesEnabled || afterId == null) return
+        messages.asSequence()
+            .filterNot { it.isFromUser }
+            .filter { it.id > afterId && it.id > lastSpokenMessageId }
+            .maxByOrNull { it.id }
+            ?.let(::speakMessage)
+    }
+
     override fun onCleared() {
         sttAdapter.destroy()
+        ttsManager.stop()
         super.onCleared()
     }
 }
@@ -484,6 +509,20 @@ internal fun appendDictatedChatText(current: String, recognized: String): String
 
     val base = current.trimEnd()
     return if (base.isBlank()) clean else "$base $clean"
+}
+
+internal fun assistantSpeechText(content: String, maxChars: Int = 1_200): String {
+    val clean = content
+        .replace(Regex("```[\\s\\S]*?```"), " ")
+        .replace(Regex("!\\[[^]]*]\\([^)]+\\)"), " ")
+        .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1")
+        .replace(Regex("[`#>*_~-]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .replace(Regex("\\s+([,.!?;:])"), "$1")
+        .trim()
+    if (clean.length <= maxChars) return clean
+    val prefix = clean.take(maxChars)
+    return prefix.substringBeforeLast(' ', prefix).trimEnd() + "."
 }
 
 fun SollChatMessage.actionUis(): List<ChatActionUi> =

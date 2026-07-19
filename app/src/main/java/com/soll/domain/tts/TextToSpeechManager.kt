@@ -108,6 +108,7 @@ class TextToSpeechManager @Inject constructor(
 
     private var currentText: String? = null
     private var isPaused = false
+    private var assistantSpeechGeneration = 0L
 
     init {
         scope.launch {
@@ -195,6 +196,30 @@ class TextToSpeechManager @Inject constructor(
             _state.value = if (ok) TtsState.Ready else TtsState.Error("Не удалось запустить TTS")
         }
         return true
+    }
+
+    fun speakAssistantResponse(text: String) {
+        val clean = text.trim()
+        if (clean.isBlank()) return
+        val generation = ++assistantSpeechGeneration
+        currentText = clean
+        isPaused = false
+        if (_engineType.value != TtsEngineType.SYSTEM) {
+            engines.getValue(_engineType.value).stop()
+            _engineType.value = TtsEngineType.SYSTEM
+        }
+        _state.value = TtsState.Initializing
+        systemEngine.setup(enginePackage = null) { ready ->
+            if (generation != assistantSpeechGeneration) return@setup
+            if (!ready) {
+                _state.value = TtsState.Error("Не удалось запустить озвучивание ответа")
+                return@setup
+            }
+            _state.value = TtsState.Ready
+            scope.launch(Dispatchers.Main) {
+                systemEngine.speakChapter(clean) { _chapterFinished.tryEmit(Unit) }
+            }
+        }
     }
 
     suspend fun initializeSilero(): Boolean = prepareEngine(TtsEngineType.SILERO)
@@ -309,6 +334,7 @@ class TextToSpeechManager @Inject constructor(
     }
 
     fun stop() {
+        assistantSpeechGeneration += 1
         isPaused = false
         currentText = null
         _currentWordRange.value = null

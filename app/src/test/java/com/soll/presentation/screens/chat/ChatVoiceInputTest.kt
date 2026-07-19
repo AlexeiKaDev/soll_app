@@ -27,4 +27,13 @@ class ChatVoiceInputTest {
             appendDictatedChatText("оставить как есть", "   "),
         )
     }
+
+    @Test
+    fun `prepares assistant markdown for bounded speech`() {
+        val spoken = assistantSpeechText(
+            "# Ответ\n[Документ](https://example.com) и `код`.\n```kotlin\nprintln(1)\n```",
+        )
+
+        assertEquals("Ответ Документ и код.", spoken)
+    }
 }

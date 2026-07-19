@@ -54,6 +54,7 @@ data class SettingsUiState(
     val voiceRequiresHeadset: Boolean = false,
     val voiceLocalOnly: Boolean = false,
     val voiceWakePhraseRequired: Boolean = false,
+    val voiceChatResponsesEnabled: Boolean = false,
     val proactiveSuggestionsEnabled: Boolean = true,
     val proactiveSuggestionsDailyLimit: Int = 3,
     val proactiveSystemDeliveryEnabled: Boolean = false,
@@ -125,6 +126,7 @@ class SettingsViewModel @Inject constructor(
                 voiceRequiresHeadset = settingsRepository.voiceRequiresHeadset,
                 voiceLocalOnly = settingsRepository.voiceLocalOnly,
                 voiceWakePhraseRequired = settingsRepository.voiceWakePhraseRequired,
+                voiceChatResponsesEnabled = settingsRepository.voiceChatResponsesEnabled,
                 proactiveSuggestionsEnabled = settingsRepository.proactiveSuggestionsEnabled,
                 proactiveSuggestionsDailyLimit = settingsRepository.proactiveSuggestionsDailyLimit,
                 proactiveSystemDeliveryEnabled = settingsRepository.proactiveSystemDeliveryEnabled,
@@ -211,6 +213,11 @@ class SettingsViewModel @Inject constructor(
     fun setVoiceWakePhraseRequired(enabled: Boolean) {
         settingsRepository.voiceWakePhraseRequired = enabled
         _uiState.update { it.copy(voiceWakePhraseRequired = enabled) }
+    }
+
+    fun setVoiceChatResponsesEnabled(enabled: Boolean) {
+        settingsRepository.voiceChatResponsesEnabled = enabled
+        _uiState.update { it.copy(voiceChatResponsesEnabled = enabled) }
     }
 
     fun setProactiveSuggestionsEnabled(enabled: Boolean) {

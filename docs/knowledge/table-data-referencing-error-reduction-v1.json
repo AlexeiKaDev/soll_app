@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "contract_id": "soll-table-data-referencing-error-reduction-v1",
+  "task_id": "798292d19f554cc6b64f0ecc2c9eaeb4",
+  "source_ref": "source-item/9011e13c06d6/43bc9d100c528d57",
+  "source_version": "arxiv:2606.32029v1",
+  "assignment": {
+    "status": "assigned_analysis_completed",
+    "analyst_role": "Soll Table Reliability Analyst",
+    "target_runtime_owner": "Soll Server/AI Pipeline",
+    "android_role": "display_reviewable_server_result_only"
+  },
+  "scope": {
+    "mode": "offline_proposal_only",
+    "current_runtime_state": "no_table_processing_pipeline_in_soll_app",
+    "target_runtime": "future_server_side_table_processing_adapter",
+    "executes_models": false,
+    "uses_network_or_credentials": false,
+    "imports_upstream_code_or_data": false,
+    "mutates_production": false
+  },
+  "dre_types": [
+    "incorrect_citation",
+    "omitted_information"
+  ],
+  "paper_metrics": [
+    "dre_rate",
+    "correct_in_dre_ratio",
+    "dre_in_incorrect_ratio"
+  ],
+  "pipeline_stages": [
+    {
+      "id": "normalize",
+      "required_outputs": [
+        "table_snapshot_digest",
+        "stable_row_ids",
+        "stable_column_ids",
+        "raw_cell_values",
+        "source_format"
+      ]
+    },
+    {
+      "id": "generate",
+      "required_outputs": [
+        "question",
+        "table_snapshot_digest",
+        "model_identity",
+        "sampling_config",
+        "public_answer_or_evidence_segment"
+      ]
+    },
+    {
+      "id": "deterministic_checks",
+      "required_outputs": [
+        "cited_cell_match_result",
+        "required_subset_completeness_result"
+      ]
+    },
+    {
+      "id": "critic",
+      "required_outputs": [
+        "incorrect_citation",
+        "omitted_information",
+        "evidence",
+        "confidence"
+      ]
+    },
+    {
+      "id": "policy",
+      "required_outputs": [
+        "mode",
+        "decision",
+        "attempt_count",
+        "candidate_count",
+        "latency_ms",
+        "token_count"
+      ]
+    }
+  ],
+  "policy_modes": {
+    "audit": "measure_only_do_not_change_answer",
+    "filtering": "retain_all_candidates_with_minimum_dre_count",
+    "rejection": "retry_public_segment_until_clean_or_bounded_limit"
+  },
+  "fail_closed_states": [
+    "needs_human_review",
+    "abstain"
+  ],
+  "evaluation_metrics": [
+    "dre_rate",
+    "incorrect_citation_rate",
+    "omitted_information_rate",
+    "correct_in_dre_ratio",
+    "dre_in_incorrect_ratio",
+    "final_answer_accuracy",
+    "critic_precision",
+    "critic_recall",
+    "critic_f1",
+    "critic_false_negative_rate",
+    "accepted_answer_dre_rate",
+    "p95_latency_ms"
+  ],
+  "cost_metrics": [
+    "candidate_count",
+    "retry_count",
+    "input_tokens",
+    "output_tokens",
+    "cost_per_accepted_answer"
+  ],
+  "promotion_gates": [
+    "named_server_ai_pipeline_owner",
+    "versioned_non_sensitive_table_workload",
+    "human_reviewed_labels_cover_both_dre_types",
+    "domain_specific_precision_recall_f1_and_false_negative_rate",
+    "before_after_dre_and_final_accuracy_report",
+    "full_set_and_dre_challenging_subset_reported_separately",
+    "bounded_latency_token_candidate_and_retry_budget",
+    "clean_answer_no_regression_and_abstention_test",
+    "synthetic_only_data_not_accepted_as_ood_proof",
+    "rollback_without_android_contract_change"
+  ],
+  "synthetic_smoke": {
+    "outcomes": [
+      {
+        "id": "correct_clean",
+        "final_correct": true,
+        "dre_types": []
+      },
+      {
+        "id": "correct_with_incorrect_citation",
+        "final_correct": true,
+        "dre_types": ["incorrect_citation"]
+      },
+      {
+        "id": "incorrect_with_omission",
+        "final_correct": false,
+        "dre_types": ["omitted_information"]
+      },
+      {
+        "id": "incorrect_clean_reference_but_reasoning_wrong",
+        "final_correct": false,
+        "dre_types": []
+      }
+    ],
+    "expected_metrics": {
+      "dre_rate": 0.5,
+      "incorrect_citation_rate": 0.25,
+      "omitted_information_rate": 0.25,
+      "correct_in_dre_ratio": 0.5,
+      "dre_in_incorrect_ratio": 0.5,
+      "final_answer_accuracy": 0.5
+    },
+    "filtering_candidates": [
+      {
+        "id": "candidate_a_correct_clean",
+        "final_correct": true,
+        "dre_count": 0
+      },
+      {
+        "id": "candidate_b_correct_with_dre",
+        "final_correct": true,
+        "dre_count": 1
+      },
+      {
+        "id": "candidate_c_incorrect_clean",
+        "final_correct": false,
+        "dre_count": 0
+      },
+      {
+        "id": "candidate_d_incorrect_with_two_dre",
+        "final_correct": false,
+        "dre_count": 2
+      }
+    ],
+    "expected_minimum_dre_subset": [
+      "candidate_a_correct_clean",
+      "candidate_c_incorrect_clean"
+    ],
+    "rejection_traces": [
+      {
+        "id": "clean_first_try",
+        "critic_dre_by_attempt": [false],
+        "max_attempts": 2,
+        "expected_decision": "accepted",
+        "expected_attempt_count": 1
+      },
+      {
+        "id": "corrected_second_try",
+        "critic_dre_by_attempt": [true, false],
+        "max_attempts": 2,
+        "expected_decision": "accepted",
+        "expected_attempt_count": 2
+      },
+      {
+        "id": "retry_limit_reached",
+        "critic_dre_by_attempt": [true, true],
+        "max_attempts": 2,
+        "expected_decision": "needs_human_review",
+        "expected_attempt_count": 2
+      }
+    ]
+  }
+}

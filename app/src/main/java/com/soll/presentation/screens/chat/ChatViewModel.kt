@@ -503,6 +503,7 @@ class ChatViewModel @Inject constructor(
         messages.asSequence()
             .filterNot { it.isFromUser }
             .filter { it.id > afterId && it.id > lastSpokenMessageId }
+            .filter { it.requestsVoicePlayback() }
             .maxByOrNull { it.id }
             ?.let(::speakMessage)
     }
@@ -611,6 +612,20 @@ internal fun assistantSpeechText(content: String, maxChars: Int = 1_200): String
     val prefix = clean.take(maxChars)
     return prefix.substringBeforeLast(' ', prefix).trimEnd() + "."
 }
+
+internal fun SollChatMessage.requestsVoicePlayback(): Boolean {
+    val direct = metadata["send_voice"]
+    val nested = (metadata["extra"] as? Map<*, *>)?.get("send_voice")
+    return direct.asBooleanFlag() || nested.asBooleanFlag()
+}
+
+private fun Any?.asBooleanFlag(): Boolean =
+    when (this) {
+        is Boolean -> this
+        is Number -> toInt() != 0
+        is String -> trim().lowercase() in setOf("1", "true", "yes", "on")
+        else -> false
+    }
 
 fun SollChatMessage.actionUis(): List<ChatActionUi> =
     buildList {

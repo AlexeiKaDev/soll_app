@@ -65,6 +65,20 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `voice playback is opt in through direct or nested delivery metadata`() {
+        val direct = chatMessage("Critical alert", metadata = mapOf("send_voice" to true))
+        val nested = chatMessage(
+            "Digest",
+            metadata = mapOf("extra" to mapOf("send_voice" to "true")),
+        )
+        val regular = chatMessage("Routine update")
+
+        assertTrue(direct.requestsVoicePlayback())
+        assertTrue(nested.requestsVoicePlayback())
+        assertFalse(regular.requestsVoicePlayback())
+    }
+
+    @Test
     fun `visible chat messages reuse source list when search is blank`() {
         val messages = listOf(
             chatMessage("Первое", id = 10),

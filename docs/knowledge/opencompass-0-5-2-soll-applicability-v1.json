@@ -1,0 +1,187 @@
+{
+  "audit_id": "opencompass-0-5-2-soll-applicability-v1",
+  "task_id": "e482e15e7a274545991652cde9707e44",
+  "project": "fdf52463-9152-453a-b186-68e7d76c3edb",
+  "source_ref": "insight/6cd00d7bc573",
+  "source_trust": "untrusted_external_content",
+  "release": {
+    "version": "0.5.2",
+    "commit": "974179240a1a4e3c0ff14c60621cf1f6c95b287a",
+    "release_url": "https://github.com/open-compass/opencompass/releases/tag/0.5.2",
+    "monitored_source_path": "monitored/opencompass-releases/20260710-000042-0-5-2-824ab587.md",
+    "monitored_source_vendored": false,
+    "current_upstream_release_observed": "0.5.3"
+  },
+  "integration_boundary": {
+    "decision": "shortlist_server_offline_eval_only",
+    "target": "isolated_desktop_or_server_eval_harness",
+    "android_runtime_dependency": false,
+    "android_public_contract_change": false,
+    "production_write": false,
+    "external_model_run_completed": false,
+    "current_soll_seams": [
+      "POST /api/v1/chat/turn",
+      "GET /api/v1/android/sync-status",
+      "AssistantMemory",
+      "docs/knowledge/soll-source-monitoring-kb-eval-v1.json"
+    ]
+  },
+  "benchmarks": [
+    {
+      "name": "HMMT2025",
+      "release_group": "competition_math",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_named_competition_math_workload_or_gold_set"
+    },
+    {
+      "name": "AMO-Bench",
+      "release_group": "competition_math",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_named_competition_math_workload_or_gold_set"
+    },
+    {
+      "name": "IMO-Bench",
+      "release_group": "competition_math",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_named_competition_math_workload_or_gold_set"
+    },
+    {
+      "name": "ATLAS",
+      "release_group": "multidisciplinary_science",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_scientific_reasoning_product_sla_or_expert_gold_set"
+    },
+    {
+      "name": "OpenSWI",
+      "release_group": "geophysics_inversion",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "not_an_llm_assistant_workload_and_no_geophysical_pipeline"
+    },
+    {
+      "name": "CMPhysBench",
+      "release_group": "condensed_matter_physics",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_condensed_matter_workload_or_expert_gold_set"
+    },
+    {
+      "name": "Biology Instructions",
+      "release_group": "multi_omics_biology",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_bioinformatics_workload_or_validated_sequence_data"
+    },
+    {
+      "name": "Mol Instructions",
+      "release_group": "molecular_science",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_molecular_science_workload_or_expert_gold_set"
+    },
+    {
+      "name": "SciReasoner",
+      "release_group": "scientific_reasoning",
+      "classification": "no_current_soll_scenario",
+      "decision": "defer",
+      "reason": "no_scientific_reasoning_product_sla_or_expert_gold_set"
+    },
+    {
+      "name": "ARC_AGI_2",
+      "release_group": "abstract_reasoning",
+      "classification": "conditional_model_selection_signal",
+      "decision": "defer_until_binding_reasoning_failure",
+      "reason": "general_reasoning_score_has_no_current_soll_task_level_acceptance_mapping"
+    },
+    {
+      "name": "IFBench",
+      "release_group": "instruction_following",
+      "classification": "pilot_shortlist",
+      "decision": "adapt_synthetic_subset",
+      "soll_scenario": "chat_task_intake_and_structured_output_constraints",
+      "pilot_metric": "constraint_pass_rate",
+      "pilot_target": 1.0
+    },
+    {
+      "name": "PI-LLM",
+      "release_group": "working_memory_interference",
+      "classification": "pilot_shortlist",
+      "decision": "adapt_synthetic_subset",
+      "soll_scenario": "latest_task_source_and_preference_value_retrieval_after_updates",
+      "pilot_metric": "latest_value_exact_match",
+      "pilot_target": 1.0
+    },
+    {
+      "name": "ProcessBench",
+      "release_group": "math_reasoning_process_critique",
+      "classification": "conditional_model_selection_signal",
+      "decision": "defer_until_math_critic_workload",
+      "reason": "annotated_math_step_errors_do_not_validate_general_soll_agent_trajectories"
+    },
+    {
+      "name": "LCB_pro",
+      "release_group": "code_generation",
+      "classification": "pilot_shortlist",
+      "decision": "adapt_non_sensitive_subset",
+      "soll_scenario": "isolated_implementation_worker_model_selection",
+      "pilot_metric": "pass_at_1",
+      "pilot_target": 1.0
+    }
+  ],
+  "cross_cutting_metrics": [
+    {
+      "name": "output_length",
+      "server_eval_value": "cost_and_verbosity_guard",
+      "chat_turn_dto_field_present": false
+    },
+    {
+      "name": "logprobs",
+      "server_eval_value": "diagnostic_only_when_provider_exposes_it",
+      "chat_turn_dto_field_present": false
+    },
+    {
+      "name": "finish_reason",
+      "server_eval_value": "truncation_refusal_and_error_audit",
+      "chat_turn_dto_field_present": false
+    }
+  ],
+  "pilot_contract": {
+    "fixture_policy": "synthetic_or_non_sensitive_only",
+    "network_access": "disabled_during_scoring",
+    "persistent_writes": "forbidden",
+    "provider_credentials": "not_read",
+    "minimum_cases_per_shortlisted_direction": 5,
+    "required_metrics": [
+      "task_success_rate",
+      "constraint_pass_rate",
+      "latest_value_exact_match",
+      "stale_value_recall_count",
+      "pass_at_1",
+      "output_length",
+      "finish_reason_distribution",
+      "unsafe_side_effect_count"
+    ],
+    "promotion_gate": {
+      "all_case_safety_assertions_pass": true,
+      "unsafe_side_effect_count": 0,
+      "baseline_comparison_required": true,
+      "manual_review_required": true,
+      "android_contract_change_allowed": false
+    }
+  },
+  "observed_value": {
+    "release_benchmarks_audited": 14,
+    "pilot_shortlist_count": 3,
+    "conditional_count": 2,
+    "no_current_soll_scenario_count": 9,
+    "cross_cutting_metrics_audited": 3,
+    "current_chat_turn_metric_fields": 0,
+    "android_dependencies_added": 0,
+    "external_model_runs": 0,
+    "production_changes": 0
+  }
+}

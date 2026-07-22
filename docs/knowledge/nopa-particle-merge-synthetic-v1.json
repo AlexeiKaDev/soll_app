@@ -1,0 +1,141 @@
+{
+  "experiment_id": "nopa-particle-merge-synthetic-v1",
+  "version": 1,
+  "task_id": "9f64e52d3f9d4380a823d56cf5aff30e",
+  "source_ref": "source-item/9011e13c06d6/cf371816a49777af",
+  "source_version": "arxiv:2607.00529v1",
+  "mode": "offline_deterministic_component_microexperiment",
+  "scope": {
+    "claim": "Tests whether an RBF-MMD particle comparison separates distributions that a first-two-moments proxy treats as equivalent.",
+    "not_claimed": [
+      "NoPA reproduction",
+      "3DSSG or ReplicaSSG benchmark result",
+      "Android latency result",
+      "end-to-end Soll scene-graph value"
+    ],
+    "synthetic_non_sensitive": true,
+    "network_required": false,
+    "production_writes": false
+  },
+  "current_soll_baseline": {
+    "input": "single RGB camera frames through CameraX ImageAnalysis",
+    "analyzer": "ML Kit barcode scanner",
+    "output": "barcode rawValue and format persisted as scan items",
+    "rgb_d_depth_map": false,
+    "world_camera_pose": false,
+    "per_frame_2d_scene_graph": false,
+    "particle_or_point_cloud_representation": false,
+    "global_3d_scene_graph": false,
+    "holdout_association_cases_runnable": 0,
+    "holdout_association_cases_total": 6
+  },
+  "methods": {
+    "moment_proxy": {
+      "description": "Merge when centroid distance and covariance Frobenius distance are both at most 0.1.",
+      "centroid_distance_max": 0.1,
+      "covariance_frobenius_distance_max": 0.1
+    },
+    "particle_mmd": {
+      "description": "Biased empirical RBF-MMD over all pairs; sigma squared is the deterministic median non-zero squared pair distance over the union.",
+      "threshold_calibration": "midpoint between the largest merge score and smallest spawn score on the calibration split",
+      "paper_difference": "The paper samples random pairs for the median heuristic and embeds MMD in a Hellinger margin gate; this fixture isolates only the distribution-comparison component."
+    }
+  },
+  "calibration_cases": [
+    {
+      "id": "cal_same_line_exact",
+      "expected": "merge",
+      "a": [[-2, 0, 0], [-1, 0, 0], [1, 0, 0], [2, 0, 0]],
+      "b": [[2, 0, 0], [1, 0, 0], [-1, 0, 0], [-2, 0, 0]]
+    },
+    {
+      "id": "cal_same_line_jitter",
+      "expected": "merge",
+      "a": [[-2, 0, 0], [-1, 0, 0], [1, 0, 0], [2, 0, 0]],
+      "b": [[-1.95, 0.02, 0], [-1.02, -0.01, 0], [1.03, 0.01, 0], [1.94, -0.02, 0]]
+    },
+    {
+      "id": "cal_same_cross_jitter",
+      "expected": "merge",
+      "a": [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]],
+      "b": [[1.02, 0.01, 0], [-0.98, -0.01, 0], [0.01, 0.97, 0], [-0.01, -1.01, 0]]
+    },
+    {
+      "id": "cal_different_line_density",
+      "expected": "spawn",
+      "a": [[-1, 0, 0], [-1, 0, 0], [-1, 0, 0], [-1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0]],
+      "b": [[-2, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [2, 0, 0]]
+    },
+    {
+      "id": "cal_different_plane_density",
+      "expected": "spawn",
+      "a": [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]],
+      "b": [[1.4142135623730951, 0, 0], [-1.4142135623730951, 0, 0], [0, 1.4142135623730951, 0], [0, -1.4142135623730951, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    },
+    {
+      "id": "cal_different_3d_density",
+      "expected": "spawn",
+      "a": [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]],
+      "b": [[1.4142135623730951, 0, 0], [-1.4142135623730951, 0, 0], [0, 1.4142135623730951, 0], [0, -1.4142135623730951, 0], [0, 0, 1.4142135623730951], [0, 0, -1.4142135623730951], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    }
+  ],
+  "holdout_cases": [
+    {
+      "id": "holdout_same_square_jitter",
+      "expected": "merge",
+      "a": [[1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0]],
+      "b": [[1.02, 0.98, 0], [0.98, -1.01, 0], [-1.01, 1.03, 0], [-0.99, -1, 0]]
+    },
+    {
+      "id": "holdout_same_3d_axes_jitter",
+      "expected": "merge",
+      "a": [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]],
+      "b": [[1.02, 0.01, -0.01], [-0.98, -0.01, 0.01], [0.01, 0.97, 0.02], [-0.01, -1.01, -0.02], [0.01, 0, 1.01], [-0.01, 0, -0.99]]
+    },
+    {
+      "id": "holdout_same_l_shape_jitter",
+      "expected": "merge",
+      "a": [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0], [0, 2, 0]],
+      "b": [[0.01, -0.01, 0], [1.02, 0.01, 0], [1.98, -0.01, 0], [-0.01, 1.02, 0], [0.01, 1.98, 0]]
+    },
+    {
+      "id": "holdout_different_square_density",
+      "expected": "spawn",
+      "a": [[1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0], [1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0]],
+      "b": [[1.4142135623730951, 1.4142135623730951, 0], [1.4142135623730951, -1.4142135623730951, 0], [-1.4142135623730951, 1.4142135623730951, 0], [-1.4142135623730951, -1.4142135623730951, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    },
+    {
+      "id": "holdout_different_cross_rotation",
+      "expected": "spawn",
+      "a": [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]],
+      "b": [[0.7071067811865476, 0.7071067811865476, 0], [0.7071067811865476, -0.7071067811865476, 0], [-0.7071067811865476, 0.7071067811865476, 0], [-0.7071067811865476, -0.7071067811865476, 0]]
+    },
+    {
+      "id": "holdout_different_line_support",
+      "expected": "spawn",
+      "a": [[-1, 0, 0], [-1, 0, 0], [1, 0, 0], [1, 0, 0]],
+      "b": [[-1.4142135623730951, 0, 0], [0, 0, 0], [0, 0, 0], [1.4142135623730951, 0, 0]]
+    }
+  ],
+  "expected_results": {
+    "calibrated_mmd_threshold": 0.02646054724029792,
+    "holdout": [
+      {"id": "holdout_same_square_jitter", "moment_proxy": "merge", "particle_mmd": "merge", "mmd_score": 0.003662376679294118},
+      {"id": "holdout_same_3d_axes_jitter", "moment_proxy": "merge", "particle_mmd": "merge", "mmd_score": 0.00579055489857086},
+      {"id": "holdout_same_l_shape_jitter", "moment_proxy": "merge", "particle_mmd": "merge", "mmd_score": 0.004590642629072735},
+      {"id": "holdout_different_square_density", "moment_proxy": "merge", "particle_mmd": "spawn", "mmd_score": 0.0522411312738496},
+      {"id": "holdout_different_cross_rotation", "moment_proxy": "merge", "particle_mmd": "spawn", "mmd_score": 0.028278560177651737},
+      {"id": "holdout_different_line_support", "moment_proxy": "merge", "particle_mmd": "spawn", "mmd_score": 0.06971196149888535}
+    ],
+    "aggregate": {
+      "calibration_cases": 6,
+      "holdout_cases": 6,
+      "current_soll_runnable": 0,
+      "moment_proxy_correct": 3,
+      "moment_proxy_accuracy": 0.5,
+      "particle_mmd_correct": 6,
+      "particle_mmd_accuracy": 1.0,
+      "unsafe_side_effects": 0
+    }
+  }
+}

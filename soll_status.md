@@ -1,8 +1,14 @@
 # soll_app Status
 
-Last updated: 2026-07-19 Europe/Chisinau
+Last updated: 2026-07-22 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-22 SciIR-82k full-snapshot quality audit (`85529c3c86464d0c9be2d6bb774de4b1`):
+  - Downloaded all `89` files (`24,961,674,409` bytes) from the pinned public revision `51f7e778c690c9f738051bb9141cb80da488fffc` into the ignored audit cache and matched every upstream Git/LFS digest.
+  - Parsed `82,189` captions, `47,709` metadata records and all `83` image shards. All PNG structures and cross-file caption/metadata/segment links are valid, while the release has `3,412` excess exact-copy images, `454` rows without non-empty structured reasoning, `2,967` missing figure captions, `1,175` noncanonical subject rows and `3,637`/`4,934`/`1,633` positional-pair mismatches across its three reasoning dimensions.
+  - Decision: `downloaded_and_audited_adoption_deferred_no_current_soll_workload`. Keep the dataset and any later model/eval on desktop/server; Android retains its existing barcode scanner, source/article cards, attachments and approval surfaces with no production or dependency change.
+  - Measured value: one full pinned receipt, one machine-readable audit, one Soll applicability decision and explicit repair/evaluation gates. Evidence: `Soll/outputs/source-processing/source-item-9011e13c06d6-43cda08a6d8897ca-verification.md`.
 
 - 2026-07-19 llama.cpp b9898 binary release smoke (`fc4ed0d15e83406abd702e47040d3a99`):
   - Pinned official release `b9898` at `3d4cbdf18a72c97648c15e2dc060013c186cd36c`, including the SYCL AOT double-type fix from upstream PR `#25081`.

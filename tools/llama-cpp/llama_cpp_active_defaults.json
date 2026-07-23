@@ -19,6 +19,7 @@
     "standaloneAndroidBinaryUse": "upstream-harness-or-adb-smoke-only",
     "minimumSafeRelease": 9917,
     "minimumChatTemplateFixRelease": 9945,
+    "minimumOutputFileRelease": 9947,
     "requireModelAllowlist": true,
     "modelAllowlist": "tools/llama-cpp/approved_models.json",
     "modelLoadingEntryPoint": "tools/llama-cpp/Invoke-LlamaCppVerifiedModel.ps1"

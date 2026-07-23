@@ -12,8 +12,9 @@ The active release is not packaged into the Android app. Android continues to
 use `soll-backend-route` by default.
 
 GGUF loading is deny-by-default. The allowlist contains one immutable
-`ggml-org/tiny-llamas` fixture for the b9945 chat-template smoke only; it is
-downloaded to the ignored build cache and is never packaged into the app.
+`ggml-org/tiny-llamas` fixture for the focused b9945 chat-template and b9947
+output-file smokes only; it is downloaded to the ignored build cache and is
+never packaged into the app.
 Every entry must pin the exact file name, SHA-256, HTTPS source URL and
 immutable source revision. The general repository-sanctioned model entry point
 is:
@@ -33,4 +34,12 @@ template:
 
 ```powershell
 pwsh -NoProfile -File tools/llama-cpp/Test-LlamaCppB9945ChatTemplate.ps1
+```
+
+The active baseline also includes the b9947 `llama-cli --output` option. Its
+focused smoke saves a harmless one-token transcript to the ignored build cache
+and verifies the file directly, without parsing inference stdout:
+
+```powershell
+pwsh -NoProfile -File tools/llama-cpp/Test-LlamaCppB9947Output.ps1
 ```

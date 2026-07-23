@@ -39,9 +39,9 @@ security-fix `b9917`.
    размер/hash archives, запускает Windows CLI/server `--version` и проверяет
    Android files как ELF64 little-endian AArch64.
 3. `approved_models.json` использует `deny_unlisted`. С 2026-07-23 в нём есть
-   ровно одна test-only запись `ggml-org/tiny-llamas` для b9945
-   chat-template smoke: immutable revision, размер и SHA-256 закреплены, файл
-   скачивается только в ignored build cache и не входит в APK.
+   ровно одна test-only запись `ggml-org/tiny-llamas` для b9945 chat-template
+   и b9947 output-file smoke: immutable revision, размер и SHA-256 закреплены,
+   файл скачивается только в ignored build cache и не входит в APK.
 4. `Test-LlamaCppModelProvenance.ps1` пропускает только `.gguf` с точным
    file name + SHA-256 и требует HTTPS source URL плюс immutable revision.
 5. `Invoke-LlamaCppVerifiedModel.ps1` остаётся общим repository entry point
@@ -64,6 +64,6 @@ attachments или произвольного URL. Hash mismatch должен о
 - `2` release archives закреплены официальными размерами и SHA-256;
 - `1` fail-closed model provenance gate и `1` gated model launcher добавлены;
 - `0` GGUF было найдено при исходном аудите; сейчас одобрена `1` маленькая
-  test-only GGUF-модель для воспроизводимого chat-template smoke;
+  test-only GGUF-модель для воспроизводимых llama-cli smoke;
 - `0` llama.cpp binaries/models добавлено в APK и `0` production runtime routes
   изменено.

@@ -59,7 +59,20 @@ class LlamaCppB9917SecurityBaselineTest {
         }
 
         assertEquals("deny_unlisted", allowlist.getString("policy"))
-        assertEquals(0, allowlist.getJSONArray("models").length())
+        val approvedModels = allowlist.getJSONArray("models")
+        assertEquals(1, approvedModels.length())
+        val smokeModel = approvedModels.getJSONObject(0)
+        assertEquals("stories15M-q8_0.gguf", smokeModel.getString("fileName"))
+        assertEquals(26671328L, smokeModel.getLong("bytes"))
+        assertEquals(
+            "2eda49203f2f044f3dddf29a7dd7cc861ef5a0340f518a19613d73ba6d9c06b6",
+            smokeModel.getString("sha256"),
+        )
+        assertEquals(
+            "def3e2dd70df35ecbf6403ea347de4c5977220c1",
+            smokeModel.getString("revision"),
+        )
+        assertEquals("b9945-chat-template-smoke-only", smokeModel.getString("purpose"))
 
         listOf(
             "minimumSafeRelease",
@@ -85,7 +98,8 @@ class LlamaCppB9917SecurityBaselineTest {
             "GHSA-ppcr-mg43-5hq3",
             "GHSA-4383-xr9f-c744",
             "b9895 до b10068",
-            "`0` файлов `.gguf`",
+            "`0` GGUF было найдено при исходном аудите",
+            "`1` маленькая test-only GGUF-модель",
             "deny_unlisted",
         ).forEach { control -> assertTrue(knowledge.contains(control)) }
         listOf(

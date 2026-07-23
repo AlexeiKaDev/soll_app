@@ -38,20 +38,21 @@ security-fix `b9917`.
 2. `Test-LlamaCppActiveRelease.ps1` запрещает baseline ниже b9917, проверяет
    размер/hash archives, запускает Windows CLI/server `--version` и проверяет
    Android files как ELF64 little-endian AArch64.
-3. `approved_models.json` использует `deny_unlisted` и сейчас содержит `0`
-   моделей. Это соответствует факту: в `D:/AI/Models`, Soll и soll_app найдено
-   `0` файлов `.gguf`.
+3. `approved_models.json` использует `deny_unlisted`. С 2026-07-23 в нём есть
+   ровно одна test-only запись `ggml-org/tiny-llamas` для b9945
+   chat-template smoke: immutable revision, размер и SHA-256 закреплены, файл
+   скачивается только в ignored build cache и не входит в APK.
 4. `Test-LlamaCppModelProvenance.ps1` пропускает только `.gguf` с точным
    file name + SHA-256 и требует HTTPS source URL плюс immutable revision.
-5. `Invoke-LlamaCppVerifiedModel.ps1` является единственным разрешённым
-   repository entry point для model load и запускает только CLI из активного
-   checksummed cache после provenance gate.
+5. `Invoke-LlamaCppVerifiedModel.ps1` остаётся общим repository entry point
+   для model load. Узкий b9945 smoke также вызывает тот же provenance gate
+   перед прямым однотокенным запуском CLI из активного checksummed cache.
 6. Старые b9892/b9895 manifests оставлены как историческое evidence. Они не
    являются разрешённым путём загрузки модели.
 
 ## Добавление модели в будущем
 
-Перед добавлением записи в `approved_models.json` нужны отдельная review-задача
+Перед добавлением следующей записи в `approved_models.json` нужны отдельная review-задача
 и четыре доказательства: доверенный HTTPS source, immutable revision, локально
 пересчитанный SHA-256 и лицензионная/назначенческая применимость. Нельзя
 автоматически одобрять GGUF из Android shared storage, download folders,
@@ -62,6 +63,7 @@ attachments или произвольного URL. Hash mismatch должен о
 - security baseline повышен с b9895 до b10068 (минимум b9917);
 - `2` release archives закреплены официальными размерами и SHA-256;
 - `1` fail-closed model provenance gate и `1` gated model launcher добавлены;
-- `0` GGUF найдено и `0` моделей одобрено;
+- `0` GGUF было найдено при исходном аудите; сейчас одобрена `1` маленькая
+  test-only GGUF-модель для воспроизводимого chat-template smoke;
 - `0` llama.cpp binaries/models добавлено в APK и `0` production runtime routes
   изменено.

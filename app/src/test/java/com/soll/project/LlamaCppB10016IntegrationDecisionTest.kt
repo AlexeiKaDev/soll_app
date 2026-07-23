@@ -76,9 +76,9 @@ class LlamaCppB10016IntegrationDecisionTest {
             !activeDefaults.contains("\"backend\": \"sycl\""),
         )
         assertTrue(
-            "Model provenance gate must remain deny-by-default and empty",
+            "Model provenance gate must stay deny-by-default and scoped to the test fixture",
             approvedModels.contains("\"policy\": \"deny_unlisted\"") &&
-                approvedModels.contains("\"models\": []"),
+                approvedModels.contains("\"purpose\": \"b9945-chat-template-smoke-only\""),
         )
         assertTrue(
             "Android chat must stay behind the Soll backend contract",

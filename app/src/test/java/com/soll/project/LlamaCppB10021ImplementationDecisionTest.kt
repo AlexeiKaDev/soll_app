@@ -71,9 +71,10 @@ class LlamaCppB10021ImplementationDecisionTest {
             assertTrue("Active standalone policy drifted: $control", activeDefaults.contains(control))
         }
         assertTrue(
-            "Model provenance gate must remain deny-by-default and empty",
+            "Model provenance gate must stay deny-by-default and exclude DeepSeek-V4",
             approvedModels.contains("\"policy\": \"deny_unlisted\"") &&
-                approvedModels.contains("\"models\": []"),
+                approvedModels.contains("\"purpose\": \"b9945-chat-template-smoke-only\"") &&
+                !approvedModels.contains("DeepSeek-V4"),
         )
         assertTrue(
             "Android chat must stay behind the Soll backend contract",

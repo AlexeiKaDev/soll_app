@@ -15,9 +15,13 @@ verified_at: 2026-07-22
 The acceptance criterion **Dataset downloaded and preliminary quality analysis
 completed** is met. The complete `MAIR-Lab-HUST/SciIR-82k` repository snapshot
 at revision `51f7e778c690c9f738051bb9141cb80da488fffc` was downloaded to an ignored
-repository-local cache and audited offline. Adoption remains deferred because
-the released annotations need repair and `soll_app` has no current
-scientific-image generation or evaluation workload.
+cache inside the isolated task worktree and audited offline. That worktree was
+removed after integration, so the 24.96 GB snapshot is not currently retained
+locally. The durable receipts below record the completed verification, and the
+retained `tools/source_processing/audit_sciir_dataset.py` tool can reproduce the
+download and audit at the pinned revision. Adoption remains deferred because the
+released annotations need repair and `soll_app` has no current scientific-image
+generation or evaluation workload.
 
 The monitored task path
 `raw/monitored\hugging-face-daily-papers\20260702-190417-sciir-a-large-scale-training-dataset-and-benchma-00b72caa.md`
@@ -36,7 +40,7 @@ authorize a runtime, dependency, integration, credential, or deployment change.
 | Image shards | `83/83` |
 | Caption file | `caption.jsonl`, `321,286,682` bytes |
 | Metadata file | `metadata.json`, `2,760,286,452` bytes |
-| Snapshot cache | `build/source-processing/sciir-82k-51f7e778c690` (ignored) |
+| Snapshot cache | Not currently retained; former task-worktree path `build/source-processing/sciir-82k-51f7e778c690` (ignored) |
 | Machine audit | `docs/knowledge/sciir-82k-quality-audit-v1.json` |
 
 The machine audit carries one receipt per repository file and validates Git

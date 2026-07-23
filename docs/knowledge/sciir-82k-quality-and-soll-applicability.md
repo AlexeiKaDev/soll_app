@@ -18,9 +18,13 @@ the release does not provide an explicit leakage-safe benchmark split, and
 `soll_app` has no current scientific-image generation or evaluation workload.
 
 The measurable Soll value of this source is the reproducible dataset receipt,
-quality baseline, and promotion gate below. Keep the 24.96 GB snapshot in the
-ignored local audit cache. Do not package it in the APK, add model weights or
-training dependencies, or expose generated chain-of-thought text in Android.
+quality baseline, and promotion gate below. The 24.96 GB snapshot was held only
+in the ignored cache of the isolated audit worktree; that worktree was removed
+after integration, so the dataset is not currently retained locally. The
+retained `tools/source_processing/audit_sciir_dataset.py` tool can reproduce the
+download and audit from the pinned revision. Do not package the dataset in the
+APK, add model weights or training dependencies, or expose generated
+chain-of-thought text in Android.
 
 ## Source and download receipt
 
@@ -38,7 +42,7 @@ interpreted.
 | Image payload | `83` uncompressed tar shards, `82,189` PNG members |
 | Caption payload | `caption.jsonl`, `82,189` rows |
 | Metadata payload | `metadata.json`, `47,709` source-image rows and `82,189` segment links |
-| Local cache | `build/source-processing/sciir-82k-51f7e778c690` (ignored, not an application asset) |
+| Local cache | Not currently retained; former task-worktree path `build/source-processing/sciir-82k-51f7e778c690` (ignored, not an application asset) |
 | Machine-readable audit | `docs/knowledge/sciir-82k-quality-audit-v1.json` |
 
 Primary references:

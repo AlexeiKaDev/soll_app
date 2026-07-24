@@ -1,0 +1,123 @@
+{
+  "suite_id": "sao-soll-agent-offline-eval-v1",
+  "version": 1,
+  "task_id": "a0ea55d17b354cdeaf385ab485645435",
+  "source_ref": "source-item/9011e13c06d6/e9091c296290ee7e",
+  "mode": "offline_synthetic_audit_only",
+  "data_policy": {
+    "fixture_class": "synthetic",
+    "contains_personal_data": false,
+    "contains_credentials": false,
+    "production_task_history_access": "forbidden",
+    "model_or_agent_execution": "forbidden",
+    "network_access": "disabled",
+    "external_side_effects": "forbidden",
+    "persistent_writes": "forbidden"
+  },
+  "paper_controls": {
+    "rollouts_per_prompt": 1,
+    "epsilon_low": 0.3,
+    "epsilon_high": 5.0,
+    "strict_open_interval": true,
+    "critic_updates_per_actor": 2,
+    "observation_tokens_in_value_metrics": false,
+    "frozen_attention_is_architecture_specific": true,
+    "scaled_value_pretraining_required": true
+  },
+  "rollouts": [
+    {
+      "prompt_id": "SYN-SOLL-TASK-01",
+      "rollout_id": "SYN-ROLLOUT-01",
+      "task_family": "source_processing",
+      "tokens": [
+        {
+          "kind": "action",
+          "rollout_log_probability": -2.0,
+          "candidate_log_probability": -2.0,
+          "value_prediction": 0.8,
+          "return": 1.0
+        },
+        {
+          "kind": "observation"
+        },
+        {
+          "kind": "action",
+          "rollout_log_probability": -2.0,
+          "candidate_log_probability": -1.3068528194400546,
+          "value_prediction": 0.9,
+          "return": 1.0
+        }
+      ]
+    },
+    {
+      "prompt_id": "SYN-SOLL-TASK-02",
+      "rollout_id": "SYN-ROLLOUT-02",
+      "task_family": "knowledge_audit",
+      "tokens": [
+        {
+          "kind": "action",
+          "rollout_log_probability": -2.0,
+          "candidate_log_probability": -2.5108256237659907,
+          "value_prediction": 0.2,
+          "return": 0.0
+        },
+        {
+          "kind": "observation"
+        },
+        {
+          "kind": "action",
+          "rollout_log_probability": -2.0,
+          "candidate_log_probability": -0.12819766216224658,
+          "value_prediction": 0.3,
+          "return": 0.0
+        }
+      ]
+    },
+    {
+      "prompt_id": "SYN-SOLL-TASK-03",
+      "rollout_id": "SYN-ROLLOUT-03",
+      "task_family": "implementation_review",
+      "tokens": [
+        {
+          "kind": "action",
+          "rollout_log_probability": -2.0,
+          "candidate_log_probability": -0.3905620875658997,
+          "value_prediction": 0.4,
+          "return": 1.0
+        },
+        {
+          "kind": "observation"
+        },
+        {
+          "kind": "action",
+          "rollout_log_probability": -2.0,
+          "candidate_log_probability": -2.2231435513142097,
+          "value_prediction": 0.6,
+          "return": 1.0
+        }
+      ]
+    }
+  ],
+  "expected_summary": {
+    "prompt_count": 3,
+    "rollout_count": 3,
+    "action_token_count": 6,
+    "observation_token_count": 3,
+    "action_to_action_bridge_count": 3,
+    "retained_action_token_count": 4,
+    "masked_action_token_count": 2,
+    "masked_action_token_rate": 0.3333333333333333,
+    "value_mae": 0.3,
+    "value_explained_variance": 0.555
+  },
+  "promotion_gate": {
+    "status": "synthetic_smoke_only",
+    "production_eligible": false,
+    "requires_separately_approved_real_replay": true,
+    "model_training_allowed": false,
+    "model_weight_updates_allowed": false,
+    "automatic_task_mutation_allowed": false,
+    "agent_or_tool_execution_allowed": false,
+    "external_actions_allowed": false
+  }
+}

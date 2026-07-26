@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "tag": "b9916",
+    "commit": "57b50e1f6b50e01eb14c43fc1253602af74c1870",
+    "publishedAt": "2026-07-08T12:21:04Z",
+    "pullRequest": 25390,
+    "downloadBaseUrl": "https://github.com/ggml-org/llama.cpp/releases/download/b9916/"
+  },
+  "policy": {
+    "downloadCache": "build/llama-b9916-deterministic-comparison",
+    "verifySha256": true,
+    "historicalComparisonOnly": true,
+    "notApprovedAsActiveBaseline": true,
+    "packageIntoAndroidApp": false,
+    "androidRuntimeDefault": "soll-backend-route",
+    "approvedModelUse": "b9916-deterministic-inference-smoke"
+  },
+  "target": {
+    "id": "windows-x64-cpu",
+    "os": "windows",
+    "arch": "x64",
+    "backend": "cpu",
+    "inferenceExecutable": "llama-completion.exe",
+    "versionPattern": "version: 9916 \\(57b50e1f6\\)",
+    "package": {
+      "asset": "llama-b9916-bin-win-cpu-x64.zip",
+      "bytes": 17498364,
+      "sha256": "b9421aa043ef9e93d518246e26a2c89aa073237ad9122a8b327792177cae7c8b"
+    }
+  }
+}

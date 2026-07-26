@@ -43,3 +43,16 @@ and verifies the file directly, without parsing inference stdout:
 ```powershell
 pwsh -NoProfile -File tools/llama-cpp/Test-LlamaCppB9947Output.ps1
 ```
+
+For the historical b9916 scalar-tail correctness check, compare the active
+Windows CPU `llama-completion` and b9916 with the same checksummed tiny GGUF,
+fixed prompt, seed, sampler, token budget and single-thread CPU settings:
+
+```powershell
+pwsh -NoProfile -File tools/llama-cpp/Test-LlamaCppB9916DeterministicInference.ps1
+```
+
+The harness requires two identical runs per release and reports whether the
+cross-release output hashes also match. b9916 remains comparison-only because
+it predates the active b9917 GGUF security baseline; it is neither an approved
+pin nor an Android runtime.

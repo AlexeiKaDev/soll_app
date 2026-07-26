@@ -107,6 +107,19 @@ revision. Он должен пройти семь ворот:
 До такого pilot выполняется только repository contract test. Он проверяет
 решение и текущие seams, но не считается RUMBA benchmark run.
 
+## Дедупликация task record
+
+Канонической записью для этой wiki-страницы остаётся задача
+`092df8f4d66143d0a402c29aa74155cc` (`insight/e348746d9311`) со статусом
+`validated`. Она единственная хранит результат анализа и решение
+`conditional offline evaluation candidate`.
+
+Задача `87c44d38824e4d4b8f3678683128a943`
+(`insight/e202a3afd00a`) сопоставлена с тем же project и
+`wiki/rumba-russkoyazychnyy.md`, поэтому закрыта как связанный дубликат. Новая
+копия анализа или отдельное решение о внедрении не создаётся. Активной
+канонической записью остаётся `1` задача.
+
 ## Наблюдаемая ценность
 
 - Добавлено `1` wiki-решение об интеграции RUMBA.
@@ -129,6 +142,14 @@ source_item: habr-sber-company-rumba
 source_trust: untrusted_external_content
 source_processing_result: validated_relevant_offline_eval_blueprint_runtime_integration_deferred
 verification_artifact: Soll/outputs/source-processing/task-092df8f4d66143d0a402c29aa74155cc-rumba-integration-audit.md
+canonical_task_id: 092df8f4d66143d0a402c29aa74155cc
+canonical_task_status: validated
+linked_duplicate_task_id: 87c44d38824e4d4b8f3678683128a943
+linked_duplicate_source_ref: insight/e202a3afd00a
+linked_duplicate_status: closed_linked
+active_task_count: 1
+duplicate_resolution_artifact: Soll/outputs/source-processing/task-87c44d38824e4d4b8f3678683128a943-rumba-task-deduplication-audit.md
+deduplication_value_metric: "2 task IDs matched; 1 canonical active task retained; 1 duplicate linked and closed; 1 shared status, analysis result and integration decision preserved; 2/2 focused contract tests passed; 0 runtime files changed"
 value_metric: "1 wiki integration review added; 3 primary upstream surfaces and 6 current Soll memory seams audited; 4 diagnostic axes and 7 measurable promotion gates defined; 1/1 focused contract test passed; 0 dataset rows imported, 0 benchmark/model runs and 0 production/runtime changes"
 verified_at: 2026-07-26 Europe/Chisinau
 ---

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "policy": "deny_unlisted",
+  "models": [
+    {
+      "fileName": "stories15M-q8_0.gguf",
+      "bytes": 26671328,
+      "sha256": "2eda49203f2f044f3dddf29a7dd7cc861ef5a0340f518a19613d73ba6d9c06b6",
+      "sourceUrl": "https://huggingface.co/ggml-org/tiny-llamas/resolve/def3e2dd70df35ecbf6403ea347de4c5977220c1/stories15M-q8_0.gguf?download=true",
+      "revision": "def3e2dd70df35ecbf6403ea347de4c5977220c1",
+      "purpose": "b9945-chat-template-smoke-only",
+      "approvedUses": [
+        "b9945-chat-template-smoke",
+        "b9947-output-file-smoke"
+      ]
+    }
+  ]
+}

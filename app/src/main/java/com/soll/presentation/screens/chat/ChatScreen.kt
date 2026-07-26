@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -97,6 +98,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.soll.domain.tts.AssistantVoicePlaybackPhase
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.ContextCompat
 import com.soll.R
@@ -306,7 +308,14 @@ fun ChatScreen(
                                 isBusy = uiState.isSending,
                                 busyActionId = uiState.actionInFlightId,
                                 completedActionIds = completedActionIds,
+                                isVoiceLoading = uiState.voiceLoadingMessageId == message.id,
+                                voicePlaybackPhase = if (uiState.voicePlayback.messageId == message.id) {
+                                    uiState.voicePlayback.phase
+                                } else {
+                                    AssistantVoicePlaybackPhase.IDLE
+                                },
                                 onAction = viewModel::executeAction,
+                                onSpeak = viewModel::speakMessage,
                             )
                         }
                     }
@@ -638,7 +647,10 @@ private fun ChatMessageBubble(
     isBusy: Boolean,
     busyActionId: String?,
     completedActionIds: Set<String>,
+    isVoiceLoading: Boolean,
+    voicePlaybackPhase: AssistantVoicePlaybackPhase,
     onAction: (ChatActionUi) -> Unit,
+    onSpeak: (SollChatMessage) -> Unit,
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -700,7 +712,10 @@ private fun ChatMessageBubble(
                         busyActionId = busyActionId,
                         completedActionIds = completedActionIds,
                         foreground = foreground,
+                        isVoiceLoading = isVoiceLoading,
+                        voicePlaybackPhase = voicePlaybackPhase,
                         onAction = onAction,
+                        onSpeak = { onSpeak(message) },
                     )
                 }
             }
@@ -740,14 +755,16 @@ private fun AssistantMessageContent(
     busyActionId: String?,
     completedActionIds: Set<String>,
     foreground: androidx.compose.ui.graphics.Color,
+    isVoiceLoading: Boolean,
+    voicePlaybackPhase: AssistantVoicePlaybackPhase,
     onAction: (ChatActionUi) -> Unit,
+    onSpeak: () -> Unit,
 ) {
     var expanded by remember(message.id) { mutableStateOf(false) }
     val isLong = message.content.length > 700 || message.content.count { it == '\n' } > 10
     messageTitle(message)?.let { title ->
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -758,11 +775,6 @@ private fun AssistantMessageContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = formatChatTimeLabel(message.createdAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = foreground.copy(alpha = 0.56f),
             )
         }
     }
@@ -795,6 +807,44 @@ private fun AssistantMessageContent(
             busyActionId = busyActionId,
             onAction = onAction,
         )
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = formatChatTimeLabel(message.createdAt),
+            style = MaterialTheme.typography.labelSmall,
+            color = foreground.copy(alpha = 0.56f),
+        )
+        IconButton(
+            onClick = onSpeak,
+            modifier = Modifier.size(32.dp),
+        ) {
+            when {
+                isVoiceLoading || voicePlaybackPhase == AssistantVoicePlaybackPhase.PREPARING -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                voicePlaybackPhase == AssistantVoicePlaybackPhase.PLAYING -> {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Остановить голосовой ответ",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                else -> {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Озвучить ответ",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -886,10 +886,28 @@ private fun DailyTodoSourcesMode(
         }
         if (uiState.sourceItems.isNotEmpty()) {
             item(key = "source-items-title") {
-                Text("Материалы источника дел", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Материалы источника дел: ${uiState.sourceItems.size} из ${uiState.sourceItemsTotal}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             items(uiState.sourceItems, key = { it.itemId }) { item ->
                 SourceItemCard(item = item)
+            }
+            if (uiState.sourceItemsHasMore) {
+                item(key = "source-items-more", contentType = "source-items-more") {
+                    Button(
+                        onClick = viewModel::loadMoreSourceItems,
+                        enabled = !uiState.sourceItemsLoadingMore,
+                    ) {
+                        if (uiState.sourceItemsLoadingMore) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text("Загрузить ещё")
+                    }
+                }
             }
         }
     }
@@ -990,8 +1008,8 @@ private fun SourceCard(
                     }
                     PassiveChip(
                         text = when {
-                            selected -> "открыт"
                             !source.enabled -> "выкл"
+                            selected -> "открыт"
                             else -> source.lastResult
                         },
                     )
@@ -1045,9 +1063,29 @@ private fun SourceItemCard(item: SollSourceItem) {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                PassiveChip(text = item.lastStatus)
+                PassiveChip(text = item.actionability)
                 PassiveChip(text = item.usefulness)
+                PassiveChip(text = item.deliveryStatus)
                 item.linkPreview["site_name"]?.toString()?.takeIf { it.isNotBlank() }?.let { PassiveChip(text = it) }
                 item.sourceUrl.takeIf { it.isNotBlank() }?.let { PassiveChip(text = it.take(42)) }
+            }
+            item.visibleReason.takeIf { it.isNotBlank() }?.let { reason ->
+                Text(
+                    reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            item.safeNextStep.takeIf { it.isNotBlank() }?.let { nextStep ->
+                Text(
+                    nextStep,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

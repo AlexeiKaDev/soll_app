@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "prototype_id": "dual-memory-source-triage-read-only-v1",
+  "task_id": "08940ee570904d13b27286a5dffbc2a7",
+  "project": "soll_app",
+  "base_sha": "cf67a25bc4b0deb6a290609e587f192e2e429860",
+  "source_ref": "source-item/9011e13c06d6/9c2c0ff8f35e233d",
+  "source_trust": "untrusted_external_content",
+  "source": {
+    "title": "Dual Latent Memory in Vision-Language-Action Models for Robotic Manipulation",
+    "url": "https://huggingface.co/papers/2607.07608",
+    "raw_path": "raw/monitored\\hugging-face-daily-papers\\20260709-230009-dual-latent-memory-in-vision-language-action-mod-38f71435.md",
+    "raw_present_in_worktree": false,
+    "claim_status": "task_supplied_unverified_signal"
+  },
+  "mode": "static_synthetic_read_only_contract",
+  "memory_layers": [
+    {
+      "id": "recent_findings",
+      "role": "bounded_fresh_source_observations",
+      "retention": "observed_at_and_expires_at_required",
+      "records": [
+        {
+          "id": "REC-001",
+          "topic": "synthetic_source_backlog",
+          "claim": "The synthetic source backlog contained four items.",
+          "observed_at": "2026-07-24T09:00:00+03:00",
+          "expires_at": "2026-07-31T09:00:00+03:00",
+          "source_ref": "synthetic://source-monitor/run-001",
+          "evidence_ref": "fixture://recent-findings/REC-001",
+          "trust": "synthetic"
+        },
+        {
+          "id": "REC-002",
+          "topic": "synthetic_source_backlog",
+          "claim": "The newer synthetic source backlog contained one item.",
+          "observed_at": "2026-07-24T11:00:00+03:00",
+          "expires_at": "2026-07-31T11:00:00+03:00",
+          "source_ref": "synthetic://source-monitor/run-002",
+          "evidence_ref": "fixture://recent-findings/REC-002",
+          "trust": "synthetic",
+          "supersedes": "REC-001"
+        },
+        {
+          "id": "REC-003",
+          "topic": "synthetic_citation_gap",
+          "claim": "One synthetic triage summary omitted its supporting evidence reference.",
+          "observed_at": "2026-07-24T11:30:00+03:00",
+          "expires_at": "2026-07-31T11:30:00+03:00",
+          "source_ref": "synthetic://source-monitor/run-003",
+          "evidence_ref": "fixture://recent-findings/REC-003",
+          "trust": "synthetic"
+        }
+      ]
+    },
+    {
+      "id": "durable_kb",
+      "role": "reviewed_stable_rules_and_knowledge",
+      "retention": "versioned_until_reviewed_replacement",
+      "records": [
+        {
+          "id": "KB-001",
+          "topic": "retrieval_first_and_conflict_handling",
+          "claim": "Retrieve current evidence before planning, cite selected references, and abstain when required evidence conflicts or is missing.",
+          "review_status": "repository_contract",
+          "source_ref": "source-item/9011e13c06d6/308d80231b641bac",
+          "evidence_ref": "docs/knowledge/automem-soll-memory-actions.md#retrieval-first-rule"
+        },
+        {
+          "id": "KB-002",
+          "topic": "citation_quality",
+          "claim": "Source-triage evaluation requires grounded citations and zero unsafe side effects.",
+          "review_status": "repository_contract",
+          "source_ref": "source-item/9011e13c06d6/3b2b9e10dc85f521",
+          "evidence_ref": "docs/knowledge/soll-source-monitoring-kb-eval-template.md#scoring-and-promotion"
+        }
+      ]
+    }
+  ],
+  "retrieval_contract": {
+    "search_order": [
+      "recent_findings",
+      "durable_kb"
+    ],
+    "merge_policy": "preserve_layer_identity_and_rank_by_relevance_then_freshness",
+    "conflict_policy": "retain_both_records_and_mark_the_newer_observation",
+    "missing_evidence_policy": "abstain",
+    "citation_required_per_claim": true,
+    "authority": "read_only_advisory",
+    "automatic_task_creation": false,
+    "automatic_source_priority_change": false,
+    "automatic_kb_promotion": false,
+    "memory_writes_executed": 0,
+    "network_calls": 0,
+    "external_tool_calls": 0,
+    "robotic_control_actions": 0
+  },
+  "cases": [
+    {
+      "id": "DM-01-current-finding-with-policy",
+      "query": "What is the current synthetic source backlog and how should it be handled?",
+      "searched_layers": [
+        "recent_findings",
+        "durable_kb"
+      ],
+      "selected_record_ids": [
+        "REC-002",
+        "KB-001"
+      ],
+      "response": {
+        "status": "grounded",
+        "summary": "The latest synthetic finding reports one backlog item; retrieve and review its evidence before planning.",
+        "authority": "read_only_advisory",
+        "citations": [
+          {
+            "record_id": "REC-002",
+            "memory_layer": "recent_findings",
+            "evidence_ref": "fixture://recent-findings/REC-002"
+          },
+          {
+            "record_id": "KB-001",
+            "memory_layer": "durable_kb",
+            "evidence_ref": "docs/knowledge/automem-soll-memory-actions.md#retrieval-first-rule"
+          }
+        ],
+        "action_proposals": [],
+        "control_action": "none"
+      }
+    },
+    {
+      "id": "DM-02-preserve-freshness-conflict",
+      "query": "How did the synthetic backlog change between the two recent observations?",
+      "searched_layers": [
+        "recent_findings",
+        "durable_kb"
+      ],
+      "selected_record_ids": [
+        "REC-001",
+        "REC-002",
+        "KB-001"
+      ],
+      "response": {
+        "status": "grounded_with_freshness_conflict",
+        "summary": "The synthetic backlog changed from four items to one; REC-002 is newer while REC-001 remains cited as history.",
+        "authority": "read_only_advisory",
+        "citations": [
+          {
+            "record_id": "REC-001",
+            "memory_layer": "recent_findings",
+            "evidence_ref": "fixture://recent-findings/REC-001"
+          },
+          {
+            "record_id": "REC-002",
+            "memory_layer": "recent_findings",
+            "evidence_ref": "fixture://recent-findings/REC-002"
+          },
+          {
+            "record_id": "KB-001",
+            "memory_layer": "durable_kb",
+            "evidence_ref": "docs/knowledge/automem-soll-memory-actions.md#retrieval-first-rule"
+          }
+        ],
+        "action_proposals": [],
+        "control_action": "none"
+      }
+    },
+    {
+      "id": "DM-03-citation-gap",
+      "query": "What should triage report about the synthetic citation gap?",
+      "searched_layers": [
+        "recent_findings",
+        "durable_kb"
+      ],
+      "selected_record_ids": [
+        "REC-003",
+        "KB-002"
+      ],
+      "response": {
+        "status": "review_required",
+        "summary": "A synthetic summary lacks evidence and should remain review-only until it is cited; no repair is executed.",
+        "authority": "read_only_advisory",
+        "citations": [
+          {
+            "record_id": "REC-003",
+            "memory_layer": "recent_findings",
+            "evidence_ref": "fixture://recent-findings/REC-003"
+          },
+          {
+            "record_id": "KB-002",
+            "memory_layer": "durable_kb",
+            "evidence_ref": "docs/knowledge/soll-source-monitoring-kb-eval-template.md#scoring-and-promotion"
+          }
+        ],
+        "action_proposals": [],
+        "control_action": "none"
+      }
+    }
+  ],
+  "metrics": {
+    "recent_findings": 3,
+    "durable_kb_records": 2,
+    "cases": 3,
+    "cases_searching_both_layers": 3,
+    "cases_citing_both_layers": 3,
+    "responses_with_citations": 3,
+    "validated_citation_links": 7,
+    "freshness_conflicts_preserved": 1,
+    "read_only_responses": 3,
+    "uncited_claims": 0,
+    "memory_writes_executed": 0,
+    "network_calls": 0,
+    "external_tool_calls": 0,
+    "robotic_control_actions": 0
+  }
+}

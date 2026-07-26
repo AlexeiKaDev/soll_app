@@ -65,6 +65,20 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `voice playback is opt in through direct or nested delivery metadata`() {
+        val direct = chatMessage("Critical alert", metadata = mapOf("send_voice" to true))
+        val nested = chatMessage(
+            "Digest",
+            metadata = mapOf("extra" to mapOf("send_voice" to "true")),
+        )
+        val regular = chatMessage("Routine update")
+
+        assertTrue(direct.requestsVoicePlayback())
+        assertTrue(nested.requestsVoicePlayback())
+        assertFalse(regular.requestsVoicePlayback())
+    }
+
+    @Test
     fun `visible chat messages reuse source list when search is blank`() {
         val messages = listOf(
             chatMessage("Первое", id = 10),
@@ -297,6 +311,17 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `slash path opening is a required chat link contract`() {
+        val slashPathUrl = "https://example.com/api/v1/soll/roadmap"
+
+        assertEquals(
+            listOf(slashPathUrl),
+            extractChatLinks("Открыть $slashPathUrl"),
+        )
+        assertTrue(isOpenableChatUrl(slashPathUrl))
+    }
+
+    @Test
     fun `link preview loader rejects redirect responses`() {
         assertFalse(isPreviewRedirectStatus(200))
         assertFalse(isPreviewRedirectStatus(204))
@@ -364,6 +389,31 @@ class ChatMessageFiltersTest {
 
         assertEquals(listOf("task:task-1:done", "task:task-1:defer"), actions.map { it.id })
         assertEquals(listOf("Готово", "Позже"), actions.map { it.label })
+    }
+
+    @Test
+    fun `chat action parser rejects unknown action types`() {
+        val message = chatMessage(
+            content = "Untrusted action",
+            metadata = mapOf(
+                "actions" to listOf(
+                    mapOf(
+                        "id" to "shell:1",
+                        "type" to "shell.execute",
+                        "label" to "Run",
+                    ),
+                    mapOf(
+                        "id" to "notice:1",
+                        "type" to " NOTICE.ACK ",
+                    ),
+                ),
+            ),
+        )
+
+        val actions = message.actionUis()
+
+        assertEquals(listOf("notice:1"), actions.map { it.id })
+        assertEquals(listOf("notice.ack"), actions.map { it.type })
     }
 
     @Test

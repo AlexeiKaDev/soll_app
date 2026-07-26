@@ -1,0 +1,310 @@
+{
+  "harness_id": "soll-agent-trajectory-ci-v1",
+  "version": 1,
+  "task_id": "9ee7bcc7152c404688d51155fd980765",
+  "source_ref": "source-item/9011e13c06d6/d43b336ae9b8c696",
+  "mode": "ci_only_offline_validation",
+  "execution_policy": {
+    "repository_input": "explicit_manifest_only",
+    "auto_discover_repositories": false,
+    "auto_run_agents": false,
+    "foreign_repository_policy": "reject",
+    "pull_request_from_fork_policy": "reject",
+    "network_access": "disabled",
+    "secret_access": "forbidden",
+    "llm_judge": "disabled",
+    "repository_mutation": "forbidden",
+    "writes": "ci_build_directory_only"
+  },
+  "upstream_metric_inventory": {
+    "general": [
+      "Pitfalls",
+      "Pleasantness",
+      "ToolCalls"
+    ],
+    "workflows": [
+      "EndResult",
+      "InstructionCompliance",
+      "Pitfalls",
+      "Pleasantness",
+      "ToolCalls"
+    ],
+    "tests": [
+      "Pitfalls",
+      "Pleasantness",
+      "RelianceOnMocking",
+      "TestMaintainability",
+      "TestSemanticCoverage",
+      "TestUsefulness",
+      "ToolCalls"
+    ],
+    "formal_verifier_families": [
+      "repository_changes",
+      "file_regex_and_exact_match",
+      "chat_and_tool_regex",
+      "ide_file_errors",
+      "build_system_task",
+      "test_execution_and_coverage"
+    ],
+    "operational_telemetry": [
+      "formal_verification_success_rate",
+      "termination_reason",
+      "agent_price",
+      "agent_time",
+      "agent_input_tokens",
+      "agent_generation_tokens",
+      "agent_prompt_cache_hit_tokens",
+      "gen_tokens_to_seconds_ratio",
+      "tools_calls_total",
+      "tools_calls_per_chat_mean",
+      "tool_calls_in_parallel_mean",
+      "tool_call_success_rates",
+      "runnable_test_classes",
+      "passed_tests_fraction",
+      "coverage"
+    ],
+    "quality_index_components": [
+      "formal_verification_success_rate",
+      "EndResult",
+      "InstructionCompliance",
+      "Pitfalls",
+      "Pleasantness",
+      "ToolCalls"
+    ]
+  },
+  "upstream_dump_contract": {
+    "summary_file_selection": "summary_merged.json_else_largest_summary_json",
+    "summary_root_fields": [
+      "timestamp",
+      "run_info",
+      "projects_results"
+    ],
+    "run_info_fields": [
+      "timestamp",
+      "experiment_name",
+      "dataset_hash",
+      "dataset_config_hash",
+      "plugin_hash",
+      "model_name",
+      "provider_name",
+      "model_url"
+    ],
+    "success_result_fields": [
+      "type",
+      "scenario_name",
+      "simulator_name",
+      "message_path",
+      "errors",
+      "task_description",
+      "formal_verification_result",
+      "termination_reason",
+      "agent_bench_tags",
+      "verifier_results",
+      "agent_trace_prompt",
+      "agent_price",
+      "agent_time",
+      "agent_input_tokens",
+      "agent_generation_tokens",
+      "agent_reasoning_tokens",
+      "agent_prompt_cache_hit_tokens",
+      "agent_tool_calls_num",
+      "agent_messages_per_turn",
+      "agent_interaction_total_time"
+    ],
+    "point_directory_files": [
+      "simulated_user_NNN.json",
+      "agent_chat_dump.json",
+      "tool_calls_dump.json"
+    ],
+    "simulated_user_fields": [
+      "role",
+      "request",
+      "response",
+      "response_price",
+      "response_time"
+    ],
+    "agent_chat_root_fields": [
+      "chatUuid",
+      "agentConfig",
+      "messages"
+    ],
+    "agent_chat_message_types": [
+      "UserMessage",
+      "AgentTurn",
+      "ToolMessage"
+    ],
+    "tool_call_fields": [
+      "name",
+      "arguments",
+      "success",
+      "response_content",
+      "system_reminder"
+    ]
+  },
+  "normalized_dump_contract": {
+    "required_sections": [
+      "schema_version",
+      "trajectory_id",
+      "repository",
+      "task",
+      "events",
+      "requirement_checks",
+      "formal_checks",
+      "outcome",
+      "safety",
+      "redaction"
+    ],
+    "event_kinds": [
+      "assistant_message",
+      "tool_call",
+      "final_message"
+    ],
+    "content_policy": "digest_and_redacted_evidence_only",
+    "raw_reasoning_allowed": false,
+    "raw_tool_output_allowed": false
+  },
+  "deterministic_metrics": [
+    "schema_valid",
+    "requirement_completion_rate",
+    "formal_verification_rate",
+    "tool_success_rate",
+    "recovered_failure_rate",
+    "final_evidence_coverage",
+    "unsafe_effect_count",
+    "qualitative_judge_metrics_scored"
+  ],
+  "promotion_gate": {
+    "schema_valid": 1.0,
+    "requirement_completion_rate_min": 1.0,
+    "formal_verification_rate_min": 1.0,
+    "tool_success_rate_min": 0.5,
+    "recovered_failure_rate_min": 1.0,
+    "final_evidence_coverage_min": 1.0,
+    "unsafe_effect_count_max": 0,
+    "qualitative_judges_required": false
+  },
+  "ci_smoke": {
+    "fixture_class": "embedded_synthetic",
+    "trajectory": {
+      "schema_version": 1,
+      "trajectory_id": "soll-ci-smoke-001",
+      "repository": {
+        "repository_id": "fixture:soll-app",
+        "origin_kind": "embedded_synthetic",
+        "explicitly_authorized": true,
+        "foreign_repository": false
+      },
+      "task": {
+        "task_id": "fixture-task-001",
+        "instruction_digest": "sha256:synthetic-agentlens-soll-smoke",
+        "requirements": [
+          "REQ-LOCAL-READ",
+          "REQ-FOCUSED-TEST"
+        ]
+      },
+      "events": [
+        {
+          "id": "event:001",
+          "sequence": 1,
+          "kind": "assistant_message",
+          "summary": "Bounded plan acknowledged"
+        },
+        {
+          "id": "event:002",
+          "sequence": 2,
+          "kind": "tool_call",
+          "tool_name": "read_local_fixture",
+          "success": true,
+          "external_side_effect": false
+        },
+        {
+          "id": "event:003",
+          "sequence": 3,
+          "kind": "tool_call",
+          "tool_name": "focused_test",
+          "success": false,
+          "external_side_effect": false
+        },
+        {
+          "id": "event:004",
+          "sequence": 4,
+          "kind": "assistant_message",
+          "summary": "Failure diagnosed and bounded retry selected"
+        },
+        {
+          "id": "event:005",
+          "sequence": 5,
+          "kind": "tool_call",
+          "tool_name": "focused_test",
+          "success": true,
+          "recovery_of": "event:003",
+          "external_side_effect": false
+        },
+        {
+          "id": "event:006",
+          "sequence": 6,
+          "kind": "final_message",
+          "summary": "Result, files, and focused evidence reported"
+        }
+      ],
+      "requirement_checks": [
+        {
+          "id": "check:req-local-read",
+          "requirement_id": "REQ-LOCAL-READ",
+          "passed": true,
+          "evidence_refs": [
+            "event:002"
+          ]
+        },
+        {
+          "id": "check:req-focused-test",
+          "requirement_id": "REQ-FOCUSED-TEST",
+          "passed": true,
+          "evidence_refs": [
+            "event:005"
+          ]
+        }
+      ],
+      "formal_checks": [
+        {
+          "id": "check:formal-test",
+          "kind": "focused_test",
+          "passed": true,
+          "evidence_refs": [
+            "event:005"
+          ]
+        }
+      ],
+      "outcome": {
+        "status": "completed",
+        "evidence_refs": [
+          "check:req-local-read",
+          "check:req-focused-test",
+          "check:formal-test"
+        ]
+      },
+      "safety": {
+        "network_call_count": 0,
+        "secret_read_count": 0,
+        "external_write_count": 0,
+        "repository_mutation_count": 0,
+        "auto_repository_action_count": 0
+      },
+      "redaction": {
+        "raw_reasoning_included": false,
+        "raw_tool_output_included": false,
+        "content_policy": "digest_and_redacted_evidence_only"
+      }
+    },
+    "expected_metrics": {
+      "schema_valid": 1.0,
+      "requirement_completion_rate": 1.0,
+      "formal_verification_rate": 1.0,
+      "tool_success_rate": 0.6666666666666666,
+      "recovered_failure_rate": 1.0,
+      "final_evidence_coverage": 1.0,
+      "unsafe_effect_count": 0,
+      "qualitative_judge_metrics_scored": 0
+    }
+  }
+}

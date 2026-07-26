@@ -4,8 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.voice.AndroidSpeechRecognizerAdapter
+import com.soll.domain.assistant.CapabilityRegistry
+import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.tts.AssistantVoicePlaybackPhase
+import com.soll.domain.tts.AssistantVoicePlaybackState
+import com.soll.domain.tts.AssistantVoicePlayer
+import com.soll.domain.tts.TextToSpeechManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,6 +39,8 @@ data class ChatUiState(
     val isVoiceListening: Boolean = false,
     val voicePartialText: String = "",
     val voiceError: String? = null,
+    val voiceLoadingMessageId: Long? = null,
+    val voicePlayback: AssistantVoicePlaybackState = AssistantVoicePlaybackState(),
     val error: String? = null,
     val actionFeedback: String? = null,
     val actionInFlightId: String? = null,
@@ -61,13 +70,23 @@ class ChatViewModel @Inject constructor(
     private val sollGateway: SollGateway,
     private val sttAdapter: AndroidSpeechRecognizerAdapter,
     private val settingsRepository: SettingsRepository,
+    private val capabilityRegistry: CapabilityRegistry,
+    private val ttsManager: TextToSpeechManager,
+    private val assistantVoicePlayer: AssistantVoicePlayer,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private var refreshInFlight = false
+    private var lastSpokenMessageId = 0L
+    private var voiceRequestJob: Job? = null
+    private var voiceRequestGeneration = 0L
+    private var voiceFallbackMessageId: Long? = null
+    private var voiceFallbackText = ""
+    private var voiceFallbackHandled = false
 
     init {
         observeVoiceInput()
+        observeVoicePlayback()
         refresh()
         observeServerUpdates()
     }
@@ -183,6 +202,7 @@ class ChatViewModel @Inject constructor(
                         scrollToBottomReason = scrollReason,
                     )
                 }
+                speakLatestAssistantMessage(messages = displayable, afterId = afterId)
             } finally {
                 refreshInFlight = false
             }
@@ -250,6 +270,9 @@ class ChatViewModel @Inject constructor(
                             scrollToBottomReason = ChatScrollReason.USER_SEND,
                         )
                     }
+                    if (assistant != null && settingsRepository.voiceChatResponsesEnabled) {
+                        speakMessage(assistant)
+                    }
                     refresh(showLoading = false, afterIdOverride = previousLastId)
                 },
                 onFailure = { error ->
@@ -289,6 +312,53 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(voiceError = null) }
     }
 
+    fun speakMessage(message: SollChatMessage) {
+        if (message.isFromUser) return
+        val spoken = assistantSpeechText(message.content)
+        if (spoken.isBlank()) return
+        val current = _uiState.value
+        val playbackIsActive = current.voicePlayback.messageId == message.id &&
+            current.voicePlayback.phase in setOf(
+                AssistantVoicePlaybackPhase.PREPARING,
+                AssistantVoicePlaybackPhase.PLAYING,
+            )
+        if (current.voiceLoadingMessageId == message.id || playbackIsActive) {
+            stopVoiceOutput()
+            return
+        }
+        lastSpokenMessageId = maxOf(lastSpokenMessageId, message.id)
+        stopVoiceOutput()
+        val generation = ++voiceRequestGeneration
+        voiceFallbackMessageId = message.id
+        voiceFallbackText = spoken
+        voiceFallbackHandled = false
+        _uiState.update { it.copy(voiceLoadingMessageId = message.id) }
+        voiceRequestJob = viewModelScope.launch {
+            val audioResult = sollGateway.synthesizeVoice(spoken)
+            if (generation != voiceRequestGeneration) return@launch
+            _uiState.update { it.copy(voiceLoadingMessageId = null) }
+            val audio = audioResult.getOrElse {
+                fallbackToSystemVoice(message.id, spoken)
+                return@launch
+            }
+            if (!assistantVoicePlayer.play(message.id, audio)) {
+                fallbackToSystemVoice(message.id, spoken)
+            }
+        }
+    }
+
+    private fun stopVoiceOutput() {
+        voiceRequestGeneration += 1
+        voiceRequestJob?.cancel()
+        voiceRequestJob = null
+        voiceFallbackMessageId = null
+        voiceFallbackText = ""
+        voiceFallbackHandled = false
+        assistantVoicePlayer.stop()
+        ttsManager.stop()
+        _uiState.update { it.copy(voiceLoadingMessageId = null) }
+    }
+
     fun onScrollRequestHandled(token: Int) {
         _uiState.update {
             if (it.scrollToBottomToken == token) {
@@ -300,6 +370,22 @@ class ChatViewModel @Inject constructor(
     }
 
     fun executeAction(action: ChatActionUi) {
+        val policy = SollChatActionPolicyRegistry.resolve(action.type)
+        val capabilityDecision = policy?.let { capabilityRegistry.checkCommand(it.capabilityId) }
+        if (policy == null || capabilityDecision?.allowed != true) {
+            val reason = capabilityDecision?.message
+                ?.takeIf { it.isNotBlank() }
+                ?: "Действие не разрешено локальной политикой Android."
+            _uiState.update {
+                it.copy(
+                    isSending = false,
+                    actionFeedback = "Действие заблокировано",
+                    actionInFlightId = null,
+                    error = reason,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -311,7 +397,7 @@ class ChatViewModel @Inject constructor(
             }
             sollGateway.executeChatAction(
                 actionId = action.id,
-                action = action.type,
+                action = policy.type,
                 taskId = action.taskId,
                 sessionId = _uiState.value.sessionId,
             ).fold(
@@ -382,8 +468,54 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun observeVoicePlayback() {
+        viewModelScope.launch {
+            assistantVoicePlayer.state.collect { playback ->
+                _uiState.update { it.copy(voicePlayback = playback) }
+                when (playback.phase) {
+                    AssistantVoicePlaybackPhase.ERROR -> {
+                        val messageId = playback.messageId
+                        if (messageId != null && messageId == voiceFallbackMessageId) {
+                            fallbackToSystemVoice(messageId, voiceFallbackText)
+                        }
+                    }
+                    AssistantVoicePlaybackPhase.IDLE -> {
+                        if (_uiState.value.voiceLoadingMessageId == null) {
+                            voiceFallbackMessageId = null
+                            voiceFallbackText = ""
+                            voiceFallbackHandled = false
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun fallbackToSystemVoice(messageId: Long, text: String) {
+        if (voiceFallbackHandled || voiceFallbackMessageId != messageId || text.isBlank()) return
+        voiceFallbackHandled = true
+        ttsManager.speakAssistantResponse(text)
+    }
+
+    private fun speakLatestAssistantMessage(messages: List<SollChatMessage>, afterId: Long?) {
+        if (!settingsRepository.voiceChatResponsesEnabled || afterId == null) return
+        messages.asSequence()
+            .filterNot { it.isFromUser }
+            .filter { it.id > afterId && it.id > lastSpokenMessageId }
+            .filter { it.requestsVoicePlayback() }
+            .maxByOrNull { it.id }
+            ?.let(::speakMessage)
+    }
+
     override fun onCleared() {
+        voiceRequestGeneration += 1
+        voiceRequestJob?.cancel()
+        voiceFallbackMessageId = null
+        voiceFallbackText = ""
+        assistantVoicePlayer.stop()
         sttAdapter.destroy()
+        ttsManager.stop()
         super.onCleared()
     }
 }
@@ -467,6 +599,34 @@ internal fun appendDictatedChatText(current: String, recognized: String): String
     return if (base.isBlank()) clean else "$base $clean"
 }
 
+internal fun assistantSpeechText(content: String, maxChars: Int = 1_200): String {
+    val clean = content
+        .replace(Regex("```[\\s\\S]*?```"), " ")
+        .replace(Regex("!\\[[^]]*]\\([^)]+\\)"), " ")
+        .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1")
+        .replace(Regex("[`#>*_~-]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .replace(Regex("\\s+([,.!?;:])"), "$1")
+        .trim()
+    if (clean.length <= maxChars) return clean
+    val prefix = clean.take(maxChars)
+    return prefix.substringBeforeLast(' ', prefix).trimEnd() + "."
+}
+
+internal fun SollChatMessage.requestsVoicePlayback(): Boolean {
+    val direct = metadata["send_voice"]
+    val nested = (metadata["extra"] as? Map<*, *>)?.get("send_voice")
+    return direct.asBooleanFlag() || nested.asBooleanFlag()
+}
+
+private fun Any?.asBooleanFlag(): Boolean =
+    when (this) {
+        is Boolean -> this
+        is Number -> toInt() != 0
+        is String -> trim().lowercase() in setOf("1", "true", "yes", "on")
+        else -> false
+    }
+
 fun SollChatMessage.actionUis(): List<ChatActionUi> =
     buildList {
         metadata["action"].asActionMapOrNull()?.let(::add)
@@ -496,10 +656,10 @@ private fun Any?.asActionMaps(): List<Map<*, *>> =
 private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
     val action = this
     if (action.isCompletedActionMap()) return null
-    val type = action["type"]?.toString().orEmpty().ifBlank {
+    val rawType = action["type"]?.toString().orEmpty().ifBlank {
         action["action"]?.toString().orEmpty()
     }
-    if (type.isBlank()) return null
+    val type = SollChatActionPolicyRegistry.resolve(rawType)?.type ?: return null
     val taskId = action["task_id"]?.toString()?.takeIf { it.isNotBlank() }
     val approvalId = action["approval_id"]?.toString()?.takeIf { it.isNotBlank() }
     val id = action["id"]?.toString()?.takeIf { it.isNotBlank() }

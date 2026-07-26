@@ -88,6 +88,7 @@ class SettingsRepository @Inject constructor(
         private const val KEY_VOICE_REQUIRES_HEADSET = "voice_requires_headset"
         private const val KEY_VOICE_LOCAL_ONLY = "voice_local_only"
         private const val KEY_VOICE_WAKE_PHRASE_REQUIRED = "voice_wake_phrase_required"
+        private const val KEY_VOICE_CHAT_RESPONSES_ENABLED = "voice_chat_responses_enabled"
         private const val KEY_MUSIC_RESUME_LAST_TRACK = "music_resume_last_track"
         private const val KEY_MUSIC_PAUSE_FOR_TTS = "music_pause_for_tts"
         private const val KEY_MUSIC_STOP_TTS_ON_START = "music_stop_tts_on_start"
@@ -513,6 +514,12 @@ class SettingsRepository @Inject constructor(
         get() = sharedPreferences.getBoolean(KEY_VOICE_WAKE_PHRASE_REQUIRED, false)
         set(value) = sharedPreferences.edit()
             .putBoolean(KEY_VOICE_WAKE_PHRASE_REQUIRED, value)
+            .apply()
+
+    var voiceChatResponsesEnabled: Boolean
+        get() = sharedPreferences.getBoolean(KEY_VOICE_CHAT_RESPONSES_ENABLED, false)
+        set(value) = sharedPreferences.edit()
+            .putBoolean(KEY_VOICE_CHAT_RESPONSES_ENABLED, value)
             .apply()
 
     var musicResumeLastTrack: Boolean

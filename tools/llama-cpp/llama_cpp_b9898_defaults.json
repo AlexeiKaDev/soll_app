@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "tag": "b9898",
+    "commit": "3d4cbdf18a72c97648c15e2dc060013c186cd36c",
+    "publishedAt": "2026-07-07T14:18:45Z",
+    "downloadBaseUrl": "https://github.com/ggml-org/llama.cpp/releases/download/b9898/"
+  },
+  "policy": {
+    "defaultSmokeTargets": [
+      "windows-x64-cpu",
+      "android-arm64-cpu"
+    ],
+    "downloadCache": "build/llama-b9898",
+    "verifySha256": true,
+    "packageIntoAndroidApp": false,
+    "androidRuntimeDefault": "soll-backend-route",
+    "standaloneAndroidBinaryUse": "upstream-harness-or-adb-smoke-only",
+    "historicalEvidenceOnly": true,
+    "notApprovedForModelLoading": true
+  },
+  "platformDefaults": {
+    "android-arm64": "android-arm64-cpu",
+    "ios-xcframework": "ios-xcframework",
+    "macos-arm64": "macos-arm64-cpu",
+    "macos-x64": "macos-x64-cpu",
+    "ubuntu-arm64": "ubuntu-arm64-cpu",
+    "ubuntu-s390x": "ubuntu-s390x-cpu",
+    "ubuntu-x64": "ubuntu-x64-cpu",
+    "windows-arm64": "windows-arm64-cpu",
+    "windows-x64": "windows-x64-cpu"
+  },
+  "targets": [
+    {
+      "id": "android-arm64-cpu",
+      "os": "android",
+      "arch": "arm64",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-android-arm64.tar.gz",
+          "bytes": 78731027,
+          "sha256": "dbe4e5680eda982c88087bda1d286d75833c1248aceba818eee404fbefb29cf9"
+        }
+      ]
+    },
+    {
+      "id": "ios-xcframework",
+      "os": "ios",
+      "arch": "xcframework",
+      "backend": "cpu-metal",
+      "packages": [
+        {
+          "asset": "llama-b9898-xcframework.zip",
+          "bytes": 254443031,
+          "sha256": "978f2b54bee56ca4b9cc56d270c1a4fd8f52a81c89101a768b7e849a9295216a"
+        }
+      ]
+    },
+    {
+      "id": "macos-arm64-cpu",
+      "os": "macos",
+      "arch": "arm64",
+      "backend": "cpu-metal",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-macos-arm64.tar.gz",
+          "bytes": 11141291,
+          "sha256": "ab312327c94f5e757136ca26a06854680883e44a5d0ad23b910a5d89b2ef5b5a"
+        }
+      ]
+    },
+    {
+      "id": "macos-x64-cpu",
+      "os": "macos",
+      "arch": "x64",
+      "backend": "cpu-metal",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-macos-x64.tar.gz",
+          "bytes": 11454178,
+          "sha256": "86f1015b0d48c74d751fb55f7191fea90f4749914de6dc80e17945bfd0455e10"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-arm64-cpu",
+      "os": "ubuntu",
+      "arch": "arm64",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-arm64.tar.gz",
+          "bytes": 12863408,
+          "sha256": "eb845456bf400f592fcc248bf9b9ba5e3bc5cdd07ff7b21549cb871989991dfc"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-arm64-vulkan",
+      "os": "ubuntu",
+      "arch": "arm64",
+      "backend": "vulkan",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-vulkan-arm64.tar.gz",
+          "bytes": 25510626,
+          "sha256": "44da9e6fdf09ce7940b2a7b64a499a134a93dbc82664464fc3aaf4b676db969d"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-s390x-cpu",
+      "os": "ubuntu",
+      "arch": "s390x",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-s390x.tar.gz",
+          "bytes": 14844898,
+          "sha256": "63b38c5a7d821bb0874664c084a2b90a8f1d0cda6478198687cde9eaf8de5195"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-x64-cpu",
+      "os": "ubuntu",
+      "arch": "x64",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-x64.tar.gz",
+          "bytes": 15868059,
+          "sha256": "602a91f54390f7feff8330b1e9c5e0f94b82f7127dbc908cb25d49e3c833f7c7"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-x64-vulkan",
+      "os": "ubuntu",
+      "arch": "x64",
+      "backend": "vulkan",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-vulkan-x64.tar.gz",
+          "bytes": 31226538,
+          "sha256": "234748572b5e3a43d354d8f25e22caa7d6a8c3c83a42486c063fbba59aeb87d0"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-x64-rocm-7.2",
+      "os": "ubuntu",
+      "arch": "x64",
+      "backend": "rocm-7.2",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-rocm-7.2-x64.tar.gz",
+          "bytes": 126895453,
+          "sha256": "15fe0b5db81941c63b4cc4cf98008fc66b5331e7803962f8bd807487b1c14a1f"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-x64-openvino-2026.2.1",
+      "os": "ubuntu",
+      "arch": "x64",
+      "backend": "openvino-2026.2.1",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-openvino-2026.2.1-x64.tar.gz",
+          "bytes": 101262515,
+          "sha256": "b79791b2b28b97a41edd46248dbf871e30da62c9e90ac6612e5653136bce4087"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-x64-sycl-fp32",
+      "os": "ubuntu",
+      "arch": "x64",
+      "backend": "sycl-fp32",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-sycl-fp32-x64.tar.gz",
+          "bytes": 47317250,
+          "sha256": "536a93469245d90eff9193eb88021faa336998a8b2a571086a754903902b773e"
+        }
+      ]
+    },
+    {
+      "id": "ubuntu-x64-sycl-fp16",
+      "os": "ubuntu",
+      "arch": "x64",
+      "backend": "sycl-fp16",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-ubuntu-sycl-fp16-x64.tar.gz",
+          "bytes": 47500844,
+          "sha256": "c1016e053fc9828e8475a974a9d539390b2b6295c235fdce3f50b03e867ec1ef"
+        }
+      ]
+    },
+    {
+      "id": "windows-arm64-cpu",
+      "os": "windows",
+      "arch": "arm64",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-cpu-arm64.zip",
+          "bytes": 11379103,
+          "sha256": "5c27c7132a4e61c60682a35472b239243c9a218880803843307c59c6c2ecff1b"
+        }
+      ]
+    },
+    {
+      "id": "windows-arm64-opencl-adreno",
+      "os": "windows",
+      "arch": "arm64",
+      "backend": "opencl-adreno",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-opencl-adreno-arm64.zip",
+          "bytes": 12002109,
+          "sha256": "38970e391728d1740f3ce9b41b3562c06bfb17a5f9280269133b2a3775ea32d1"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-cpu",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "cpu",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-cpu-x64.zip",
+          "bytes": 17482595,
+          "sha256": "36ceb9234fd2e7d8589e6152760125ff03bd7599a1239360a46aeefe97aa20fe"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-cuda-12.4",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "cuda-12.4",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-cuda-12.4-x64.zip",
+          "bytes": 266265927,
+          "sha256": "f6806024c521ab9104d010f1363fb365b1d260f93bef988f73c02869fa43462e"
+        },
+        {
+          "asset": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "bytes": 391443627,
+          "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-cuda-13.3",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "cuda-13.3",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-cuda-13.3-x64.zip",
+          "bytes": 161401588,
+          "sha256": "eb2eea06feb63d50fd7984d38aef8994e739a84b9dbbcd83a1fdc2ecf2223559"
+        },
+        {
+          "asset": "cudart-llama-bin-win-cuda-13.3-x64.zip",
+          "bytes": 390970417,
+          "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-vulkan",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "vulkan",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-vulkan-x64.zip",
+          "bytes": 32165018,
+          "sha256": "617336aa72c560e82af8549e0435f0468fbcbff5c31c42c87c433f119165894d"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-openvino-2026.2.1",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "openvino-2026.2.1",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-openvino-2026.2.1-x64.zip",
+          "bytes": 79932195,
+          "sha256": "12d8975239da9344b672ff02100636219b0cb52381412c4c54ab4cccb54a5392"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-sycl",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "sycl",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-sycl-x64.zip",
+          "bytes": 114636340,
+          "sha256": "24e1a95906ce50f9bfbc19f7b295597e2d2631338845d9e38063c690555ed5ee"
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-hip-radeon",
+      "os": "windows",
+      "arch": "x64",
+      "backend": "hip-radeon",
+      "packages": [
+        {
+          "asset": "llama-b9898-bin-win-hip-radeon-x64.zip",
+          "bytes": 323256638,
+          "sha256": "0e279df26a451dfe0b682aaaac53612122c230f5a18aedac209d4d594d53ac03"
+        }
+      ]
+    }
+  ],
+  "unavailableReleaseSignals": [
+    {
+      "platform": "macos-arm64-kleidiai",
+      "reason": "release-job-disabled-no-release-asset"
+    },
+    {
+      "platform": "openeuler",
+      "reason": "release-jobs-disabled-no-release-assets"
+    }
+  ]
+}

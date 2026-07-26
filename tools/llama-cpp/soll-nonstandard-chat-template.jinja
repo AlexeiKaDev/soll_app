@@ -1,0 +1,4 @@
+{% for message in messages %}
+<|soll_{{ message['role'] }}|>{{ message['content'] }}<|soll_end|>
+{% endfor %}
+{% if add_generation_prompt %}<|soll_assistant|>{% endif %}

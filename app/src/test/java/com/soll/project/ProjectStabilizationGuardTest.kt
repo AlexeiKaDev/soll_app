@@ -69,6 +69,7 @@ class ProjectStabilizationGuardTest {
         val schema21 = projectFile("app/schemas/com.soll.data.local.SollDatabase/21.json").readText()
         val schema22 = projectFile("app/schemas/com.soll.data.local.SollDatabase/22.json").readText()
         val schema23 = projectFile("app/schemas/com.soll.data.local.SollDatabase/23.json").readText()
+        val schema24 = projectFile("app/schemas/com.soll.data.local.SollDatabase/24.json").readText()
 
         assertFalse(appModule.contains("fallbackToDestructiveMigration()"))
         assertTrue(appModule.contains("migration1To2"))
@@ -77,10 +78,12 @@ class ProjectStabilizationGuardTest {
         assertTrue(appModule.contains("migration20To21"))
         assertTrue(appModule.contains("migration21To22"))
         assertTrue(appModule.contains("migration22To23"))
+        assertTrue(appModule.contains("migration23To24"))
         assertTrue(schema20.contains("\"version\": 20"))
         assertTrue(schema21.contains("\"version\": 21"))
         assertTrue(schema22.contains("\"version\": 22"))
         assertTrue(schema23.contains("\"version\": 23"))
+        assertTrue(schema24.contains("\"version\": 24"))
         listOf(
             "approval_id",
             "tool_job_id",

@@ -10,6 +10,7 @@ import com.soll.domain.soll.SollDailyTaskList
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceItemsPage
 import com.soll.domain.soll.SollSourceScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -41,6 +42,10 @@ data class DailyTodoUiState(
     val selectedSourceId: String? = null,
     val sourceItems: List<SollSourceItem> = emptyList(),
     val sourceLoading: Boolean = false,
+    val sourceItemsHasMore: Boolean = false,
+    val sourceItemsTotal: Int = 0,
+    val sourceItemsLoadingMore: Boolean = false,
+    val sourceDisabledReason: String = "",
     val message: String? = null,
     val isError: Boolean = false,
     val addSuccessVersion: Long = 0L,
@@ -53,7 +58,7 @@ class DailyTodoViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DailyTodoUiState())
     val uiState: StateFlow<DailyTodoUiState> = _uiState.asStateFlow()
-    private val sourceItemsCache = mutableMapOf<String, List<SollSourceItem>>()
+    private val sourceItemsCache = mutableMapOf<String, SollSourceItemsPage>()
 
     init {
         refresh()
@@ -380,23 +385,26 @@ class DailyTodoViewModel @Inject constructor(
                     sourceItemsCache.keys.retainAll(sourceIds)
                     val selected = sourceId?.takeIf { it in sourceIds } ?: sources.firstOrNull()?.id
                     var itemLoadMessage: String? = null
-                    val items = selected?.let { id ->
-                        sourceItemsCache[id] ?: sollGateway.listSourceItems(id, limit = 20).fold(
+                    val page = selected?.let { id ->
+                        sourceItemsCache[id] ?: sollGateway.listSourceItemsPage(id, limit = SOURCE_ITEM_PAGE_SIZE).fold(
                             onSuccess = { loaded ->
                                 sourceItemsCache[id] = loaded
                                 loaded
                             },
                             onFailure = { error ->
                                 itemLoadMessage = error.message ?: "Не удалось загрузить материалы источника"
-                                emptyList()
+                                null
                             },
                         )
-                    }.orEmpty()
+                    }
                     _uiState.update {
                         it.copy(
                             sources = sources,
                             selectedSourceId = selected,
-                            sourceItems = items,
+                            sourceItems = page?.items.orEmpty(),
+                            sourceItemsHasMore = page?.hasMore == true,
+                            sourceItemsTotal = page?.total ?: 0,
+                            sourceDisabledReason = page?.disabledReason.orEmpty(),
                             sourceLoading = false,
                             message = itemLoadMessage,
                             isError = itemLoadMessage != null,
@@ -417,17 +425,20 @@ class DailyTodoViewModel @Inject constructor(
     }
 
     fun selectSource(source: SollMonitoredSource) {
-        val cachedItems = sourceItemsCache[source.id]
+        val cachedPage = sourceItemsCache[source.id]
         _uiState.update {
             it.copy(
                 selectedSourceId = source.id,
-                sourceItems = cachedItems ?: emptyList(),
-                sourceLoading = cachedItems == null,
+                sourceItems = cachedPage?.items.orEmpty(),
+                sourceItemsHasMore = cachedPage?.hasMore == true,
+                sourceItemsTotal = cachedPage?.total ?: 0,
+                sourceDisabledReason = cachedPage?.disabledReason.orEmpty(),
+                sourceLoading = cachedPage == null,
                 message = null,
                 isError = false,
             )
         }
-        if (cachedItems == null) {
+        if (cachedPage == null) {
             loadSourceItems(source.id)
         }
     }
@@ -658,7 +669,7 @@ class DailyTodoViewModel @Inject constructor(
 
     private fun loadSourceItems(sourceId: String) {
         viewModelScope.launch {
-            val items = sollGateway.listSourceItems(sourceId, limit = 20).getOrElse { error ->
+            val page = sollGateway.listSourceItemsPage(sourceId, limit = SOURCE_ITEM_PAGE_SIZE).getOrElse { error ->
                 _uiState.update {
                     if (it.selectedSourceId == sourceId) {
                         it.copy(
@@ -672,11 +683,14 @@ class DailyTodoViewModel @Inject constructor(
                 }
                 return@launch
             }
-            sourceItemsCache[sourceId] = items
+            sourceItemsCache[sourceId] = page
             _uiState.update {
                 if (it.selectedSourceId == sourceId) {
                     it.copy(
-                        sourceItems = items,
+                        sourceItems = page.items,
+                        sourceItemsHasMore = page.hasMore,
+                        sourceItemsTotal = page.total,
+                        sourceDisabledReason = page.disabledReason,
                         sourceLoading = false,
                         message = null,
                         isError = false,
@@ -687,7 +701,51 @@ class DailyTodoViewModel @Inject constructor(
             }
         }
     }
+
+    fun loadMoreSourceItems() {
+        val sourceId = _uiState.value.selectedSourceId ?: return
+        val cached = sourceItemsCache[sourceId] ?: return
+        if (!cached.hasMore || cached.nextCursor.isBlank() || _uiState.value.sourceItemsLoadingMore) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(sourceItemsLoadingMore = true, message = null, isError = false) }
+            sollGateway.listSourceItemsPage(
+                sourceId = sourceId,
+                cursor = cached.nextCursor,
+                limit = SOURCE_ITEM_PAGE_SIZE,
+            ).fold(
+                onSuccess = { page ->
+                    val merged = (cached.items + page.items).distinctBy { it.itemId }
+                    val updated = page.copy(items = merged)
+                    sourceItemsCache[sourceId] = updated
+                    _uiState.update {
+                        if (it.selectedSourceId == sourceId) {
+                            it.copy(
+                                sourceItems = merged,
+                                sourceItemsHasMore = page.hasMore,
+                                sourceItemsTotal = page.total,
+                                sourceItemsLoadingMore = false,
+                                sourceDisabledReason = page.disabledReason,
+                            )
+                        } else {
+                            it.copy(sourceItemsLoadingMore = false)
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            sourceItemsLoadingMore = false,
+                            message = error.message ?: "Не удалось загрузить следующие материалы",
+                            isError = true,
+                        )
+                    }
+                },
+            )
+        }
+    }
 }
+
+private const val SOURCE_ITEM_PAGE_SIZE = 50
 
 private fun findCreatedTaskId(tasks: List<SollDailyTask>, existingTaskIds: Set<String>): String? =
     tasks.lastOrNull { it.id !in existingTaskIds }?.id ?: tasks.lastOrNull()?.id

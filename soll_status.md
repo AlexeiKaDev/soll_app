@@ -1,14 +1,59 @@
 # soll_app Status
 
-Last updated: 2026-07-16 Europe/Chisinau
+Last updated: 2026-07-22 Europe/Chisinau
 
 ## Current Changes
+
+- 2026-07-22 SciIR-82k full-snapshot quality audit (`85529c3c86464d0c9be2d6bb774de4b1`):
+  - Downloaded all `89` files (`24,961,674,409` bytes) from the pinned public revision `51f7e778c690c9f738051bb9141cb80da488fffc` into the ignored audit cache and matched every upstream Git/LFS digest.
+  - Parsed `82,189` captions, `47,709` metadata records and all `83` image shards. All PNG structures and cross-file caption/metadata/segment links are valid, while the release has `3,412` excess exact-copy images, `454` rows without non-empty structured reasoning, `2,967` missing figure captions, `1,175` noncanonical subject rows and `3,637`/`4,934`/`1,633` positional-pair mismatches across its three reasoning dimensions.
+  - Decision: `downloaded_and_audited_adoption_deferred_no_current_soll_workload`. Keep the dataset and any later model/eval on desktop/server; Android retains its existing barcode scanner, source/article cards, attachments and approval surfaces with no production or dependency change.
+  - Measured value: one full pinned receipt, one machine-readable audit, one Soll applicability decision and explicit repair/evaluation gates. Evidence: `Soll/outputs/source-processing/source-item-9011e13c06d6-43cda08a6d8897ca-verification.md`.
+
+- 2026-07-19 llama.cpp b9898 binary release smoke (`fc4ed0d15e83406abd702e47040d3a99`):
+  - Pinned official release `b9898` at `3d4cbdf18a72c97648c15e2dc060013c186cd36c`, including the SYCL AOT double-type fix from upstream PR `#25081`.
+  - Downloaded the Windows x64 CPU and Android arm64 CPU archives into the ignored repository cache and matched both published byte counts and SHA-256 digests. `llama-cli.exe` and `llama-server.exe` executed as `9898 (3d4cbdf18)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
+  - Added a CI-compatible b9898 smoke runner and release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. All 24 manifest entries match the official release metadata; openEuler and macOS KleidiAI remain unavailable release signals.
+  - Kept the Soll backend route as the Android runtime default. Binaries remain in the ignored local cache and are not packaged into the APK. ADB reported no connected device, so Android evidence is package/ABI validation rather than device inference.
+  - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 24/24 binary packages pinned, 22 targets configured, 0 deployed/APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-e06555e37f16c034-verification.md`.
+
+- 2026-07-19 llama.cpp b9895 binary release smoke (`c923fe6aa418475dab3f7f5b8e45b702`):
+  - Pinned official release `b9895` at `defa95c306598bff66640c64dc8788adf90b72ea`, the three-commit update over b9892 containing the ngram-map prompt-shrink out-of-bounds read fix plus Vulkan validation and OpenCL optimizations.
+  - Downloaded the Windows x64 CPU and Android arm64 CPU archives into the ignored repository cache and matched both published byte counts and SHA-256 digests. `llama-cli.exe` and `llama-server.exe` executed as `9895 (defa95c30)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
+  - Added a b9895 release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. The same platform families were already present in b9892, so the measured release value is the fixed runtime delta rather than a new Soll platform family.
+  - Kept the Soll backend route as the Android runtime default. The task constraints prohibit deployment, so binaries remain in the ignored local cache and are not packaged into the APK or sent to an external environment.
+  - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 22 targets configured, 0 deployed/APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-26ee7982c11e651e-verification.md`.
+
+- 2026-07-19 llama.cpp b9892 binary release smoke (`16a254d3e2ef4721bc9ca139ca2fa520`):
+  - Downloaded the official Windows x64 CPU and Android arm64 CPU archives into the ignored repository build cache and matched both published SHA-256 digests. `llama-cli.exe` and `llama-server.exe` both executed as `9892 (ee445f93d)`; all 44 Android binary files passed ELF64 little-endian AArch64 validation.
+  - Added a pinned release manifest with 22 selectable targets, 24 checksummed packages and nine CPU/framework platform defaults. Accelerator variants remain explicit; PowerPC has no release asset, while openEuler and macOS KleidiAI jobs are disabled in b9892.
+  - Kept the Soll backend route as the Android runtime default. The standalone upstream tarball is not packaged into the APK and no local LLM/NDK/JNI product path was introduced. The host SDK has ADB, but no device was connected, so the Android evidence is archive/ABI smoke rather than device inference.
+  - Measured value: 2 archives verified, 2 Windows executables launched, 44/44 Android binaries validated, 22 targets configured, 0 APK binaries and 0 model inference runs. Evidence: `Soll/outputs/source-processing/source-item-d0cd9479f2a2-fd72a4b7d45cc93b-verification.md`.
+
+- 2026-07-19 OpenAI Shell + Skills + Compaction Soll agent prototype (`c9c7dd0a17b8478194f43deb6b94e25a`):
+  - Added a transport-neutral agent context assembler with an explicit three-capability profile, allowlisted shell tool IDs, progressive skill disclosure and deterministic long-run compaction.
+  - Preserved the mobile safety boundary: the context contains no executable command strings, does not run a shell and does not introduce an Android-side autonomous loop or external integration.
+  - Focused smoke passed `4/4` tests with `0` failures/errors; it covers the explicit capability set, shell allowlist rejection, selective skill loading and preservation of objective/state/evidence plus the recent event tail.
+  - Measured value: `3/3` source patterns implemented, `4/4` focused tests passed, `0` raw shell command fields and `0` runtime/external side effects. Evidence: `Soll/outputs/source-processing/task-c9c7dd0a17b8478194f43deb6b94e25a-shell-skills-compaction-audit.md`.
+
+- 2026-07-18 roadmap/execution status reconciliation (`e5c9d70de7b442cbbcfb80172e94c370`):
+  - Validated the isolated worktree at the required base `28d2d6d08554a426d0144d0179f593df3cf46a28`. It was clean before this status-only slice. The locally visible 2026-07-18 result is the Bonsai 27B feasibility batch: its commit changes one contract test plus documentation, the roadmap entry and its verification artifact, with `0` changes under `app/src/main`.
+  - Confirmed that the roadmap already records `task:chat:962471563b17ded7b120` and keeps Android production integration deferred. The preceding slash-path result remains backed by its committed verification artifact. A fresh combined smoke passed `9/9` tests: `QwenBonsaiAndroidFeasibilityTest` `1/1` and `AppLaunchTargetsTest` `8/8`.
+  - Project status is `validated` with `medium` confidence. Confidence is intentionally not high because `daily/2026-07-18.md`, the Soll task-board/project-memory mirrors and the separate `D:\Projects\Soll` working tree are not present inside this isolated worktree and were not accessed across the repository boundary.
+  - Measured value: `2` latest result records audited, `1` stale status date reconciled, `1` focused audit artifact attached and `0` Android production files changed. Evidence: `Soll/outputs/source-processing/task-e5c9d70de7b442cbbcfb80172e94c370-status-audit.md`.
 
 - 2026-07-16 Hugging Face PEFT v0.16.0 mesh/offline transport source triage:
   - Read `D:\Projects\Soll\Soll\raw\monitored\hugging-face-peft-releases\20260703-193122-0-16-0-lora-fa-randlora-c-a-and-much-more-3d3c1ec3.md` and checked the official release. It covers LoRA-FA, RandLoRA, C3A, quantization, adapter hotswapping and compatibility; the only offline-related changelog item is a test of `HF_HUB_OFFLINE` model-cache behavior, not Meshtastic or message transport.
   - The record's `mesh_resilience` domain and "Extract as Meshtastic/offline status or note/task transport idea" next step came from the explicit heuristic fallback `No providers available`. Treat that cross-domain mapping as a false positive: do not add PEFT, PyTorch, adapter training or a new Android transport from this source.
   - `soll_app` already has server-backed mesh status, outbox counters, claim/ACK/retry and an allowlist for `status`/`brief`/`note`/`task` payload types. Keep that contour independent of PEFT and do not duplicate it.
   - A future real Meshtastic slice should use a compact versioned allowlisted envelope with a stable message ID, type, timestamp/TTL, priority and bounded body/reference; deduplicate by ID and ACK a note/task only after durable local insertion. It requires an official Meshtastic/protocol source, server contract changes and real-device loss/retry/size tests before implementation; command execution remains out of scope.
+
+- 2026-07-16 Yandex organization-graph model applied to the Soll task graph:
+  - Implemented Room schema 24 with scoped snapshots, node metadata, direct bridge edges and a reference-counted closure table. The composite closure key removes duplicate reachable nodes while `path_count` preserves alternative routes; five secondary indexes plus primary keys cover forward/reverse reachability and metadata joins.
+  - `SollRepository.getTaskGraph` now caches successful live and 404-compatible graphs in separate `open`/`all` scopes, skips unchanged snapshots, then uses the last valid matching snapshot when both live paths fail. Cache failures do not fail a valid live response.
+  - The existing task workspace now exposes a `Проект` chip filter backed by `getTaskGraphDescendants`; it filters the already loaded board by descendant task IDs and does not restore the intentionally removed graph workspace.
+  - Focused diamond/cycle/budget tests prove one `A/D` row with three paths, reflexive rows, DAG rejection and the 50,000-row mobile cap. `TaskGraphMigrationTest` encodes migration 23→24 validation plus DAO replace/read/query behavior; it compiles, while device execution still requires ADB hardware or an emulator.
+  - Technical contract and value metric: `docs/knowledge/task-graph-reachability-index.md` and `Soll/outputs/source-processing/source-item-0d75242b770a-97f971eb6ef1eec9-verification.md`.
 
 - 2026-07-15 Habr Yandex YTsaurus GPU-render source audit:
   - Reviewed `source-item/0d75242b770a/e916238e51d2cfd0` against the public Habr article and official YTsaurus GPU operation/statistics documentation. The article's working path requires one allocated GPU plus a compatible driver overlay, NVIDIA compute/modeset and DRM devices, Vulkan ICD, Xorg DDX on a virtual display, a same-GPU swapchain path, and software `ffmpeg` encoding when the GPU has no NVENC; platform support for Xorg on GPU hosts is a prerequisite, not Android code.

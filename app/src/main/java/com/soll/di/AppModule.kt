@@ -25,6 +25,7 @@ import com.soll.data.local.dao.NoteDao
 import com.soll.data.local.dao.ScanDao
 import com.soll.data.local.dao.SyncQueueDao
 import com.soll.data.local.dao.TaskCacheDao
+import com.soll.data.local.dao.TaskGraphCacheDao
 import com.soll.data.local.dao.ToolJobDao
 import com.soll.data.repository.AssistantEventRepository
 import com.soll.data.repository.BookRepository
@@ -597,6 +598,94 @@ object AppModule {
         }
     }
 
+    internal val migration23To24 = object : Migration(23, 24) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `task_graph_snapshots` (
+                    `scope` TEXT NOT NULL,
+                    `include_done` INTEGER NOT NULL,
+                    `total_tasks` INTEGER NOT NULL,
+                    `truncated` INTEGER NOT NULL,
+                    `updated_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`scope`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `task_graph_nodes` (
+                    `scope` TEXT NOT NULL,
+                    `id` TEXT NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `label` TEXT NOT NULL,
+                    `status` TEXT NOT NULL,
+                    `priority` TEXT NOT NULL,
+                    `project_id` TEXT,
+                    `task_id` TEXT,
+                    `source_ref` TEXT NOT NULL,
+                    `count` INTEGER NOT NULL,
+                    PRIMARY KEY(`scope`, `id`),
+                    FOREIGN KEY(`scope`) REFERENCES `task_graph_snapshots`(`scope`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_task_graph_nodes_scope_kind_id` " +
+                    "ON `task_graph_nodes` (`scope`, `kind`, `id`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_task_graph_nodes_scope_task_id` " +
+                    "ON `task_graph_nodes` (`scope`, `task_id`)"
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `task_graph_edges` (
+                    `scope` TEXT NOT NULL,
+                    `id` TEXT NOT NULL,
+                    `source_id` TEXT NOT NULL,
+                    `target_id` TEXT NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `label` TEXT NOT NULL,
+                    PRIMARY KEY(`scope`, `id`),
+                    FOREIGN KEY(`scope`, `source_id`) REFERENCES `task_graph_nodes`(`scope`, `id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`scope`, `target_id`) REFERENCES `task_graph_nodes`(`scope`, `id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_task_graph_edges_scope_source_id_target_id` " +
+                    "ON `task_graph_edges` (`scope`, `source_id`, `target_id`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_task_graph_edges_scope_target_id_source_id` " +
+                    "ON `task_graph_edges` (`scope`, `target_id`, `source_id`)"
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `task_graph_reachability` (
+                    `scope` TEXT NOT NULL,
+                    `ancestor_id` TEXT NOT NULL,
+                    `descendant_id` TEXT NOT NULL,
+                    `path_count` INTEGER NOT NULL,
+                    PRIMARY KEY(`scope`, `ancestor_id`, `descendant_id`),
+                    FOREIGN KEY(`scope`, `ancestor_id`) REFERENCES `task_graph_nodes`(`scope`, `id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`scope`, `descendant_id`) REFERENCES `task_graph_nodes`(`scope`, `id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_task_graph_reachability_scope_descendant_id_ancestor_id` " +
+                    "ON `task_graph_reachability` (`scope`, `descendant_id`, `ancestor_id`)"
+            )
+        }
+    }
+
     private const val ENCRYPTED_PREFS_NAME = "soll_secure_prefs"
 
     private fun createCoreTables(db: SupportSQLiteDatabase) {
@@ -770,6 +859,7 @@ object AppModule {
                 migration20To21,
                 migration21To22,
                 migration22To23,
+                migration23To24,
             )
             .build()
 
@@ -797,6 +887,11 @@ object AppModule {
     @Singleton
     fun provideTaskCacheDao(database: SollDatabase): TaskCacheDao =
         database.taskCacheDao()
+
+    @Provides
+    @Singleton
+    fun provideTaskGraphCacheDao(database: SollDatabase): TaskGraphCacheDao =
+        database.taskGraphCacheDao()
 
     @Provides
     @Singleton

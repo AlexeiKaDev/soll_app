@@ -97,6 +97,8 @@ import com.soll.data.api.TaskUpdateRequest
 import com.soll.data.api.TaskGraphEdgeResponse
 import com.soll.data.api.TaskGraphNodeResponse
 import com.soll.data.api.TaskGraphResponse
+import com.soll.data.api.VoiceSynthesisRequest
+import com.soll.data.local.dao.TaskGraphCacheDao
 import com.soll.domain.metacoordinator.MetaCoordinatorFallback
 import com.soll.domain.metacoordinator.MetaCoordinatorRequest
 import com.soll.domain.metacoordinator.MetaCoordinatorResponse
@@ -132,6 +134,7 @@ import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
 import com.soll.domain.soll.SollBriefing
 import com.soll.domain.soll.SollChatActionResult
+import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollChatSession
 import com.soll.domain.soll.SollDailyTask
@@ -151,6 +154,7 @@ import com.soll.domain.soll.SollRoadmapLine
 import com.soll.domain.soll.SollRoadmapReadiness
 import com.soll.domain.soll.SollRoadmapStage
 import com.soll.domain.soll.SollSourceItem
+import com.soll.domain.soll.SollSourceItemsPage
 import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollGadgetDiscoverySchema
 import com.soll.domain.soll.SollMeshOutboxItem
@@ -170,6 +174,7 @@ import com.soll.domain.soll.SollTaskGraph
 import com.soll.domain.soll.SollTaskGraphEdge
 import com.soll.domain.soll.SollTaskGraphNode
 import com.soll.domain.soll.buildSollDeviceTokenSignature
+import com.soll.domain.soll.isSollVoiceWav
 import com.soll.domain.soll.withoutDailyTodoTasks
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -181,6 +186,9 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.TimeZone
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -199,6 +207,7 @@ import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
 
 @Singleton
 class SollRepository @Inject constructor(
@@ -206,6 +215,7 @@ class SollRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val okHttpClient: OkHttpClient,
     private val moshi: Moshi,
+    private val taskGraphCacheDao: TaskGraphCacheDao,
 ) : SollGateway {
     private val androidSyncStatusJsonAdapter by lazy {
         moshi.adapter(AndroidSyncStatusResponse::class.java)
@@ -402,6 +412,23 @@ class SollRepository @Inject constructor(
         response.message.toDomain() to response.assistant?.toDomain()
     }
 
+    override suspend fun synthesizeVoice(text: String): Result<ByteArray> = runSuspendCatching {
+        val cleanText = text.trim()
+        require(cleanText.isNotBlank()) { "Текст для озвучивания пуст" }
+        require(cleanText.length <= MAX_CHAT_VOICE_TEXT_CHARS) { "Ответ слишком длинный для озвучивания" }
+        service().synthesizeVoice(
+            authorization = ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader(),
+            request = VoiceSynthesisRequest(text = cleanText),
+        ).use { response ->
+            val declaredLength = response.contentLength()
+            require(declaredLength in -1..MAX_CHAT_VOICE_AUDIO_BYTES) { "Голосовой ответ слишком большой" }
+            val audio = withContext(Dispatchers.IO) { response.bytes() }
+            require(audio.size <= MAX_CHAT_VOICE_AUDIO_BYTES) { "Голосовой ответ слишком большой" }
+            require(audio.isSollVoiceWav()) { "Сервер вернул поврежденный голосовой ответ" }
+            audio
+        }
+    }
+
     override suspend fun executeChatAction(
         actionId: String,
         action: String,
@@ -412,11 +439,14 @@ class SollRepository @Inject constructor(
         val cleanAction = action.trim()
         require(cleanActionId.isNotBlank()) { "ID действия не задан" }
         require(cleanAction.isNotBlank()) { "Тип действия не задан" }
+        val policy = requireNotNull(SollChatActionPolicyRegistry.resolve(cleanAction)) {
+            "Действие не разрешено локальной политикой Android: $cleanAction"
+        }
         service().executeChatAction(
             authorization = readAuthorizationHeader(),
             actionId = cleanActionId.encodedSollPathSegment(fieldName = "action_id"),
             request = ChatActionExecuteRequest(
-                action = cleanAction,
+                action = policy.type,
                 taskId = taskId?.trim()?.takeIf { it.isNotBlank() },
                 sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
             ),
@@ -594,16 +624,80 @@ class SollRepository @Inject constructor(
         ).taskResponse().toDomain()
     }
 
-    override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> = runSuspendCatching {
-        service().getTaskGraph(
-            authorization = readAuthorizationHeader(),
-            includeDone = includeDone,
-            maxNodes = 700,
-        ).toDomain()
-    }.recoverCatching { error ->
-        if (!error.isHttpStatus(404)) throw error
-        val syncStatus = getAndroidSyncStatus().getOrThrow()
-        buildTaskGraphFromBoard(syncStatus.tasks, includeDone = includeDone)
+    override suspend fun getTaskGraph(includeDone: Boolean): Result<SollTaskGraph> {
+        val liveResult = runSuspendCatching {
+            service().getTaskGraph(
+                authorization = readAuthorizationHeader(),
+                includeDone = includeDone,
+                maxNodes = 700,
+            ).toDomain()
+        }
+        if (liveResult.isSuccess) {
+            val graph = liveResult.getOrThrow()
+            cacheTaskGraphBestEffort(graph, includeDone)
+            return liveResult
+        }
+
+        var terminalResult = liveResult
+        if (liveResult.exceptionOrNull()?.isHttpStatus(404) == true) {
+            terminalResult = runSuspendCatching {
+                val syncStatus = getAndroidSyncStatus().getOrThrow()
+                buildTaskGraphFromBoard(syncStatus.tasks, includeDone = includeDone)
+            }
+            if (terminalResult.isSuccess) {
+                val graph = terminalResult.getOrThrow()
+                cacheTaskGraphBestEffort(graph, includeDone)
+                return terminalResult
+            }
+        }
+
+        return cachedTaskGraphOrNull(includeDone)?.let(Result.Companion::success) ?: terminalResult
+    }
+
+    private suspend fun cacheTaskGraphBestEffort(graph: SollTaskGraph, includeDone: Boolean) {
+        try {
+            val scope = taskGraphCacheScope(includeDone)
+            val cached = taskGraphCacheDao.readGraph(scope)
+            if (cached?.hasSameTaskGraphContent(graph) == true) return
+            taskGraphCacheDao.replaceGraph(
+                scope = scope,
+                includeDone = includeDone,
+                graph = graph,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.w(error, "Task graph cache update failed")
+        }
+    }
+
+    private suspend fun cachedTaskGraphOrNull(includeDone: Boolean): SollTaskGraph? =
+        try {
+            taskGraphCacheDao.readGraph(taskGraphCacheScope(includeDone))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.w(error, "Task graph cache read failed")
+            null
+        }
+
+    override suspend fun getTaskGraphDescendants(
+        ancestorId: String,
+        includeDone: Boolean,
+        kind: String?,
+        limit: Int,
+    ): Result<List<SollTaskGraphNode>> = runSuspendCatching {
+        require(ancestorId.isNotBlank()) { "Task graph ancestor ID must not be blank" }
+        require(limit in 1..TASK_GRAPH_DESCENDANT_LIMIT) {
+            "Task graph descendant limit must be between 1 and $TASK_GRAPH_DESCENDANT_LIMIT"
+        }
+        taskGraphCacheDao.readReachableNodes(
+            scope = taskGraphCacheScope(includeDone),
+            ancestorId = ancestorId,
+            kind = kind,
+            limit = limit,
+        )?.map { it.toDomain() }
+            ?: error("Task graph cache is not available")
     }
 
     override suspend fun getLearningItems(status: String?, limit: Int): Result<List<SollLearningItem>> =
@@ -725,6 +819,43 @@ class SollRepository @Inject constructor(
                 .orEmpty()
                 .take(limit.coerceIn(1, 100))
         }
+
+    override suspend fun listSourceItemsPage(
+        sourceId: String,
+        cursor: String,
+        limit: Int,
+    ): Result<SollSourceItemsPage> = runSuspendCatching {
+        val cleanSourceId = sourceId.trim()
+        require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
+        service().listSourceItemsPage(
+            authorization = readAuthorizationHeader(),
+            sourceId = cleanSourceId,
+            cursor = cursor.trim().takeIf { it.isNotBlank() },
+            limit = limit.coerceIn(1, 200),
+        ).let { response ->
+            SollSourceItemsPage(
+                items = response.items.map { it.toDomain() },
+                nextCursor = response.nextCursor,
+                hasMore = response.hasMore,
+                total = response.total,
+                sourceEnabled = response.sourceEnabled,
+                disabledReason = response.disabledReason,
+            )
+        }
+    }.recoverCatching { error ->
+        if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
+        val snapshotItems = getAndroidSyncStatus().getOrThrow()
+            .sourceItemsBySource[sourceId.trim()]
+            .orEmpty()
+        SollSourceItemsPage(
+            items = if (cursor.isBlank()) snapshotItems else emptyList(),
+            nextCursor = "",
+            hasMore = false,
+            total = snapshotItems.size,
+            sourceEnabled = true,
+            disabledReason = "",
+        )
+    }
 
     override suspend fun createSource(
         name: String,
@@ -1450,7 +1581,23 @@ class SollRepository @Inject constructor(
             contentPreview = contentPreview,
             summary = summary,
             usefulness = usefulness,
-            linkPreview = linkPreview,
+            reasoning = reasoning,
+            evidenceLevel = evidenceLevel,
+            projectFit = projectFit,
+            actionability = actionability,
+            dualUseRisk = dualUseRisk,
+            dualUseAction = dualUseAction,
+            safeNextStep = safeNextStep,
+            needsDeepDive = needsDeepDive,
+            rawFile = rawFile.orEmpty(),
+            notifiedAt = notifiedAt.orEmpty(),
+            lastStatus = lastStatus,
+            auditRef = auditRef,
+            evidenceRef = evidenceRef,
+            verificationArtifact = verificationArtifact,
+            statusReason = statusReason,
+            deliveryStatus = deliveryStatus,
+            linkPreview = linkPreview.orEmpty(),
         )
 
     private fun SollDeviceResponse.toDomain(): SollDevice =
@@ -2148,14 +2295,28 @@ private fun SollTask.subprojectLabel(): String =
 private fun graphNodeId(kind: String, label: String): String =
     "$kind:${label.hashCode() and Int.MAX_VALUE}"
 
+private fun taskGraphCacheScope(includeDone: Boolean): String =
+    if (includeDone) TASK_GRAPH_SCOPE_ALL else TASK_GRAPH_SCOPE_OPEN
+
+private fun SollTaskGraph.hasSameTaskGraphContent(other: SollTaskGraph): Boolean =
+    totalTasks == other.totalTasks &&
+        truncated == other.truncated &&
+        nodes.sortedBy { it.id } == other.nodes.sortedBy { it.id } &&
+        edges.sortedBy { it.id } == other.edges.sortedBy { it.id }
+
 private const val SOLL_CACHE_PREFS = "soll_server_cache"
 private const val KEY_ANDROID_SYNC_STATUS_JSON = "android_sync_status_json"
 private const val KEY_ANDROID_SYNC_STATUS_CACHED_AT = "android_sync_status_cached_at"
 private const val TASK_BOARD_SECTION_LIMIT = 80
 private const val TASK_BOARD_MIN_SECTION_LIMIT = 20
 private const val TASK_BOARD_MAX_SECTION_LIMIT = 500
+private const val TASK_GRAPH_SCOPE_OPEN = "open"
+private const val TASK_GRAPH_SCOPE_ALL = "all"
+private const val TASK_GRAPH_DESCENDANT_LIMIT = 700
 private const val DEVICE_TOKEN_REFRESH_SAFETY_MS = 2 * 60_000L
 private const val SOURCE_TYPE_WEB = "web"
+private const val MAX_CHAT_VOICE_TEXT_CHARS = 1_200
+private const val MAX_CHAT_VOICE_AUDIO_BYTES = 25L * 1024L * 1024L
 private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")
 
 fun normalizeSollBaseUrl(rawUrl: String): String {

@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "task_id": "638c73b7018f4572bb7fac10562f6672",
+  "project": "soll_app",
+  "base_sha": "9ae1ec419a9842cfa958165c29e382ec6059a0ba",
+  "source_ref": "source-item/9011e13c06d6/9070c5ba9670178c",
+  "source": {
+    "title": "Program-as-Weights: A Programming Paradigm for Fuzzy Functions",
+    "hugging_face_url": "https://huggingface.co/papers/2607.02512",
+    "arxiv_id": "2607.02512v1",
+    "arxiv_url": "https://arxiv.org/abs/2607.02512",
+    "github_repository": "https://github.com/programasweights/programasweights-python",
+    "github_release": "v0.4.4",
+    "github_revision": "1abdff7e2a3446f3b8807873e568309652cb85d2",
+    "raw_path": "raw/monitored\\hugging-face-daily-papers\\20260705-203016-program-as-weights-a-programming-paradigm-for-fu-b8d3c4f6.md",
+    "raw_present_in_worktree": false
+  },
+  "license_audit": {
+    "paper": {
+      "status": "verified",
+      "license": "CC BY 4.0",
+      "evidence_url": "https://arxiv.org/abs/2607.02512",
+      "acceptance_criterion_met": true
+    },
+    "python_sdk": {
+      "status": "verified",
+      "license": "MIT",
+      "revision": "1abdff7e2a3446f3b8807873e568309652cb85d2",
+      "evidence_url": "https://github.com/programasweights/programasweights-python/blob/1abdff7e2a3446f3b8807873e568309652cb85d2/LICENSE"
+    },
+    "interpreter_base": {
+      "status": "declared",
+      "repository": "Qwen/Qwen3-0.6B",
+      "license": "Apache-2.0",
+      "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+      "evidence_url": "https://huggingface.co/Qwen/Qwen3-0.6B/blob/c1899de289a04d12100db370d81485cdf75e47ca/LICENSE"
+    },
+    "paw_release_artifacts": [
+      {
+        "repository": "programasweights/paw-4b-qwen3-0.6b",
+        "revision": "ae0f52b9dac880771b69a965c70e4533082760d0",
+        "status": "not_declared_in_card_or_license_file"
+      },
+      {
+        "repository": "programasweights/paw-base-models",
+        "revision": "07c759017eceba455228870b6d4919ca845d6bf5",
+        "status": "not_declared_in_card_or_license_file"
+      },
+      {
+        "repository": "programasweights/paw-programs",
+        "revision": "cc2766f75448472203150a55b39e106a76479ae7",
+        "status": "not_declared_in_card_or_license_file"
+      }
+    ],
+    "fuzzybench_dataset": {
+      "repository": "yuntian-deng/fuzzy_bench_verified",
+      "revision": "9df57d8eedad1005e8f494d162d94a498fe87de3",
+      "status": "not_declared_in_card_or_license_file"
+    },
+    "runtime_import_clearance": "not_cleared",
+    "repository_imports": 0
+  },
+  "candidate_contract": {
+    "target_labels": [
+      "high",
+      "medium",
+      "low",
+      "noise"
+    ],
+    "authority": "advisory_only",
+    "human_review_required": true,
+    "automatic_acceptance": false,
+    "automatic_task_creation": false,
+    "automatic_alerting": false,
+    "persistent_writes": false
+  },
+  "smoke": {
+    "executed_at": "2026-07-22 Europe/Chisinau",
+    "runtime": {
+      "sdk": "programasweights",
+      "sdk_version": "0.4.4",
+      "program_name": "programasweights/email-triage",
+      "program_id": "d67162f3ab9562fe2826",
+      "runtime_id": "qwen3-0.6b-q6_k",
+      "n_gpu_layers": 0,
+      "offline_ready": true
+    },
+    "preparation": {
+      "cache_scope": "task_local_temporary",
+      "public_program_bundles_downloaded": 1,
+      "public_base_models_downloaded": 1,
+      "custom_compile_calls": 0,
+      "specification_uploads": 0,
+      "private_inputs_during_preparation": 0
+    },
+    "inference_boundary": {
+      "sdk_offline_mode": true,
+      "socket_network_guard": "raise_if_called",
+      "network_attempts": 0,
+      "credential_lookup_guard": "raise_if_called",
+      "credential_lookup_attempts": 0,
+      "synthetic_inputs": 8,
+      "private_inputs": 0,
+      "automatic_decisions": 0,
+      "persistent_soll_writes": 0
+    },
+    "cases": [
+      {
+        "id": "high_ingest_stopped",
+        "target_tier": "high",
+        "text": "Urgent action required: the synthetic source monitor stopped ingesting and must be restored today.",
+        "expected_binary": "immediate",
+        "observed_binary": "immediate",
+        "passed": true,
+        "latency_ms": 200
+      },
+      {
+        "id": "high_license_block",
+        "target_tier": "high",
+        "text": "Action required before today's release: the synthetic license gate failed and deployment is blocked.",
+        "expected_binary": "immediate",
+        "observed_binary": "immediate",
+        "passed": true,
+        "latency_ms": 95
+      },
+      {
+        "id": "medium_review_week",
+        "target_tier": "medium",
+        "text": "Please review this synthetic source-quality drift during the weekly triage; no service is blocked.",
+        "expected_binary": "wait",
+        "observed_binary": "wait",
+        "passed": true,
+        "latency_ms": 80
+      },
+      {
+        "id": "medium_retry_growth",
+        "target_tier": "medium",
+        "text": "Synthetic retry volume increased this week; investigate during the next planned maintenance window.",
+        "expected_binary": "wait",
+        "observed_binary": "immediate",
+        "passed": false,
+        "latency_ms": 98
+      },
+      {
+        "id": "low_duplicate",
+        "target_tier": "low",
+        "text": "FYI: one duplicate synthetic article appeared in the digest; no action is required now.",
+        "expected_binary": "wait",
+        "observed_binary": "wait",
+        "passed": true,
+        "latency_ms": 79
+      },
+      {
+        "id": "low_metadata",
+        "target_tier": "low",
+        "text": "FYI: a synthetic source card is missing an optional topic tag.",
+        "expected_binary": "wait",
+        "observed_binary": "wait",
+        "passed": true,
+        "latency_ms": 77
+      },
+      {
+        "id": "noise_newsletter",
+        "target_tier": "noise",
+        "text": "Newsletter: synthetic community roundup and product announcements.",
+        "expected_binary": "wait",
+        "observed_binary": "wait",
+        "passed": true,
+        "latency_ms": 69
+      },
+      {
+        "id": "noise_heartbeat",
+        "target_tier": "noise",
+        "text": "FYI: synthetic heartbeat completed successfully; all monitored sources are healthy.",
+        "expected_binary": "wait",
+        "observed_binary": "wait",
+        "passed": true,
+        "latency_ms": 83
+      }
+    ],
+    "metrics": {
+      "cases": 8,
+      "proxy_matches": 7,
+      "binary_proxy_accuracy": 0.875,
+      "high_cases": 2,
+      "high_recall": 1.0,
+      "false_deescalations": 0,
+      "false_escalations": 1,
+      "stable_outputs_across_two_runs": 8,
+      "output_stability": 1.0,
+      "target_label_count": 4,
+      "runtime_output_label_count": 2,
+      "exact_four_label_behavior_tested": false,
+      "warm_cache_load_ms": 815,
+      "latency_min_ms": 69,
+      "latency_median_ms": 81.5,
+      "latency_max_ms": 200
+    }
+  },
+  "decision": {
+    "source_value_measurable": true,
+    "production_adoption": false,
+    "result": "local_binary_proxy_smoke_completed_four_label_adoption_deferred",
+    "reasons": [
+      "the public smoke artifact supports two output labels, not the four target tiers",
+      "one of eight binary proxy expectations was a false escalation",
+      "PAW compiler, program-store and dataset licenses are not declared in the checked repository metadata or files",
+      "a custom four-label artifact would require an explicitly approved external compilation"
+    ],
+    "next_gate": {
+      "explicit_approval_for_synthetic_compile": true,
+      "minimum_cases_per_tier": 6,
+      "minimum_macro_accuracy": 0.9,
+      "required_high_recall": 1.0,
+      "maximum_high_false_deescalations": 0,
+      "runtime_license_clearance_required": true,
+      "offline_network_guard_required": true,
+      "human_review_required": true
+    }
+  }
+}

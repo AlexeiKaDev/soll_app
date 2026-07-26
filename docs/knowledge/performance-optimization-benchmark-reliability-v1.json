@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "contract_id": "soll-performance-optimization-benchmark-reliability-v1",
+  "source": {
+    "paper": "Are Performance-Optimization Benchmarks Reliably Measuring Coding Agents?",
+    "version": "arxiv:2607.01211v2",
+    "pdf_sha256": "158e3baf87b42faa481ce5b53f82c94618c61f014ef37c9b63b858cd997f942a",
+    "source_sha256": "f3fcc2ebab992c6c5041581a8ee0759286c78c11b47407cf94c18342f0131860"
+  },
+  "scope": {
+    "mode": "offline_proposal_only",
+    "executes_agents": false,
+    "executes_arbitrary_commands_from_input": false,
+    "uses_network_or_credentials": false,
+    "mutates_production": false
+  },
+  "task_eligibility": {
+    "denominator_policy": "only_reference_replay_valid_tasks",
+    "required_boolean_checks": [
+      "base_correctness_passed",
+      "reference_correctness_passed",
+      "reference_faster_than_base_all_replays",
+      "reference_original_rule_valid_all_replays"
+    ],
+    "promotion_replay_design": {
+      "machine_profiles_min": 2,
+      "rounds_per_machine_min": 3,
+      "single_machine_result_label": "diagnostic_only"
+    }
+  },
+  "task_metrics": [
+    "candidate_correctness_passed",
+    "candidate_speedup_vs_base",
+    "reference_speedup_vs_base",
+    "speedup_ratio",
+    "faster_than_base",
+    "reference_level",
+    "runtime_change_percent",
+    "replay_signal_to_noise_ratio"
+  ],
+  "aggregate_metrics": [
+    "eligible_task_count",
+    "excluded_unstable_task_count",
+    "candidate_correctness_rate",
+    "faster_than_base_rate",
+    "reference_level_coverage",
+    "median_speedup_ratio",
+    "harmonic_mean_speedup_ratio_official_floor_0_001_diagnostic",
+    "harmonic_mean_speedup_ratio_bounded_floor_0_5_diagnostic",
+    "worst_k_denominator_weight",
+    "spearman_rank_correlation",
+    "pairwise_rank_flip_count",
+    "fleet_any_passing_rate",
+    "fleet_any_faster_than_base_rate",
+    "fleet_any_reference_level_rate"
+  ],
+  "resource_guard_metrics": [
+    "wall_clock_runtime",
+    "cpu_time",
+    "peak_rss",
+    "allocation_count",
+    "p95_latency",
+    "regression_count"
+  ],
+  "reporting_rules": [
+    "correctness_is_a_hard_gate_before_runtime_credit",
+    "unstable_reference_tasks_are_reported_but_excluded_from_performance_denominators",
+    "no_single_aggregate_score_is_reported_without_component_rates_and_tail_weight",
+    "official_and_bounded_harmonic_means_are_diagnostics_not_capability_labels",
+    "fleet_any_of_n_coverage_is_never_labeled_as_single_agent_performance"
+  ],
+  "promotion_gates": [
+    "trusted_allowlisted_tasks_only",
+    "candidate_correctness_before_speed",
+    "reference_signal_valid_on_required_replays",
+    "component_scorecard_reported",
+    "tail_weight_and_rank_sensitivity_reported",
+    "single_agent_and_fleet_coverage_separated",
+    "resource_and_regression_guards_passed"
+  ],
+  "synthetic_smoke": {
+    "tasks": [
+      {
+        "id": "stable_reference_beaten",
+        "eligibility": {
+          "base_correctness_passed": true,
+          "reference_correctness_passed": true,
+          "reference_faster_than_base_all_replays": true,
+          "reference_original_rule_valid_all_replays": true
+        },
+        "base_runtime_ms": [100.0, 100.0, 100.0],
+        "reference_runtime_ms": [80.0, 80.0, 80.0],
+        "candidate_runtime_ms": [75.0, 75.0, 75.0],
+        "candidate_correctness_passed": true
+      },
+      {
+        "id": "stable_partial_speedup",
+        "eligibility": {
+          "base_correctness_passed": true,
+          "reference_correctness_passed": true,
+          "reference_faster_than_base_all_replays": true,
+          "reference_original_rule_valid_all_replays": true
+        },
+        "base_runtime_ms": [200.0, 200.0, 200.0],
+        "reference_runtime_ms": [100.0, 100.0, 100.0],
+        "candidate_runtime_ms": [150.0, 150.0, 150.0],
+        "candidate_correctness_passed": true
+      },
+      {
+        "id": "fast_but_incorrect",
+        "eligibility": {
+          "base_correctness_passed": true,
+          "reference_correctness_passed": true,
+          "reference_faster_than_base_all_replays": true,
+          "reference_original_rule_valid_all_replays": true
+        },
+        "base_runtime_ms": [120.0, 120.0, 120.0],
+        "reference_runtime_ms": [60.0, 60.0, 60.0],
+        "candidate_runtime_ms": [30.0, 30.0, 30.0],
+        "candidate_correctness_passed": false
+      },
+      {
+        "id": "unstable_reference_excluded",
+        "eligibility": {
+          "base_correctness_passed": true,
+          "reference_correctness_passed": true,
+          "reference_faster_than_base_all_replays": false,
+          "reference_original_rule_valid_all_replays": false
+        },
+        "base_runtime_ms": [100.0, 100.0, 100.0],
+        "reference_runtime_ms": [99.0, 101.0, 100.0],
+        "candidate_runtime_ms": [90.0, 90.0, 90.0],
+        "candidate_correctness_passed": true
+      }
+    ],
+    "expected_metrics": {
+      "eligible_task_count": 3,
+      "excluded_unstable_task_count": 1,
+      "candidate_correctness_rate": 0.6666666666666666,
+      "faster_than_base_rate": 0.6666666666666666,
+      "reference_level_coverage": 0.3333333333333333,
+      "median_speedup_ratio": 0.6666666666666666,
+      "official_harmonic_mean_floor_0_001": 0.00299270528087786,
+      "bounded_harmonic_mean_floor_0_5": 0.676056338028169,
+      "official_worst_1_denominator_weight": 0.9975684269592867
+    }
+  }
+}

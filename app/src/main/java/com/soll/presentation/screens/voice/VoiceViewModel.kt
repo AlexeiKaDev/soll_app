@@ -20,9 +20,7 @@ import com.soll.domain.voice.VoiceCommandSessionStatus
 import com.soll.domain.voice.VoiceCommandRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.Locale
 import javax.inject.Inject
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -286,12 +284,7 @@ class VoiceViewModel @Inject constructor(
 
     private fun speak(text: String) {
         if (text.isBlank()) return
-        ttsManager.initialize()
-        viewModelScope.launch {
-            delay(250)
-            ttsManager.setLanguage(Locale.forLanguageTag("ru-RU"))
-            ttsManager.speakChapter(text)
-        }
+        ttsManager.speakAssistantResponse(text)
     }
 
     override fun onCleared() {

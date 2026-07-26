@@ -276,7 +276,66 @@ data class SollSourceItem(
     val contentPreview: String,
     val summary: String,
     val usefulness: String,
+    val reasoning: String,
+    val evidenceLevel: String,
+    val projectFit: String,
+    val actionability: String,
+    val dualUseRisk: String,
+    val dualUseAction: String,
+    val safeNextStep: String,
+    val needsDeepDive: Boolean,
+    val rawFile: String,
+    val notifiedAt: String,
+    val lastStatus: String,
+    val auditRef: String,
+    val evidenceRef: String,
+    val verificationArtifact: String,
+    val statusReason: String,
+    val deliveryStatus: String,
     val linkPreview: Map<String, Any?> = emptyMap(),
+) {
+    val isTerminal: Boolean
+        get() = lastStatus.trim().lowercase() in TERMINAL_SOURCE_ITEM_STATUSES
+
+    val canCreateTask: Boolean
+        get() = !isTerminal && dualUseAction.trim().lowercase() == "allow"
+
+    val visibleReason: String
+        get() = statusReason.ifBlank { reasoning }
+}
+
+internal fun ByteArray.isSollVoiceWav(): Boolean =
+    size > 44 &&
+        this[0] == 'R'.code.toByte() &&
+        this[1] == 'I'.code.toByte() &&
+        this[2] == 'F'.code.toByte() &&
+        this[3] == 'F'.code.toByte() &&
+        this[8] == 'W'.code.toByte() &&
+        this[9] == 'A'.code.toByte() &&
+        this[10] == 'V'.code.toByte() &&
+        this[11] == 'E'.code.toByte()
+
+data class SollSourceItemsPage(
+    val items: List<SollSourceItem>,
+    val nextCursor: String,
+    val hasMore: Boolean,
+    val total: Int,
+    val sourceEnabled: Boolean,
+    val disabledReason: String,
+)
+
+private val TERMINAL_SOURCE_ITEM_STATUSES = setOf(
+    "blocked",
+    "deferred",
+    "done",
+    "duplicate",
+    "ignored",
+    "implemented",
+    "rejected",
+    "source_processing_deferred",
+    "source_review_deferred",
+    "suppressed",
+    "task_created",
 )
 
 data class SollChatActionResult(
@@ -602,6 +661,8 @@ interface SollGateway {
         runAssistant: Boolean = true,
     ): Result<Pair<SollChatMessage, SollChatMessage?>>
 
+    suspend fun synthesizeVoice(text: String): Result<ByteArray>
+
     suspend fun executeChatAction(
         actionId: String,
         action: String,
@@ -643,6 +704,12 @@ interface SollGateway {
     suspend fun deferTask(taskId: String): Result<SollTask>
     suspend fun rejectTask(taskId: String): Result<SollTask>
     suspend fun getTaskGraph(includeDone: Boolean = false): Result<SollTaskGraph>
+    suspend fun getTaskGraphDescendants(
+        ancestorId: String,
+        includeDone: Boolean = false,
+        kind: String? = null,
+        limit: Int = 700,
+    ): Result<List<SollTaskGraphNode>>
     suspend fun getLearningItems(status: String? = "pending", limit: Int = 80): Result<List<SollLearningItem>>
     suspend fun updateLearningItemStatus(itemId: String, status: String): Result<SollLearningItem?>
     suspend fun createTaskFromLearningItem(itemId: String): Result<SollTask?>
@@ -653,6 +720,7 @@ interface SollGateway {
     suspend fun createTaskFromRoadmapLine(stageId: String, line: String): Result<SollTask?>
     suspend fun listSources(scope: SollSourceScope): Result<List<SollMonitoredSource>>
     suspend fun listSourceItems(sourceId: String, limit: Int = 20): Result<List<SollSourceItem>>
+    suspend fun listSourceItemsPage(sourceId: String, cursor: String = "", limit: Int = 50): Result<SollSourceItemsPage>
     suspend fun createSource(
         name: String,
         target: String,

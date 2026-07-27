@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "semantic-retrieval-buffer-eviction-offline-v1",
+  "task_id": "520850f55a864bf58f347cf8211d04fe",
+  "source_ref": "source-item/9011e13c06d6/f0bb9e2e01664c42",
+  "source_trust": "untrusted_external_content",
+  "mode": "offline_synthetic_anonymized_replay",
+  "data_policy": {
+    "fixture_class": "synthetic_anonymized_local_tasks",
+    "contains_personal_data": false,
+    "contains_credentials": false,
+    "contains_user_text": false,
+    "runtime_memory_reads": "forbidden",
+    "network_access": "forbidden",
+    "external_integrations": "forbidden",
+    "automatic_actions": "forbidden"
+  },
+  "cache_audit": {
+    "assistant_memory_present": true,
+    "semantic_retrieval_cache_present": false,
+    "bounded_recent_view_present": true,
+    "automatic_eviction_present": false,
+    "audited_contracts": [
+      "app/src/main/java/com/soll/data/local/dao/AssistantMemoryDao.kt",
+      "app/src/main/java/com/soll/data/repository/AssistantMemoryRepository.kt",
+      "app/src/main/java/com/soll/domain/assistant/memory/AssistantMemory.kt"
+    ],
+    "finding": "AssistantMemory is opt-in persistent memory with a bounded pinned-and-updated view, not a semantic retrieval buffer with automatic replacement."
+  },
+  "policy_contracts": [
+    {
+      "id": "fifo",
+      "eviction_key": "oldest insertion sequence"
+    },
+    {
+      "id": "lru",
+      "eviction_key": "oldest access sequence, then oldest insertion sequence"
+    },
+    {
+      "id": "score_based",
+      "eviction_key": "lowest static relevance score, then oldest insertion sequence",
+      "score_updates_during_replay": false,
+      "incoming_candidate_can_be_rejected": true
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "recency_trap",
+      "capacity": 3,
+      "tasks": [
+        {
+          "id": "T01",
+          "relevance_score": 0.7
+        },
+        {
+          "id": "T02",
+          "relevance_score": 0.9
+        },
+        {
+          "id": "T03",
+          "relevance_score": 0.8
+        },
+        {
+          "id": "T04",
+          "relevance_score": 0.1
+        },
+        {
+          "id": "T05",
+          "relevance_score": 0.2
+        }
+      ],
+      "requests": [
+        "T01",
+        "T02",
+        "T03",
+        "T01",
+        "T04",
+        "T02",
+        "T03",
+        "T01",
+        "T05",
+        "T02",
+        "T03",
+        "T01"
+      ],
+      "expected": {
+        "fifo": {
+          "requests": 12,
+          "hits": 3,
+          "misses": 9,
+          "evictions": 6,
+          "admission_rejections": 0,
+          "hit_rate": 0.25,
+          "hit_relevance_mass": 2.4,
+          "available_relevance_mass": 8.2,
+          "relevance_hit_rate": 0.2926829268292683
+        },
+        "lru": {
+          "requests": 12,
+          "hits": 1,
+          "misses": 11,
+          "evictions": 8,
+          "admission_rejections": 0,
+          "hit_rate": 0.08333333333333333,
+          "hit_relevance_mass": 0.7,
+          "available_relevance_mass": 8.2,
+          "relevance_hit_rate": 0.08536585365853659
+        },
+        "score_based": {
+          "requests": 12,
+          "hits": 7,
+          "misses": 5,
+          "evictions": 2,
+          "admission_rejections": 2,
+          "hit_rate": 0.5833333333333334,
+          "hit_relevance_mass": 5.5,
+          "available_relevance_mass": 8.2,
+          "relevance_hit_rate": 0.6707317073170732
+        }
+      }
+    },
+    {
+      "id": "recency_friendly",
+      "capacity": 3,
+      "tasks": [
+        {
+          "id": "T01",
+          "relevance_score": 0.9
+        },
+        {
+          "id": "T02",
+          "relevance_score": 0.8
+        },
+        {
+          "id": "T03",
+          "relevance_score": 0.5
+        },
+        {
+          "id": "T04",
+          "relevance_score": 0.4
+        }
+      ],
+      "requests": [
+        "T01",
+        "T02",
+        "T03",
+        "T01",
+        "T02",
+        "T04",
+        "T01",
+        "T02",
+        "T03",
+        "T04"
+      ],
+      "expected": {
+        "fifo": {
+          "requests": 10,
+          "hits": 2,
+          "misses": 8,
+          "evictions": 5,
+          "admission_rejections": 0,
+          "hit_rate": 0.2,
+          "hit_relevance_mass": 1.7,
+          "available_relevance_mass": 6.9,
+          "relevance_hit_rate": 0.2463768115942029
+        },
+        "lru": {
+          "requests": 10,
+          "hits": 4,
+          "misses": 6,
+          "evictions": 3,
+          "admission_rejections": 0,
+          "hit_rate": 0.4,
+          "hit_relevance_mass": 3.4,
+          "available_relevance_mass": 6.9,
+          "relevance_hit_rate": 0.4927536231884058
+        },
+        "score_based": {
+          "requests": 10,
+          "hits": 5,
+          "misses": 5,
+          "evictions": 2,
+          "admission_rejections": 2,
+          "hit_rate": 0.5,
+          "hit_relevance_mass": 3.9,
+          "available_relevance_mass": 6.9,
+          "relevance_hit_rate": 0.5652173913043478
+        }
+      }
+    },
+    {
+      "id": "uniform_cycle",
+      "capacity": 3,
+      "tasks": [
+        {
+          "id": "T01",
+          "relevance_score": 0.5
+        },
+        {
+          "id": "T02",
+          "relevance_score": 0.5
+        },
+        {
+          "id": "T03",
+          "relevance_score": 0.5
+        },
+        {
+          "id": "T04",
+          "relevance_score": 0.5
+        }
+      ],
+      "requests": [
+        "T01",
+        "T02",
+        "T03",
+        "T04",
+        "T01",
+        "T02",
+        "T03",
+        "T04"
+      ],
+      "expected": {
+        "fifo": {
+          "requests": 8,
+          "hits": 0,
+          "misses": 8,
+          "evictions": 5,
+          "admission_rejections": 0,
+          "hit_rate": 0.0,
+          "hit_relevance_mass": 0.0,
+          "available_relevance_mass": 4.0,
+          "relevance_hit_rate": 0.0
+        },
+        "lru": {
+          "requests": 8,
+          "hits": 0,
+          "misses": 8,
+          "evictions": 5,
+          "admission_rejections": 0,
+          "hit_rate": 0.0,
+          "hit_relevance_mass": 0.0,
+          "available_relevance_mass": 4.0,
+          "relevance_hit_rate": 0.0
+        },
+        "score_based": {
+          "requests": 8,
+          "hits": 0,
+          "misses": 8,
+          "evictions": 5,
+          "admission_rejections": 0,
+          "hit_rate": 0.0,
+          "hit_relevance_mass": 0.0,
+          "available_relevance_mass": 4.0,
+          "relevance_hit_rate": 0.0
+        }
+      }
+    }
+  ],
+  "aggregate_expected": {
+    "fifo": {
+      "requests": 30,
+      "hits": 5,
+      "misses": 25,
+      "evictions": 16,
+      "admission_rejections": 0,
+      "hit_rate": 0.16666666666666666,
+      "hit_relevance_mass": 4.1,
+      "available_relevance_mass": 19.1,
+      "relevance_hit_rate": 0.21465968586387435
+    },
+    "lru": {
+      "requests": 30,
+      "hits": 5,
+      "misses": 25,
+      "evictions": 16,
+      "admission_rejections": 0,
+      "hit_rate": 0.16666666666666666,
+      "hit_relevance_mass": 4.1,
+      "available_relevance_mass": 19.1,
+      "relevance_hit_rate": 0.21465968586387435
+    },
+    "score_based": {
+      "requests": 30,
+      "hits": 12,
+      "misses": 18,
+      "evictions": 9,
+      "admission_rejections": 4,
+      "hit_rate": 0.4,
+      "hit_relevance_mass": 9.4,
+      "available_relevance_mass": 19.1,
+      "relevance_hit_rate": 0.49214659685863876
+    }
+  },
+  "safety": {
+    "network_calls": 0,
+    "external_tool_calls": 0,
+    "runtime_memory_reads": 0,
+    "user_data_records": 0,
+    "memory_writes": 0,
+    "automatic_actions": 0,
+    "production_changes": 0
+  }
+}

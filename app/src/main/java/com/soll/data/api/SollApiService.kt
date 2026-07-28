@@ -241,7 +241,7 @@ interface SollApiService {
         @Body request: LearningItemTaskRequest = LearningItemTaskRequest(),
     ): LearningItemTaskResponse
 
-    @GET("api/v1/roadmap")
+    @GET("api/v1/roadmap/")
     suspend fun getRoadmap(
         @Header("Authorization") authorization: String? = null,
     ): RoadmapResponse
@@ -276,7 +276,7 @@ interface SollApiService {
         @Body request: RoadmapLineTaskRequest = RoadmapLineTaskRequest(),
     ): RoadmapLineTaskResponse
 
-    @GET("api/v1/sources")
+    @GET("api/v1/sources/")
     suspend fun listSources(
         @Header("Authorization") authorization: String? = null,
         @Query("scope") scope: String = "project_soll",
@@ -305,7 +305,7 @@ interface SollApiService {
         @Body request: SourceItemTaskRequest = SourceItemTaskRequest(),
     ): SourceItemTaskResponse
 
-    @POST("api/v1/sources")
+    @POST("api/v1/sources/")
     suspend fun createSource(
         @Header("Authorization") authorization: String? = null,
         @Body request: MonitoredSourceCreateRequest,

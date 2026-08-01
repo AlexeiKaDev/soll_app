@@ -179,6 +179,32 @@ class TaskBoardFilterTest {
     }
 
     @Test
+    fun `task truth details expose verdict evidence and deferred reason`() {
+        val task = task(id = "truth-1", status = "deferred").copy(
+            completionKind = "verification",
+            completionResult = "verified",
+            completionEvidence = listOf("test:task-truth"),
+            outcomeArtifacts = listOf("artifact:report.md", "test:task-truth"),
+            executionReason = "deferred: waiting for an explicit operator decision",
+        )
+
+        val rows = task.truthDetailRows().associate { it.label to it.value }
+
+        assertEquals("verified", rows["Вердикт"])
+        assertEquals("verification", rows["Тип"])
+        assertEquals("test:task-truth\nartifact:report.md", rows["Доказательства"])
+        assertEquals("waiting for an explicit operator decision", rows["Причина отсрочки"])
+    }
+
+    @Test
+    fun `relay delivery labels never call queued or notified state delivered`() {
+        assertEquals("уведомление создано", "notified".sourceItemDeliveryLabel())
+        assertEquals("не доставлено", "queued".sourceItemDeliveryLabel())
+        assertEquals("ошибка доставки", "failed".sourceItemDeliveryLabel())
+        assertEquals("доставлено", "sent".sourceItemDeliveryLabel())
+    }
+
+    @Test
     fun `project graph selection filters the existing task list without a graph workspace`() {
         val graph = SollTaskGraph(
             nodes = listOf(

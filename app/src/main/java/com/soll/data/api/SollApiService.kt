@@ -1021,6 +1021,12 @@ data class SollTaskResponse(
     val executionState: String = "",
     @Json(name = "outcome_artifacts")
     val outcomeArtifacts: List<String> = emptyList(),
+    @Json(name = "completion_kind")
+    val completionKind: String = "",
+    @Json(name = "completion_result")
+    val completionResult: String = "",
+    @Json(name = "completion_evidence")
+    val completionEvidence: List<String> = emptyList(),
     @Json(name = "value_metric")
     val valueMetric: String = "",
     val branch: String = "innovation",
@@ -1083,6 +1089,12 @@ data class SollTaskMutationResponse(
     val executionState: String = "",
     @Json(name = "outcome_artifacts")
     val outcomeArtifacts: List<String> = emptyList(),
+    @Json(name = "completion_kind")
+    val completionKind: String = "",
+    @Json(name = "completion_result")
+    val completionResult: String = "",
+    @Json(name = "completion_evidence")
+    val completionEvidence: List<String> = emptyList(),
     @Json(name = "value_metric")
     val valueMetric: String = "",
     val branch: String = "innovation",
@@ -1141,6 +1153,9 @@ data class SollTaskMutationResponse(
             toolJobId = toolJobId,
             executionState = executionState,
             outcomeArtifacts = outcomeArtifacts,
+            completionKind = completionKind,
+            completionResult = completionResult,
+            completionEvidence = completionEvidence,
             valueMetric = valueMetric,
             branch = branch,
             pairId = pairId,

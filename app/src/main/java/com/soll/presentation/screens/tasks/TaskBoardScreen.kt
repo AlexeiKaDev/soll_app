@@ -874,6 +874,9 @@ private fun SourceItemCard(
                     PassiveChip(text = item.lastStatus.sourceItemStatusLabel())
                     PassiveChip(text = item.actionability.sourceItemActionabilityLabel())
                     PassiveChip(text = item.usefulness)
+                    item.evidenceLevel.takeIf { it.isNotBlank() }?.let { level ->
+                        PassiveChip(text = "evidence: $level")
+                    }
                     PassiveChip(text = item.deliveryStatus.sourceItemDeliveryLabel())
                     if (item.needsDeepDive) {
                         PassiveChip(text = "глубокий разбор")
@@ -899,6 +902,7 @@ private fun SourceItemCard(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     item.auditRef.takeIf { it.isNotBlank() }?.let { PassiveChip(text = "audit: ${it.substringAfterLast('/')}" ) }
+                    item.evidenceRef.takeIf { it.isNotBlank() }?.let { PassiveChip(text = "evidence ref: ${it.substringAfterLast('/')}" ) }
                     item.verificationArtifact.takeIf { it.isNotBlank() }?.let { PassiveChip(text = "evidence: ${it.substringAfterLast('/')}" ) }
                 }
                 when {
@@ -940,7 +944,7 @@ private fun String.sourceItemActionabilityLabel(): String = when (trim().lowerca
     else -> "требует анализа"
 }
 
-private fun String.sourceItemDeliveryLabel(): String = when (trim().lowercase()) {
+internal fun String.sourceItemDeliveryLabel(): String = when (trim().lowercase()) {
     "notified" -> "уведомление создано"
     "delivered", "sent" -> "доставлено"
     "not_notified", "pending", "queued" -> "не доставлено"
@@ -1231,6 +1235,39 @@ private fun TaskDetailSection(task: SollTask) {
         if (task.requiredCapabilities.isNotEmpty()) {
             DetailRow(label = "Нужно", value = task.requiredCapabilities.joinToString(", "))
         }
+        task.truthDetailRows().forEach { row ->
+            DetailRow(label = row.label, value = row.value)
+        }
+    }
+}
+
+internal data class TaskTruthDetailRow(
+    val label: String,
+    val value: String,
+)
+
+internal fun SollTask.truthDetailRows(): List<TaskTruthDetailRow> = buildList {
+    completionResult.trim().takeIf { it.isNotBlank() }?.let { verdict ->
+        add(TaskTruthDetailRow(label = "Вердикт", value = verdict.replace('_', ' ')))
+    }
+    completionKind.trim().takeIf { it.isNotBlank() }?.let { kind ->
+        add(TaskTruthDetailRow(label = "Тип", value = kind.replace('_', ' ')))
+    }
+    (completionEvidence + outcomeArtifacts)
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
+        .takeIf(List<String>::isNotEmpty)
+        ?.let { evidence ->
+            add(TaskTruthDetailRow(label = "Доказательства", value = evidence.joinToString("\n")))
+        }
+    shortHoldReason()?.let { reason ->
+        val label = when (status.trim().lowercase()) {
+            "blocked" -> "Причина блока"
+            "deferred" -> "Причина отсрочки"
+            else -> "Причина ожидания"
+        }
+        add(TaskTruthDetailRow(label = label, value = reason))
     }
 }
 

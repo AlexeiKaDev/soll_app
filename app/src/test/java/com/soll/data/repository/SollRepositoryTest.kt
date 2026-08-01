@@ -128,7 +128,10 @@ class SollRepositoryTest {
               "id": "task-1",
               "title": "Start task",
               "status": "in_progress",
-              "priority": "A"
+              "priority": "A",
+              "completion_kind": "verification",
+              "completion_result": "verified",
+              "completion_evidence": ["test:focused", "artifact:report.md"]
             }
             """.trimIndent(),
         )!!.taskResponse()
@@ -148,6 +151,9 @@ class SollRepositoryTest {
         )!!.taskResponse()
 
         assertEquals("task-1", root.id)
+        assertEquals("verification", root.completionKind)
+        assertEquals("verified", root.completionResult)
+        assertEquals(listOf("test:focused", "artifact:report.md"), root.completionEvidence)
         assertEquals("task-1", wrapped.id)
         assertEquals("in_progress", wrapped.status)
     }

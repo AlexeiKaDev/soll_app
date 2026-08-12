@@ -1,0 +1,232 @@
+{
+  "audit_id": "dataspace-current-metrics-alignment-v1",
+  "task_id": "e380bceb922e417391144b806510af1d",
+  "project": "fdf52463-9152-453a-b186-68e7d76c3edb",
+  "source_ref": "insight/d6cd7eaccde2",
+  "source_trust": "untrusted_external_content",
+  "source": {
+    "title": "DataSpace: Benchmarking Data Agents for Verifiable Analytics over Heterogeneous Workspaces",
+    "paper_url": "https://arxiv.org/abs/2608.03451",
+    "paper_version": "v1",
+    "monitored_source_path": "monitored/hugging-face-daily-papers/20260808-003008-dataspace-benchmarking-data-agents-for-verifiabl-6bef8c30.md",
+    "monitored_source_inspected": true,
+    "paper_tasks": 410,
+    "paper_artifacts": 7439,
+    "paper_storage_gb": 15.01,
+    "paper_carriers": [
+      "csv",
+      "json",
+      "sqlite",
+      "markdown",
+      "pdf",
+      "video"
+    ],
+    "paper_primary_metric": "task_accuracy",
+    "best_reported_task_accuracy": 0.6634
+  },
+  "current_suite": {
+    "fixture": "docs/knowledge/soll-source-monitoring-kb-eval-v1.json",
+    "suite_id": "soll-source-kb-eval-v1",
+    "task_count": 8,
+    "agent_families": [
+      "source_monitoring",
+      "knowledge_base"
+    ],
+    "skill_tag_count": 14,
+    "per_case_metric_count": 25,
+    "comparator_types": [
+      "count",
+      "coverage",
+      "exact_match",
+      "f1",
+      "normalized_exact_match",
+      "precision",
+      "recall",
+      "sequence_exact_match",
+      "set_exact_match",
+      "token_f1"
+    ],
+    "suite_metrics": [
+      "schema_valid_rate",
+      "task_success_rate",
+      "macro_metric_score",
+      "skill_coverage",
+      "citation_precision",
+      "citation_recall",
+      "hallucinated_reference_count",
+      "unsafe_side_effect_count"
+    ],
+    "input_contract": "inline_synthetic_json_only",
+    "heterogeneous_workspace_files": false,
+    "tabular_analytics_track_present": false,
+    "model_quality_runs_completed": 0
+  },
+  "metric_alignment": [
+    {
+      "paper_direction": "task_accuracy",
+      "kind": "aggregate_correctness",
+      "current_metric_ids": [
+        "task_success_rate"
+      ],
+      "alignment": "partial",
+      "reason": "Both aggregate passed tasks, but Soll cases use case-specific JSON metrics rather than complete-table equivalence."
+    },
+    {
+      "paper_direction": "complete_table_schema_and_shape",
+      "kind": "output_correctness",
+      "current_metric_ids": [
+        "schema_valid_rate"
+      ],
+      "alignment": "partial",
+      "reason": "Soll validates structured output shape but has no complete tabular row-by-column contract."
+    },
+    {
+      "paper_direction": "header_invariant_column_alignment",
+      "kind": "output_correctness",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "No current Soll comparator searches a one-to-one semantic column mapping."
+    },
+    {
+      "paper_direction": "typed_and_precision_aware_cell_equivalence",
+      "kind": "output_correctness",
+      "current_metric_ids": [
+        "normalized_exact_match"
+      ],
+      "alignment": "partial",
+      "reason": "Soll normalizes one scalar answer case, but has no per-column text, number, date, datetime, Boolean, null, unit, or numeric-precision rules."
+    },
+    {
+      "paper_direction": "ordered_sequence_or_unordered_row_multiset_equivalence",
+      "kind": "output_correctness",
+      "current_metric_ids": [
+        "sequence_exact_match",
+        "set_exact_match"
+      ],
+      "alignment": "partial",
+      "reason": "Soll has sequence and set comparators for small structured fields, but not whole-row comparison with duplicate multiplicity."
+    },
+    {
+      "paper_direction": "token_usage",
+      "kind": "efficiency",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "The current suite declares correctness and safety metrics only."
+    },
+    {
+      "paper_direction": "api_cost",
+      "kind": "efficiency",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "No provider-cost metric exists in the offline fixture."
+    },
+    {
+      "paper_direction": "tool_action_count",
+      "kind": "efficiency",
+      "current_metric_ids": [
+        "unsafe_side_effect_count"
+      ],
+      "alignment": "gap",
+      "reason": "Soll counts unsafe effects, not total tool actions; the safety guard must not be treated as an efficiency metric."
+    },
+    {
+      "paper_direction": "wall_clock_latency",
+      "kind": "efficiency",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "The current deterministic fixture does not record duration."
+    },
+    {
+      "paper_direction": "cross_language_accuracy_slice",
+      "kind": "diagnostic_slice",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "The current suite has no declared language dimension or per-language rollup."
+    },
+    {
+      "paper_direction": "workspace_scale_accuracy_slice",
+      "kind": "diagnostic_slice",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "Inline fixtures have no workspace byte or artifact-count strata."
+    },
+    {
+      "paper_direction": "carrier_and_multimodal_accuracy_slice",
+      "kind": "diagnostic_slice",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "No current eval case requires CSV, SQLite, Markdown, PDF, or video evidence routing."
+    },
+    {
+      "paper_direction": "join_accuracy_slice",
+      "kind": "diagnostic_slice",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "No current case labels or scores relational joins."
+    },
+    {
+      "paper_direction": "failure_stage_taxonomy",
+      "kind": "diagnostic_slice",
+      "current_metric_ids": [],
+      "alignment": "gap",
+      "reason": "Current failures identify a failed metric but do not classify intent, discovery, extraction, grounding, computation, materialization, or termination."
+    }
+  ],
+  "retained_project_metrics_not_replaced": [
+    "skill_coverage",
+    "citation_precision",
+    "citation_recall",
+    "hallucinated_reference_count",
+    "unsafe_side_effect_count"
+  ],
+  "decision": {
+    "result": "metric_gap_mapped_current_suite_retained",
+    "current_suite_modified": false,
+    "android_runtime_change": false,
+    "dataset_imported": false,
+    "external_model_run_completed": false,
+    "next_step": "defer_dataspace_track_until_named_tabular_analytics_workload",
+    "reason": "DataSpace validates a different workload family; merging its metrics into the current source-monitoring and KB suite would create false comparability."
+  },
+  "future_track_contract": {
+    "placement": "isolated_desktop_or_server_eval",
+    "fixture_policy": "synthetic_or_non_sensitive_only",
+    "minimum_cases": 5,
+    "candidate_metrics": [
+      "tabular_task_accuracy",
+      "schema_alignment_pass_rate",
+      "typed_cell_equivalence_rate",
+      "ordered_row_equivalence_rate",
+      "unordered_row_multiset_equivalence_rate",
+      "token_usage_per_task",
+      "tool_actions_per_task",
+      "wall_clock_latency_per_task",
+      "api_cost_per_task"
+    ],
+    "required_slices": [
+      "language",
+      "workspace_size",
+      "carrier_family",
+      "join_required"
+    ],
+    "promotion_gates": {
+      "named_soll_workload_required": true,
+      "baseline_comparison_required": true,
+      "all_safety_assertions_pass": true,
+      "unsafe_side_effect_count": 0,
+      "manual_gold_review_required": true,
+      "android_dependency_allowed": false
+    }
+  },
+  "observed_value": {
+    "paper_metric_and_diagnostic_directions_audited": 14,
+    "direct_alignments": 0,
+    "partial_alignments": 4,
+    "gaps": 10,
+    "current_suite_metrics_preserved": 8,
+    "current_tasks_rechecked": 8,
+    "upstream_dataset_rows_or_artifacts_imported": 0,
+    "external_model_runs": 0,
+    "production_runtime_files_changed": 0
+  }
+}

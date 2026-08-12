@@ -36,7 +36,7 @@ class HabrYandexOrgGraphSourceTriageTest {
         ).readText()
 
         listOf(
-            "version = 24",
+            "version = 25",
             "TaskGraphSnapshotEntity::class",
             "TaskGraphNodeEntity::class",
             "TaskGraphEdgeEntity::class",

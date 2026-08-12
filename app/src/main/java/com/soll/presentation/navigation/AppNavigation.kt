@@ -27,9 +27,12 @@ import com.soll.presentation.screens.devices.DevicesScreen
 import com.soll.presentation.screens.logs.LogsScreen
 import com.soll.presentation.screens.settings.DeviceQaScreen
 import com.soll.presentation.screens.settings.SettingsScreen
+import com.soll.presentation.screens.share.ShareImportScreen
 import com.soll.presentation.screens.tasks.TaskBoardScreen
+import com.soll.presentation.screens.today.TodayScreen
 import com.soll.presentation.screens.todo.DailyTodoActivity
 import com.soll.presentation.screens.tools.ToolsScreen
+import com.soll.presentation.screens.voice.VoiceScreen
 import com.soll.presentation.screens.tools.breathing.BreathingScreen
 import com.soll.presentation.screens.tools.bookreader.BookReaderScreen
 import com.soll.presentation.screens.tools.fieldmap.FieldMapScreen
@@ -49,6 +52,7 @@ fun AppNavigation(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     var pendingLogsTab by remember { mutableStateOf<Int?>(null) }
+    var pendingSharedLink by remember { mutableStateOf<SharedLinkPayload?>(null) }
 
     LaunchedEffect(currentRoute) {
         AppForegroundState.updateCurrentRoute(currentRoute)
@@ -57,6 +61,15 @@ fun AppNavigation(
     LaunchedEffect(launchCommand?.nonce) {
         val command = launchCommand ?: return@LaunchedEffect
         when (command.section) {
+            AppLaunchTargets.SECTION_TODAY -> {
+                navController.navigate(AppDestinations.Today.route) {
+                    launchSingleTop = true
+                    restoreState = true
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
+                    }
+                }
+            }
             AppLaunchTargets.SECTION_CHAT -> {
                 navController.navigate(AppDestinations.Chat.route) {
                     launchSingleTop = true
@@ -100,6 +113,12 @@ fun AppNavigation(
                     restoreState = true
                 }
             }
+            AppLaunchTargets.SECTION_SHARE_IMPORT -> {
+                pendingSharedLink = command.sharedLink
+                navController.navigate(Routes.SHARE_IMPORT) {
+                    launchSingleTop = true
+                }
+            }
         }
         onLaunchCommandConsumed()
     }
@@ -134,11 +153,14 @@ fun AppNavigation(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = AppDestinations.Chat.route,
+            startDestination = AppDestinations.Today.route,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            composable(AppDestinations.Today.route) {
+                TodayScreen()
+            }
             composable(AppDestinations.Chat.route) {
                 ChatScreen(
                     onOpenSettings = {
@@ -210,9 +232,22 @@ fun AppNavigation(
                     onBack = { navController.popBackStack() }
                 )
             }
+            composable(Routes.VOICE) {
+                VoiceScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
             composable(Routes.SCANNER) {
                 ScannerScreen(
                     onBack = { navController.popBackStack() },
+                    onPairingCompleted = {
+                        navController.navigate(AppDestinations.Settings.route) {
+                            popUpTo(AppDestinations.Settings.route) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    },
                     autoStartCamera = true,
                     pairingMode = true,
                 )
@@ -223,6 +258,21 @@ fun AppNavigation(
                     initialActivityFocus = true,
                 )
             }
+            composable(Routes.SHARE_IMPORT) {
+                ShareImportScreen(
+                    payload = pendingSharedLink,
+                    onBack = {
+                        pendingSharedLink = null
+                        if (!navController.popBackStack()) {
+                            navController.navigateBottomBarRoute(AppDestinations.Today.route)
+                        }
+                    },
+                    onOpenToday = {
+                        pendingSharedLink = null
+                        navController.navigateBottomBarRoute(AppDestinations.Today.route)
+                    },
+                )
+            }
         }
     }
 }
@@ -231,7 +281,7 @@ private const val LOGS_TAB_NOTIFICATIONS = 3
 
 private fun NavHostController.navigateBottomBarRoute(route: String) {
     if (currentDestination?.hierarchy?.any { it.route == route } == true) return
-    if (route == AppDestinations.Chat.route && popBackStack(AppDestinations.Chat.route, false)) return
+    if (route == AppDestinations.Today.route && popBackStack(AppDestinations.Today.route, false)) return
 
     navigate(route) {
         popUpTo(graph.findStartDestination().id) {

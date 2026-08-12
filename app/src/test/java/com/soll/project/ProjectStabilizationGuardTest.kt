@@ -144,10 +144,10 @@ class ProjectStabilizationGuardTest {
 
         assertTrue(projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt").exists())
         assertTrue(projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt").exists())
-        assertTrue(destinations.contains("val bottomBar = listOf(Chat, Tasks, Tools, Settings)"))
-        assertTrue(navigation.contains("startDestination = AppDestinations.Chat.route"))
+        assertTrue(destinations.contains("val bottomBar = listOf(Today, Chat, Tasks, Tools, Settings)"))
+        assertTrue(navigation.contains("startDestination = AppDestinations.Today.route"))
         assertTrue(navigation.contains("navigateBottomBarRoute(screen.route)"))
-        assertTrue(navigation.contains("popBackStack(AppDestinations.Chat.route, false)"))
+        assertTrue(navigation.contains("popBackStack(AppDestinations.Today.route, false)"))
         assertTrue(navigation.contains("ChatScreen("))
         assertTrue(launchTargets.contains("SECTION_CHAT"))
         assertTrue(application.contains("NOTIFICATION_CHANNEL_ID = \"soll_chat\""))
@@ -183,7 +183,8 @@ class ProjectStabilizationGuardTest {
 
         assertTrue(chatViewModel.contains("holdUntilStop = true"))
         assertTrue(voiceViewModel.contains("holdUntilStop = true"))
-        assertFalse(voiceViewModel.contains(".cancelled()"))
+        assertTrue(voiceViewModel.contains("maxDurationMillis = MAX_PTT_DURATION_MS"))
+        assertTrue(voiceViewModel.contains("sttAdapter.cancelListening()"))
         assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L"))
         assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L"))
         assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L"))
@@ -990,6 +991,30 @@ class ProjectStabilizationGuardTest {
         )
         assertTrue(source.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC"))
         assertTrue(source.contains(".setAction(ACTION_STOP)"))
+    }
+
+    @Test
+    fun `default background sync uses WorkManager and retires legacy two minute alarm`() {
+        val application = projectFile("app/src/main/java/com/soll/SollApplication.kt").readText()
+        val bootReceiver = projectFile(
+            "app/src/main/java/com/soll/data/service/BootReceiver.kt"
+        ).readText()
+        val alarmReceiver = projectFile(
+            "app/src/main/java/com/soll/data/service/SollServerSyncAlarmReceiver.kt"
+        ).readText()
+        val worker = projectFile(
+            "app/src/main/java/com/soll/data/repository/SollServerSyncWorker.kt"
+        ).readText()
+
+        assertFalse(application.contains("SollServerSyncForegroundService.startIfConfigured"))
+        assertFalse(application.contains("SollServerSyncAlarmScheduler.scheduleNext"))
+        assertTrue(application.contains("SollServerSyncAlarmScheduler.cancel(this)"))
+        assertTrue(bootReceiver.contains("SollServerSyncAlarmScheduler.cancel"))
+        assertTrue(bootReceiver.contains("SollServerSyncScheduler.schedule"))
+        assertFalse(alarmReceiver.contains("fun scheduleNext"))
+        assertTrue(alarmReceiver.contains("migrate legacy sync alarm to WorkManager"))
+        assertTrue(worker.contains("configuredMinutes.coerceIn(15, 60)"))
+        assertFalse(worker.contains("SollServerSyncAlarmScheduler"))
     }
 
     @Test

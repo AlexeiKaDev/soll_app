@@ -382,6 +382,7 @@ class SettingsRepository @Inject constructor(
         val cleanDeviceId = payload.deviceId.trim()
         val cleanPairingSecret = payload.pairingSecret.trim()
         val previousDeviceId = sollDeviceId
+        val usesRelayBearerAuth = payload.usesRelayBearerAuth
         sharedPreferences.edit().apply {
             putString(KEY_SOLL_SERVER_URL, payload.serverUrl.trim())
             putString(KEY_SOLL_API_PATH_PREFIX, payload.apiPathPrefix.trim().trim('/'))
@@ -397,6 +398,12 @@ class SettingsRepository @Inject constructor(
             }
             if (cleanPairingSecret.isNotBlank()) {
                 putString(KEY_SOLL_DEVICE_PAIRING_SECRET, cleanPairingSecret)
+            }
+            if (usesRelayBearerAuth) {
+                remove(KEY_SOLL_DEVICE_ID)
+                remove(KEY_SOLL_DEVICE_PAIRING_SECRET)
+                remove(KEY_SOLL_DEVICE_ACCESS_TOKEN)
+                remove(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT)
             }
             putString(KEY_SOLL_PUSH_TOKEN_LAST_ERROR, "")
         }.apply()

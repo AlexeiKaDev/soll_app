@@ -25,6 +25,19 @@ interface SyncQueueDao {
     @Query("SELECT * FROM sync_queue ORDER BY updated_at DESC LIMIT :limit")
     fun observeRecentItems(limit: Int): Flow<List<SyncQueueEntity>>
 
+    @Query("SELECT * FROM sync_queue WHERE id = :id LIMIT 1")
+    fun observeById(id: String): Flow<SyncQueueEntity?>
+
+    @Query("SELECT * FROM sync_queue WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): SyncQueueEntity?
+
+    @Query(
+        "SELECT * FROM sync_queue " +
+            "WHERE kind = 'FEED_IMPORT' AND status = 'RUNNING' AND updated_at <= :staleBefore " +
+            "ORDER BY updated_at ASC"
+    )
+    suspend fun getStaleRunningFeedImports(staleBefore: Long): List<SyncQueueEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(item: SyncQueueEntity)
 

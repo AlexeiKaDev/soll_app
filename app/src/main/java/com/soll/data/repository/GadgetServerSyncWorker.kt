@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.ListenableWorker.Result
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -24,6 +26,7 @@ import com.soll.domain.notification.SollNotificationRequest
 import com.soll.domain.soll.SollMeshOutboxItem
 import com.soll.domain.soll.SollGateway
 import com.soll.presentation.navigation.AppLaunchTargets
+import android.util.Base64
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -127,7 +130,10 @@ class GadgetServerSyncWorker(
         return when (decision.action) {
             MeshOutboxDeliveryAction.ACK -> {
                 deliverMeshOutboxLocally(item, notificationCenter)
-                gateway.ackMeshOutbox(item.outboundId).fold(
+                gateway.ackMeshOutbox(
+                    outboundId = item.outboundId,
+                    claimToken = item.claimToken.takeIf { it.isNotBlank() },
+                ).fold(
                     onSuccess = {
                         deviceRepository.logEvent(item.toMeshDeliveryEvent(decision))
                         MeshOutboxWorkerSummary(claimed = 1, acked = 1)
@@ -140,6 +146,7 @@ class GadgetServerSyncWorker(
                     outboundId = item.outboundId,
                     success = false,
                     error = decision.error ?: "Unsupported mesh payload",
+                    claimToken = item.claimToken.takeIf { it.isNotBlank() },
                 ).fold(
                     onSuccess = {
                         deviceRepository.logEvent(item.toMeshDeliveryEvent(decision))
@@ -324,6 +331,13 @@ internal data class MeshOutboxDeliveryDecision(
     val error: String? = null,
 )
 
+internal data class LegacyMeshCommand(
+    val command: String,
+    val body: String = "",
+    val error: String? = null,
+    val isSupported: Boolean = true,
+)
+
 internal data class GadgetCommandExecutionDecision(
     val action: GadgetCommandExecutionAction,
     val error: String? = null,
@@ -346,29 +360,176 @@ internal fun gadgetServerSyncWorkDecision(summary: GadgetServerSyncSummary): Syn
     }
 
 internal fun meshOutboxDeliveryDecision(item: SollMeshOutboxItem): MeshOutboxDeliveryDecision {
-    val type = meshPayloadType(item.text)
-        ?: return MeshOutboxDeliveryDecision(
-            action = MeshOutboxDeliveryAction.FAIL,
-            error = "Unsupported mesh payload: expected JSON object with type",
-        )
+    val payloadText = meshOutboxPayloadText(item)
+    val type = meshPayloadType(payloadText)
+    if (type != null) {
+        return when (type.lowercase()) {
+            "chat_message",
+            "chat_action",
+            "chat_notification" -> MeshOutboxDeliveryDecision(MeshOutboxDeliveryAction.ACK)
+            "status",
+            "brief",
+            "note",
+            "task" -> MeshOutboxDeliveryDecision(
+                action = MeshOutboxDeliveryAction.FAIL,
+                error = "No registered local consumer for mesh payload type: $type",
+            )
+            "command" -> MeshOutboxDeliveryDecision(
+                action = MeshOutboxDeliveryAction.FAIL,
+                error = "Command mesh delivery is not enabled in Android worker yet",
+            )
+            else -> MeshOutboxDeliveryDecision(
+                action = MeshOutboxDeliveryAction.FAIL,
+                error = "Unsupported mesh payload type: $type",
+            )
+        }
+    }
 
-    return when (type.lowercase()) {
-        "status",
-        "brief",
-        "note",
-        "task",
-        "chat_message",
-        "chat_action",
-        "chat_notification" -> MeshOutboxDeliveryDecision(MeshOutboxDeliveryAction.ACK)
-        "command" -> MeshOutboxDeliveryDecision(
+    val legacyCommand = parseLegacyMeshCommand(payloadText)
+    return if (legacyCommand != null) {
+        MeshOutboxDeliveryDecision(
             action = MeshOutboxDeliveryAction.FAIL,
-            error = "Command mesh delivery is not enabled in Android worker yet",
+            error = legacyCommand.error
+                ?: "No registered local consumer for legacy mesh payload: ${legacyCommand.command}",
         )
-        else -> MeshOutboxDeliveryDecision(
+    } else {
+        MeshOutboxDeliveryDecision(
             action = MeshOutboxDeliveryAction.FAIL,
-            error = "Unsupported mesh payload type: $type",
+            error = "Unsupported mesh payload: expected JSON object with type or legacy /command payload",
         )
     }
+}
+
+private fun parseLegacyMeshCommand(rawText: String): LegacyMeshCommand? {
+    val text = rawText.trim()
+    if (!text.startsWith("/")) return null
+    val command = runCatching {
+        val commandPart = text.substringBefore(" ")
+        val body = text.substringAfter(" ", "").trim()
+        when (commandPart.lowercase()) {
+            "/note", "/task" -> {
+                val command = commandPart.removePrefix("/").lowercase()
+                LegacyMeshCommand(
+                    command = command,
+                    body = body,
+                    isSupported = body.isNotBlank(),
+                    error = if (body.isBlank()) "${command} payload is empty" else null,
+                )
+            }
+            "/status", "/brief" -> LegacyMeshCommand(
+                command = commandPart.removePrefix("/").lowercase(),
+                body = body,
+                isSupported = true,
+            )
+            "/command" -> {
+                if (body.isBlank()) {
+                    LegacyMeshCommand(
+                        command = "command",
+                        isSupported = false,
+                        error = "Empty /command payload",
+                    )
+                } else {
+                    val nestedCommand = body.substringBefore(" ")
+                    val nestedBody = body.substringAfter(" ", "").trim()
+                    when (nestedCommand.lowercase().removePrefix("/")) {
+                        "note", "task" -> LegacyMeshCommand(
+                            command = nestedCommand.lowercase().removePrefix("/"),
+                            body = nestedBody,
+                            isSupported = nestedBody.isNotBlank(),
+                            error = if (nestedBody.isBlank()) "${nestedCommand.removePrefix("/")} payload is empty" else null,
+                        )
+                        "status", "brief" -> LegacyMeshCommand(
+                            command = nestedCommand.lowercase().removePrefix("/"),
+                            body = nestedBody,
+                            isSupported = true,
+                        )
+                        else -> LegacyMeshCommand(
+                            command = "command",
+                            isSupported = false,
+                            error = "Unsupported nested command: $nestedCommand",
+                        )
+                    }
+                }
+            }
+            else -> LegacyMeshCommand(
+                command = "unsupported",
+                isSupported = false,
+                error = "Unsupported command: $text",
+            )
+        }
+    }.getOrElse {
+        null
+    }
+    return command
+}
+
+internal suspend fun deliverMeshOutboxLocally(
+    item: SollMeshOutboxItem,
+    notificationCenter: SollNotificationCenter,
+) {
+    val payloadText = meshOutboxPayloadText(item)
+    val payloadType = meshPayloadType(payloadText)?.lowercase()
+    if (payloadType !in setOf("chat_message", "chat_action", "chat_notification")) return
+    val payload = runCatching { JSONObject(payloadText.trim()) }.getOrNull() ?: return
+    val type = payload.optString("type").trim()
+    val title = payload.optString("title").trim().ifBlank { "Soll" }
+    val message = payload.optString("message").trim().ifBlank { payloadText.take(180) }
+    val priority = when (payload.optJSONObject("metadata")?.optString("priority")?.lowercase()) {
+        "high", "alert" -> SollNotificationPriority.HIGH
+        "low" -> SollNotificationPriority.LOW
+        else -> SollNotificationPriority.DEFAULT
+    }
+    notificationCenter.post(
+        SollNotificationRequest(
+            channel = SollNotificationChannel.CHAT,
+            type = type,
+            source = "soll_server",
+            title = title,
+            message = message,
+            payloadJson = payload.toString(),
+            priority = priority,
+            showSystem = true,
+            onlyAlertOnce = true,
+            systemNotificationId = item.outboundId.hashCode() and Int.MAX_VALUE,
+            launchSection = AppLaunchTargets.SECTION_CHAT,
+        )
+    )
+}
+
+private fun meshOutboxPayloadText(item: SollMeshOutboxItem): String {
+    val fallback = item.text.trim()
+    val encoded = item.securePayload.trim()
+    if (encoded.isBlank()) return fallback
+    return runCatching {
+        val decoded = Base64.decode(encoded, Base64.DEFAULT)
+        val decodedText = String(decoded, Charsets.UTF_8).trim()
+        decodedText.ifBlank { fallback }
+    }.getOrElse { fallback }
+}
+
+private fun SollMeshOutboxItem.toMeshDeliveryEvent(decision: MeshOutboxDeliveryDecision): DeviceEvent {
+    val payloadText = meshOutboxPayloadText(this)
+    val payloadType = meshPayloadType(payloadText)?.lowercase() ?: parseLegacyMeshCommand(payloadText)?.command ?: "unknown"
+    val delivered = decision.action == MeshOutboxDeliveryAction.ACK
+    val eventType = if (delivered) "mesh_outbox_delivered" else "mesh_outbox_rejected"
+    val summary = if (delivered) {
+        "Mesh outbox ${outboundId.take(8)} доставлен как $payloadType"
+    } else {
+        "Mesh outbox ${outboundId.take(8)} отклонен: ${decision.error ?: "unsupported"}"
+    }
+    val payload = JSONObject()
+        .put("outbound_id", outboundId)
+        .put("to_peer", toPeer)
+        .put("payload_type", payloadType)
+        .put("text", payloadText)
+        .put("error", decision.error)
+        .toString()
+    return DeviceEvent(
+        deviceId = toPeer.ifBlank { "soll-mesh" },
+        type = eventType,
+        summary = summary,
+        payloadJson = payload,
+    )
 }
 
 internal fun gadgetCommandExecutionDecision(
@@ -431,38 +592,6 @@ private fun meshPayloadType(text: String): String? =
     runCatching {
         JSONObject(text.trim()).optString("type").trim().takeIf { it.isNotBlank() }
     }.getOrNull()
-
-private suspend fun deliverMeshOutboxLocally(
-    item: SollMeshOutboxItem,
-    notificationCenter: SollNotificationCenter,
-) {
-    val payload = runCatching { JSONObject(item.text.trim()) }.getOrNull() ?: return
-    val type = payload.optString("type").trim()
-    if (type !in setOf("chat_message", "chat_action", "chat_notification")) return
-
-    val title = payload.optString("title").trim().ifBlank { "Soll" }
-    val message = payload.optString("message").trim().ifBlank { item.text.take(180) }
-    val priority = when (payload.optJSONObject("metadata")?.optString("priority")?.lowercase()) {
-        "high", "alert" -> SollNotificationPriority.HIGH
-        "low" -> SollNotificationPriority.LOW
-        else -> SollNotificationPriority.DEFAULT
-    }
-    notificationCenter.post(
-        SollNotificationRequest(
-            channel = SollNotificationChannel.CHAT,
-            type = type,
-            source = "soll_server",
-            title = title,
-            message = message,
-            payloadJson = payload.toString(),
-            priority = priority,
-            showSystem = true,
-            onlyAlertOnce = true,
-            systemNotificationId = item.outboundId.hashCode() and Int.MAX_VALUE,
-            launchSection = AppLaunchTargets.SECTION_CHAT,
-        )
-    )
-}
 
 private data class ServerGadgetEndpointHint(
     val host: String,
@@ -535,30 +664,6 @@ private fun Any?.asNonBlankString(): String? =
         else -> toString().trim().takeIf { it.isNotBlank() }
     }
 
-private fun SollMeshOutboxItem.toMeshDeliveryEvent(decision: MeshOutboxDeliveryDecision): DeviceEvent {
-    val payloadType = meshPayloadType(text) ?: "unknown"
-    val delivered = decision.action == MeshOutboxDeliveryAction.ACK
-    val eventType = if (delivered) "mesh_outbox_delivered" else "mesh_outbox_rejected"
-    val summary = if (delivered) {
-        "Mesh outbox ${outboundId.take(8)} доставлен как $payloadType"
-    } else {
-        "Mesh outbox ${outboundId.take(8)} отклонен: ${decision.error ?: "unsupported"}"
-    }
-    val payload = JSONObject()
-        .put("outbound_id", outboundId)
-        .put("to_peer", toPeer)
-        .put("payload_type", payloadType)
-        .put("text", text)
-        .put("error", decision.error)
-        .toString()
-    return DeviceEvent(
-        deviceId = toPeer.ifBlank { "soll-mesh" },
-        type = eventType,
-        summary = summary,
-        payloadJson = payload,
-    )
-}
-
 private fun GadgetCloudCommand.toGadgetCommandEvent(success: Boolean, error: String = ""): DeviceEvent {
     val payload = JSONObject()
         .put("command_id", id)
@@ -609,6 +714,30 @@ object GadgetServerSyncScheduler {
             request,
         )
     }
+
+    fun runNow(context: Context, settingsRepository: SettingsRepository) {
+        if (settingsRepository.sollServerUrl.isBlank()) return
+        val networkType = if (settingsRepository.sollWifiOnlyUpload) {
+            NetworkType.UNMETERED
+        } else {
+            NetworkType.CONNECTED
+        }
+        val request = OneTimeWorkRequestBuilder<GadgetServerSyncWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(networkType)
+                    .build()
+            )
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            IMMEDIATE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
+    }
+
+    internal const val IMMEDIATE_WORK_NAME = "gadget_server_sync_now"
 }
 
 @EntryPoint

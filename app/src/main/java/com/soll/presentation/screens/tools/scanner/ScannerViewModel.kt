@@ -24,6 +24,7 @@ import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollPairingPayload
 import com.soll.domain.soll.SollPairingPayloadParser
 import com.soll.domain.soll.SollTask
+import com.soll.domain.soll.sollPairingVerification
 import com.soll.domain.scanner.ScanConfirmationGate
 import com.soll.domain.scanner.ScannerDevicePairingParser
 import com.soll.domain.scanner.ScannerSettings
@@ -42,6 +43,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import timber.log.Timber
 import javax.inject.Inject
 
 data class ScannerUiState(
@@ -57,6 +59,7 @@ data class ScannerUiState(
     val showTaskPicker: Boolean = false,
     val isExporting: Boolean = false,
     val isActionRunning: Boolean = false,
+    val pairingCompleted: Boolean = false,
     val message: String? = null,
     val isError: Boolean = false,
 )
@@ -255,14 +258,34 @@ class ScannerViewModel @Inject constructor(
 
     private fun applySollPairingPayload(payload: SollPairingPayload, reason: String) {
         settingsRepository.applySollPairingPayload(payload)
+        val verification = sollPairingVerification(
+            serverUrl = settingsRepository.sollServerUrl,
+            apiPathPrefix = settingsRepository.sollApiPathPrefix,
+            userAccessToken = settingsRepository.sollAccessToken,
+            deviceId = settingsRepository.sollDeviceId,
+            pairingSecret = settingsRepository.sollDevicePairingSecret,
+            deviceAccessToken = settingsRepository.sollDeviceAccessToken,
+        )
+        Timber.i(
+            "Soll QR pairing applied: endpoint=%s authMode=%s",
+            verification.endpointLabel,
+            verification.authMode.name.lowercase(),
+        )
         GadgetServerSyncScheduler.schedule(appContext, settingsRepository)
-        SollServerSyncScheduler.schedule(appContext, settingsRepository)
+        GadgetServerSyncScheduler.runNow(appContext, settingsRepository)
+        SollServerSyncScheduler.schedule(
+            appContext,
+            settingsRepository,
+            initialDelayMs = 0L,
+            replaceExisting = true,
+        )
         _uiState.update {
             it.copy(
                 cameraEnabled = false,
                 cameraStatus = "Soll QR применен",
                 isActionRunning = true,
-                message = "Настройки Soll применены из QR. Регистрирую push-токен",
+                pairingCompleted = false,
+                message = "Soll QR применен: ${verification.endpointLabel}. Проверяю push-токен",
                 isError = false,
             )
         }
@@ -276,10 +299,11 @@ class ScannerViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isActionRunning = false,
+                        pairingCompleted = true,
                         message = if (lastError.isBlank()) {
-                            "Soll QR применен. Push-токен зарегистрирован"
+                            "Pairing готов: ${verification.endpointLabel}. Push-токен зарегистрирован"
                         } else {
-                            "Soll QR применен, push-токен не зарегистрирован"
+                            "Pairing применен: ${verification.endpointLabel}. Push-токен не зарегистрирован"
                         },
                         isError = lastError.isNotBlank(),
                     )

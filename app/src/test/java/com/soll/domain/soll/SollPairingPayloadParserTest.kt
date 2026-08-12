@@ -23,6 +23,7 @@ class SollPairingPayloadParserTest {
         assertEquals("abcdef123456", payload?.accessToken)
         assertEquals("desktop-main", payload?.clientId)
         assertEquals("soll-main", payload?.sessionId)
+        assertEquals(true, payload?.usesRelayBearerAuth)
     }
 
     @Test
@@ -43,6 +44,7 @@ class SollPairingPayloadParserTest {
         assertEquals("phone-1", payload?.deviceId)
         assertEquals("secret-1", payload?.pairingSecret)
         assertEquals("", payload?.accessToken)
+        assertEquals(false, payload?.usesRelayBearerAuth)
     }
 
     @Test

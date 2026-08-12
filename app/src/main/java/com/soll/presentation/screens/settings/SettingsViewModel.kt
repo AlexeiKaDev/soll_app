@@ -25,7 +25,9 @@ import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollNodeIdentity
+import com.soll.domain.soll.SollPairingVerification
 import com.soll.domain.soll.SollTaskBoard
+import com.soll.domain.soll.sollPairingVerification
 import com.soll.ui.theme.SollThemeVariant
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,7 @@ data class SettingsUiState(
     val sollServerUrl: String = "",
     val sollApiPathPrefix: String = "",
     val sollAccessToken: String = "",
+    val sollPairingVerification: SollPairingVerification = SollPairingVerification(),
     val sollSyncIntervalMinutes: String = "60",
     val sollWifiOnlyUpload: Boolean = true,
     val sollHealthStatus: String? = null,
@@ -120,6 +123,7 @@ class SettingsViewModel @Inject constructor(
                 sollServerUrl = settingsRepository.sollServerUrl,
                 sollApiPathPrefix = settingsRepository.sollApiPathPrefix,
                 sollAccessToken = settingsRepository.sollAccessToken,
+                sollPairingVerification = currentSollPairingVerification(),
                 sollSyncIntervalMinutes = settingsRepository.sollSyncIntervalMinutes.toString(),
                 sollWifiOnlyUpload = settingsRepository.sollWifiOnlyUpload,
                 voiceRequiresUnlockedDevice = settingsRepository.voiceRequiresUnlockedDevice,
@@ -140,6 +144,16 @@ class SettingsViewModel @Inject constructor(
             )
         }
     }
+
+    private fun currentSollPairingVerification(): SollPairingVerification =
+        sollPairingVerification(
+            serverUrl = settingsRepository.sollServerUrl,
+            apiPathPrefix = settingsRepository.sollApiPathPrefix,
+            userAccessToken = settingsRepository.sollAccessToken,
+            deviceId = settingsRepository.sollDeviceId,
+            pairingSecret = settingsRepository.sollDevicePairingSecret,
+            deviceAccessToken = settingsRepository.sollDeviceAccessToken,
+        )
 
     fun setRiskyCapabilitiesEnabled(enabled: Boolean) {
         settingsRepository.setRiskyCapabilitiesEnabled(enabled)
@@ -388,6 +402,7 @@ class SettingsViewModel @Inject constructor(
             it.copy(
                 sollServerUrl = settingsRepository.sollServerUrl,
                 sollApiPathPrefix = settingsRepository.sollApiPathPrefix,
+                sollPairingVerification = currentSollPairingVerification(),
                 sollHealthStatus = null,
                 sollHealthMessage = null,
                 sollSyncSummary = null,
@@ -415,6 +430,7 @@ class SettingsViewModel @Inject constructor(
         _uiState.update {
             val nextState = it.copy(
                 sollSyncIntervalMinutes = interval.toString(),
+                sollPairingVerification = currentSollPairingVerification(),
             )
             if (showMessage) {
                 nextState.copy(

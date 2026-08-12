@@ -30,6 +30,7 @@ import com.soll.domain.deviceqa.DeviceQaStatus
 import com.soll.domain.deviceqa.DeviceQaSummary
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.soll.SollNodeIdentity
+import com.soll.domain.soll.SollPairingAuthMode
 import com.soll.ui.theme.SollThemeVariant
 import com.soll.ui.components.PassiveChip
 import java.text.SimpleDateFormat
@@ -157,6 +158,29 @@ fun SettingsScreen(
                             }
                         },
                     )
+
+                    val pairingVerification = uiState.sollPairingVerification
+                    PassiveChip(
+                        text = when (pairingVerification.authMode) {
+                            SollPairingAuthMode.DEVICE -> "Pairing: device auth готов"
+                            SollPairingAuthMode.BEARER -> "Pairing: bearer настроен"
+                            SollPairingAuthMode.MISSING -> "Pairing: авторизация не настроена"
+                        },
+                        icon = if (pairingVerification.isReady) {
+                            Icons.Default.VerifiedUser
+                        } else {
+                            Icons.Default.Warning
+                        },
+                    )
+                    pairingVerification.endpointLabel.takeIf { it.isNotBlank() }?.let { endpoint ->
+                        SelectionContainer {
+                            Text(
+                                text = "Endpoint: $endpoint",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
 
                     OutlinedTextField(
                         value = uiState.sollSyncIntervalMinutes,

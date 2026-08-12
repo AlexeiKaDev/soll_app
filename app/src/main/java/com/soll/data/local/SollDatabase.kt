@@ -19,6 +19,7 @@ import com.soll.data.local.dao.SyncQueueDao
 import com.soll.data.local.dao.TaskCacheDao
 import com.soll.data.local.dao.TaskGraphCacheDao
 import com.soll.data.local.dao.ToolJobDao
+import com.soll.data.local.dao.TodaySnapshotDao
 import com.soll.data.local.entity.AppNotificationEntity
 import com.soll.data.local.entity.AssistantEventEntity
 import com.soll.data.local.entity.AssistantMemoryEntity
@@ -48,6 +49,7 @@ import com.soll.data.local.entity.TaskGraphNodeEntity
 import com.soll.data.local.entity.TaskGraphReachabilityEntity
 import com.soll.data.local.entity.TaskGraphSnapshotEntity
 import com.soll.data.local.entity.ToolJobEntity
+import com.soll.data.local.entity.TodaySnapshotEntity
 
 @Database(
     entities = [
@@ -80,8 +82,9 @@ import com.soll.data.local.entity.ToolJobEntity
         TaskGraphNodeEntity::class,
         TaskGraphEdgeEntity::class,
         TaskGraphReachabilityEntity::class,
+        TodaySnapshotEntity::class,
     ],
-    version = 24,
+    version = 25,
     exportSchema = true,
 )
 abstract class SollDatabase : RoomDatabase() {
@@ -102,6 +105,7 @@ abstract class SollDatabase : RoomDatabase() {
     abstract fun appNotificationDao(): AppNotificationDao
     abstract fun noteDao(): NoteDao
     abstract fun fieldPointDao(): FieldPointDao
+    abstract fun todaySnapshotDao(): TodaySnapshotDao
 
     abstract fun breathingSessionDao(): BreathingSessionDao
 

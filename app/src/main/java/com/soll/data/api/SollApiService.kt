@@ -162,6 +162,38 @@ interface SollApiService {
         @Header("Authorization") authorization: String? = null,
     ): SollBriefingResponse
 
+    @GET("api/v1/assistant/today")
+    suspend fun getTodayIntelligence(
+        @Header("Authorization") authorization: String? = null,
+    ): TodaySnapshotResponse
+
+    @GET("api/v1/feed")
+    suspend fun getPersonalFeed(
+        @Header("Authorization") authorization: String? = null,
+        @Query("limit") limit: Int = 30,
+        @Query("cursor") cursor: String = "",
+        @Query("category") category: String = "",
+    ): FeedPageResponse
+
+    @POST("api/v1/feed/import-link")
+    suspend fun importFeedLink(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: FeedImportLinkRequest,
+    ): FeedImportLinkResponse
+
+    @POST("api/v1/feed/{entity_id}/feedback")
+    suspend fun sendFeedFeedback(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "entity_id", encoded = true) entityId: String,
+        @Body request: FeedFeedbackRequest,
+    ): FeedFeedbackResponse
+
+    @POST("api/v1/assistant/calendar-snapshot")
+    suspend fun syncCalendarSnapshot(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: CalendarSnapshotRequest,
+    ): CalendarSnapshotResponse
+
     @POST("api/v1/raw/create")
     suspend fun createRawFile(
         @Header("Authorization") authorization: String? = null,
@@ -407,6 +439,7 @@ interface SollApiService {
     suspend fun ackMeshOutbox(
         @Header("Authorization") authorization: String? = null,
         @Path("outbound_id") outboundId: String,
+        @Body request: MeshOutboxAckRequest = MeshOutboxAckRequest(),
     ): MeshOutboxItemResponse
 
     @POST("api/v1/mesh/outbox/{outbound_id}/attempt")
@@ -737,7 +770,9 @@ data class ChatTurnRequest(
     @Json(name = "run_assistant")
     val runAssistant: Boolean = true,
     @Json(name = "task_intake")
-    val taskIntake: Boolean = true,
+    val taskIntake: Boolean = false,
+    @Json(name = "allow_actions")
+    val allowActions: Boolean = false,
 )
 
 data class ChatTurnResponse(
@@ -1681,6 +1716,13 @@ data class MeshOutboxClaimResponse(
 data class MeshOutboxAttemptRequest(
     val success: Boolean,
     val error: String? = null,
+    @Json(name = "claim_token")
+    val claimToken: String? = null,
+)
+
+data class MeshOutboxAckRequest(
+    @Json(name = "claim_token")
+    val claimToken: String? = null,
 )
 
 data class MeshOutboxItemResponse(
@@ -1689,6 +1731,10 @@ data class MeshOutboxItemResponse(
     @Json(name = "to_peer")
     val toPeer: String = "",
     val text: String = "",
+    @Json(name = "claim_token")
+    val claimToken: String = "",
+    @Json(name = "secure_payload")
+    val securePayload: String = "",
     val status: String = "",
     @Json(name = "retry_count")
     val retryCount: Int = 0,

@@ -26,4 +26,13 @@ class VoiceCommandSessionTest {
         assertEquals("Нет гарнитуры", failed.errorMessage)
         assertNotNull(failed.finishedAt)
     }
+
+    @Test
+    fun `cancelled session is terminal without a response`() {
+        val cancelled = VoiceCommandSession(id = "session-3").cancelled()
+
+        assertEquals(VoiceCommandSessionStatus.CANCELLED, cancelled.status)
+        assertEquals("", cancelled.responseText)
+        assertNotNull(cancelled.finishedAt)
+    }
 }

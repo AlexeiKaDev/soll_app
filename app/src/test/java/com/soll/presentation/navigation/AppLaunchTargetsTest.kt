@@ -51,6 +51,16 @@ class AppLaunchTargetsTest {
     }
 
     @Test
+    fun `today extras open exact today destination`() {
+        listOf("today", "/today", "assistant/today").forEach { section ->
+            assertEquals(
+                AppLaunchTargets.SECTION_TODAY,
+                AppLaunchTargets.fromExtras(section = section, logsTab = null)?.section,
+            )
+        }
+    }
+
+    @Test
     fun `pairing launch extras open settings`() {
         assertEquals(
             AppLaunchTargets.SECTION_SETTINGS,

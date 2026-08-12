@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.SystemClock
 import android.util.Log
 import com.soll.BuildConfig
 import com.soll.data.notification.AppForegroundState
@@ -31,13 +30,13 @@ class SollServerSyncAlarmReceiver : BroadcastReceiver() {
             return
         }
 
-        SollServerSyncAlarmScheduler.scheduleNext(appContext)
+        SollServerSyncAlarmScheduler.cancel(appContext)
         if (AppForegroundState.isUserFacing()) {
-            logAlarm("skip sync alarm: app is user-facing")
+            logAlarm("legacy sync alarm disabled while app is user-facing")
             return
         }
 
-        logAlarm("enqueue sync from alarm")
+        logAlarm("migrate legacy sync alarm to WorkManager")
         SollServerSyncScheduler.schedule(
             context = appContext,
             settingsRepository = settings,
@@ -58,22 +57,6 @@ class SollServerSyncAlarmReceiver : BroadcastReceiver() {
 }
 
 object SollServerSyncAlarmScheduler {
-    const val CLOSED_APP_POLL_INTERVAL_MS = 120_000L
-
-    fun scheduleNext(
-        context: Context,
-        delayMs: Long = CLOSED_APP_POLL_INTERVAL_MS,
-    ) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val triggerAt = SystemClock.elapsedRealtime() + delayMs.coerceAtLeast(1_000L)
-        alarmManager.setAndAllowWhileIdle(
-            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-            triggerAt,
-            pendingIntent(context),
-        )
-        logAlarm("scheduled alarm in ${delayMs.coerceAtLeast(1_000L)} ms")
-    }
-
     fun cancel(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.cancel(pendingIntent(context))

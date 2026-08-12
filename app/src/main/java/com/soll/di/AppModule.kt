@@ -27,6 +27,7 @@ import com.soll.data.local.dao.SyncQueueDao
 import com.soll.data.local.dao.TaskCacheDao
 import com.soll.data.local.dao.TaskGraphCacheDao
 import com.soll.data.local.dao.ToolJobDao
+import com.soll.data.local.dao.TodaySnapshotDao
 import com.soll.data.repository.AssistantEventRepository
 import com.soll.data.repository.BookRepository
 import com.soll.data.repository.BreathingRepository
@@ -686,6 +687,21 @@ object AppModule {
         }
     }
 
+    internal val migration24To25 = object : Migration(24, 25) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `today_snapshots` (
+                    `scope` TEXT NOT NULL,
+                    `payload_json` TEXT NOT NULL,
+                    `updated_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`scope`)
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
     private const val ENCRYPTED_PREFS_NAME = "soll_secure_prefs"
 
     private fun createCoreTables(db: SupportSQLiteDatabase) {
@@ -860,6 +876,7 @@ object AppModule {
                 migration21To22,
                 migration22To23,
                 migration23To24,
+                migration24To25,
             )
             .build()
 
@@ -892,6 +909,11 @@ object AppModule {
     @Singleton
     fun provideTaskGraphCacheDao(database: SollDatabase): TaskGraphCacheDao =
         database.taskGraphCacheDao()
+
+    @Provides
+    @Singleton
+    fun provideTodaySnapshotDao(database: SollDatabase): TodaySnapshotDao =
+        database.todaySnapshotDao()
 
     @Provides
     @Singleton

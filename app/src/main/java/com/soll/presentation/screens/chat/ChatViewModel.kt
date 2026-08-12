@@ -253,6 +253,8 @@ class ChatViewModel @Inject constructor(
                 content = content,
                 sessionId = sessionId,
                 runAssistant = true,
+                taskIntake = false,
+                allowActions = false,
             ).fold(
                 onSuccess = { (user, assistant) ->
                     val appended = buildList {

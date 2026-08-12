@@ -32,8 +32,8 @@ class BootReceiver : BroadcastReceiver() {
             val settingsRepository = entryPoint.settingsRepository()
 
             Timber.d("Telegram bot auto-start is archived; server chat sync is scheduled by WorkManager")
+            SollServerSyncAlarmScheduler.cancel(context.applicationContext)
             SollServerSyncScheduler.schedule(context.applicationContext, settingsRepository, initialDelayMs = 0L)
-            SollServerSyncAlarmScheduler.scheduleNext(context.applicationContext)
 
             if (settingsRepository.activityTrackerEnabled) {
                 Timber.d("Auto-starting activity tracker service")

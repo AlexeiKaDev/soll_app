@@ -124,7 +124,8 @@ internal data class FcmNotificationRoute(
 
 internal fun classifyFcmNotification(data: Map<String, String>): FcmNotificationRoute {
     val channel = data.toSollNotificationChannel()
-    val priority = data.explicitSollPriority() ?: channel.defaultFcmPriority()
+    val priority = data.explicitSollPriority()
+        ?: if (data.isTodayNotification()) SollNotificationPriority.DEFAULT else channel.defaultFcmPriority()
     val type = data["type"]
         ?.trim()
         ?.takeIf { it.isNotBlank() }
@@ -133,7 +134,8 @@ internal fun classifyFcmNotification(data: Map<String, String>): FcmNotification
         channel = channel,
         type = type,
         priority = priority,
-        launchSection = data.explicitLaunchSection() ?: channel.defaultLaunchSection(),
+        launchSection = data.explicitLaunchSection()
+            ?: if (data.isTodayNotification()) AppLaunchTargets.SECTION_TODAY else channel.defaultLaunchSection(),
     )
 }
 
@@ -175,6 +177,7 @@ private fun Map<String, String>.toSollNotificationChannel(): SollNotificationCha
     val hint = notificationHint()
     return when {
         hint.anyToken("alert", "alarm", "critical", "urgent", "device_qa") -> SollNotificationChannel.ALERTS
+        hint.anyToken("assistant_today", "today", "briefing", "morning") -> SollNotificationChannel.EVENTS
         hint.anyToken("chat", "message", "session") -> SollNotificationChannel.CHAT
         hint.anyToken("task_board", "board", "sync", "poll", "heartbeat") -> SollNotificationChannel.SERVER_SYNC
         hint.anyToken("tool_job", "job", "task", "action") -> SollNotificationChannel.TOOL_JOBS
@@ -182,6 +185,9 @@ private fun Map<String, String>.toSollNotificationChannel(): SollNotificationCha
         else -> SollNotificationChannel.CHAT
     }
 }
+
+private fun Map<String, String>.isTodayNotification(): Boolean =
+    notificationHint().anyToken("assistant_today", "today", "briefing", "morning")
 
 private fun Map<String, String>.notificationHint(): String =
     listOf("channel", "notification_channel", "route", "type", "source", "category")

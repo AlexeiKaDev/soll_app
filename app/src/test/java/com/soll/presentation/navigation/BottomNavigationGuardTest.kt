@@ -10,12 +10,12 @@ class BottomNavigationGuardTest {
     fun `devices are opened from tools, not bottom navigation`() {
         val destinations = projectFile("app/src/main/java/com/soll/presentation/navigation/AppDestinations.kt").readText()
 
-        assertTrue(destinations.contains("val bottomBar = listOf(Chat, Tasks, Tools, Settings)"))
+        assertTrue(destinations.contains("val bottomBar = listOf(Today, Chat, Tasks, Tools, Settings)"))
         assertFalse(destinations.contains("val bottomBar = listOf(Home, Tasks, Devices"))
         assertFalse(destinations.contains("val bottomBar = listOf(Home, Chat, Tasks, Tools, Logs, Settings)"))
         assertTrue(destinations.contains("route = Devices.route"))
         assertTrue(destinations.contains("title = Devices.title"))
-        assertFalse(destinations.contains("val Home"))
+        assertTrue(destinations.contains("val Today"))
         assertTrue(destinations.contains("route = Routes.MUSIC"))
         assertTrue(destinations.contains("route = Routes.BOOK_READER"))
         assertTrue(destinations.contains("route = Routes.BREATHING"))

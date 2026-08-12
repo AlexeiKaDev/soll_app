@@ -361,6 +361,8 @@ data class SollMeshOutboxItem(
     val outboundId: String,
     val toPeer: String,
     val text: String,
+    val claimToken: String = "",
+    val securePayload: String = "",
     val status: String,
     val retryCount: Int,
     val maxRetries: Int,
@@ -641,6 +643,31 @@ data class SollBookDownloadedFile(
 
 interface SollGateway {
     suspend fun getHealth(): Result<SollHealth>
+    suspend fun getTodayIntelligence(): Result<SollTodaySnapshot>
+    suspend fun getPersonalFeed(
+        limit: Int = 30,
+        cursor: String = "",
+        category: String = "",
+    ): Result<SollFeedPage>
+    suspend fun importFeedLink(
+        url: String,
+        title: String = "",
+        sharedText: String = "",
+        clientId: String? = null,
+    ): Result<SollFeedImportResult> = Result.failure(
+        UnsupportedOperationException("Импорт ссылок не поддерживается этим шлюзом")
+    )
+    suspend fun sendFeedFeedback(
+        entityId: String,
+        decision: String,
+        topic: String,
+        source: String,
+        note: String = "",
+    ): Result<Boolean>
+    suspend fun syncCalendarSnapshot(
+        timezone: String,
+        events: List<SollCalendarEvent>,
+    ): Result<SollCalendarSnapshot>
     suspend fun getTaskBoard(limitPerSection: Int? = null): Result<SollTaskBoard>
     suspend fun getTodayDailyTasks(): Result<SollDailyTaskList>
     suspend fun addTodayDailyTask(text: String, locationLabel: String = ""): Result<SollDailyTaskList>
@@ -662,6 +689,9 @@ interface SollGateway {
         content: String,
         sessionId: String? = null,
         runAssistant: Boolean = true,
+        taskIntake: Boolean = false,
+        allowActions: Boolean = false,
+        metadata: Map<String, Any?> = emptyMap(),
     ): Result<Pair<SollChatMessage, SollChatMessage?>>
 
     suspend fun synthesizeVoice(text: String): Result<ByteArray>
@@ -758,11 +788,15 @@ interface SollGateway {
     suspend fun getMeshStatus(): Result<SollMeshStatus>
     suspend fun getMeshOutbox(limit: Int = 20): Result<List<SollMeshOutboxItem>>
     suspend fun claimNextMeshOutbox(toPeer: String? = null): Result<SollMeshOutboxItem?>
-    suspend fun ackMeshOutbox(outboundId: String): Result<SollMeshOutboxItem>
+    suspend fun ackMeshOutbox(
+        outboundId: String,
+        claimToken: String? = null,
+    ): Result<SollMeshOutboxItem>
     suspend fun markMeshOutboxAttempt(
         outboundId: String,
         success: Boolean,
         error: String? = null,
+        claimToken: String? = null,
     ): Result<SollMeshOutboxItem>
     suspend fun retryMeshOutbox(outboundId: String): Result<SollMeshOutboxItem>
     suspend fun getGadgetSnapshots(): Result<List<GadgetCloudSnapshot>>

@@ -14,6 +14,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.soll.data.local.dao.SyncQueueDao
 import com.soll.data.local.entity.SyncQueueEntity
+import com.soll.domain.soll.SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH
+import com.soll.domain.soll.SollFeedImportResult
 import com.soll.domain.soll.SollGateway
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -26,14 +28,18 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import retrofit2.HttpException
 
 data class SyncRetrySummary(
     val retried: Int,
     val succeeded: Int,
     val failed: Int,
+    val terminal: Int = 0,
     val remainingOpen: Int = 0,
 )
 
@@ -47,6 +53,95 @@ class SollSyncQueueRepository @Inject constructor(
 
     fun observeRecentItems(limit: Int = 10): Flow<List<SyncQueueEntity>> =
         syncQueueDao.observeRecentItems(limit)
+
+    fun observeItem(id: String): Flow<SyncQueueEntity?> = syncQueueDao.observeById(id)
+
+    suspend fun enqueueFeedImport(
+        url: String,
+        title: String,
+        sharedText: String,
+        clientId: String,
+    ): String {
+        val cleanClientId = clientId.trim()
+            .take(SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH)
+            .ifBlank { UUID.randomUUID().toString() }
+        val queueId = "feed-import:$cleanClientId"
+        val payload = JSONObject()
+            .put("url", url.trim())
+            .put("title", title.trim().take(240))
+            .put("shared_text", sharedText.trim().take(16_000))
+            .put("client_id", cleanClientId)
+        val existing = syncQueueDao.getById(queueId)
+        if (existing != null) {
+            require(existing.kind == SyncQueueEntity.KIND_FEED_IMPORT) {
+                "Идентификатор очереди уже используется другим действием"
+            }
+            val existingPayload = JSONObject(existing.payloadJson)
+            require(
+                existingPayload.optString("url") == payload.optString("url") &&
+                    existingPayload.optString("client_id") == cleanClientId
+            ) { "Идентификатор отправки уже используется для другой ссылки" }
+            if (existing.status == SyncQueueEntity.STATUS_FAILED) {
+                syncQueueDao.update(
+                    existing.copy(
+                        status = SyncQueueEntity.STATUS_PENDING,
+                        lastError = null,
+                        updatedAt = System.currentTimeMillis(),
+                        nextAttemptAt = 0L,
+                    )
+                )
+            }
+            if (existing.status != SyncQueueEntity.STATUS_DONE) enqueueRetryWorker()
+            return queueId
+        }
+
+        val now = System.currentTimeMillis()
+        syncQueueDao.insert(
+            SyncQueueEntity(
+                id = queueId,
+                kind = SyncQueueEntity.KIND_FEED_IMPORT,
+                status = SyncQueueEntity.STATUS_PENDING,
+                payloadJson = payload.toString(),
+                attempts = 0,
+                lastError = null,
+                createdAt = now,
+                updatedAt = now,
+                nextAttemptAt = 0L,
+            )
+        )
+        enqueueRetryWorker()
+        return queueId
+    }
+
+    suspend fun retryNow(id: String) {
+        val item = syncQueueDao.getById(id) ?: return
+        if (item.status == SyncQueueEntity.STATUS_DONE) return
+        syncQueueDao.update(
+            item.copy(
+                status = SyncQueueEntity.STATUS_PENDING,
+                lastError = null,
+                updatedAt = System.currentTimeMillis(),
+                nextAttemptAt = 0L,
+            )
+        )
+        enqueueRetryWorker()
+    }
+
+    fun feedImportResult(item: SyncQueueEntity): SollFeedImportResult? = runCatching {
+        if (item.kind != SyncQueueEntity.KIND_FEED_IMPORT) return@runCatching null
+        val result = JSONObject(item.payloadJson).optJSONObject("result") ?: return@runCatching null
+        SollFeedImportResult(
+            success = result.optBoolean("success"),
+            status = result.optString("status"),
+            message = result.optString("message"),
+            entityId = result.optString("entity_id"),
+            duplicate = result.optBoolean("duplicate"),
+            url = result.optString("url"),
+            title = result.optString("title"),
+            sourceId = result.optString("source_id"),
+            clusterId = result.optString("cluster_id"),
+        )
+    }.getOrNull()
 
     suspend fun enqueueRawNote(
         title: String,
@@ -163,15 +258,22 @@ class SollSyncQueueRepository @Inject constructor(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            ExistingWorkPolicy.KEEP,
             request,
         )
     }
 
     suspend fun retryReady(limit: Int = 10): SyncRetrySummary {
-        val ready = syncQueueDao.getReadyItems(System.currentTimeMillis(), limit)
+        val now = System.currentTimeMillis()
+        syncQueueDao.getStaleRunningFeedImports(now - STALE_RUNNING_TIMEOUT_MS).forEach { stale ->
+            interruptedFeedImportRecovery(stale, now)?.let { recovered ->
+                syncQueueDao.update(recovered)
+            }
+        }
+        val ready = syncQueueDao.getReadyItems(now, limit)
         var succeeded = 0
         var failed = 0
+        var terminal = 0
 
         ready.forEach { item ->
             val running = item.copy(
@@ -184,17 +286,28 @@ class SollSyncQueueRepository @Inject constructor(
             val result = try {
                 retryItem(running)
             } catch (error: CancellationException) {
+                interruptedFeedImportRecovery(running, System.currentTimeMillis())?.let { recovered ->
+                    withContext(NonCancellable) {
+                        syncQueueDao.update(recovered)
+                    }
+                }
                 throw error
             } catch (error: Throwable) {
                 Result.failure(error)
             }
 
             if (result.isSuccess) {
-                markDone(running)
+                markDone(syncQueueDao.getById(running.id) ?: running)
                 succeeded++
             } else {
-                markFailed(running, result.exceptionOrNull()?.message ?: "Ошибка синхронизации")
-                failed++
+                val error = result.exceptionOrNull()
+                if (error is TerminalFeedImportException) {
+                    markRejected(running, error.message ?: "Soll отклонил ссылку")
+                    terminal++
+                } else {
+                    markFailed(running, error?.message ?: "Ошибка синхронизации")
+                    failed++
+                }
             }
         }
 
@@ -203,6 +316,7 @@ class SollSyncQueueRepository @Inject constructor(
             retried = ready.size,
             succeeded = succeeded,
             failed = failed,
+            terminal = terminal,
             remainingOpen = syncQueueDao.countOpenItems(),
         )
     }
@@ -230,9 +344,54 @@ class SollSyncQueueRepository @Inject constructor(
 
             SyncQueueEntity.KIND_TASK_ACTION -> retryTaskAction(payload)
 
+            SyncQueueEntity.KIND_FEED_IMPORT -> retryFeedImport(item, payload)
+
             else -> Result.failure(IllegalStateException("Неизвестный тип очереди: ${item.kind}"))
         }
     }
+
+    private suspend fun retryFeedImport(item: SyncQueueEntity, payload: JSONObject): Result<Unit> =
+        sollGateway.importFeedLink(
+            url = payload.getString("url"),
+            title = payload.optString("title"),
+            sharedText = payload.optString("shared_text"),
+            clientId = payload.getString("client_id"),
+        ).fold(
+            onSuccess = { result ->
+                if (!result.success) {
+                    Result.failure(
+                        TerminalFeedImportException(
+                            result.message.ifBlank { "Soll не принял ссылку" }
+                        )
+                    )
+                } else {
+                    val resultJson = JSONObject()
+                        .put("success", result.success)
+                        .put("status", result.status)
+                        .put("message", result.message)
+                        .put("entity_id", result.entityId)
+                        .put("duplicate", result.duplicate)
+                        .put("url", result.url)
+                        .put("title", result.title)
+                        .put("source_id", result.sourceId)
+                        .put("cluster_id", result.clusterId)
+                    syncQueueDao.update(
+                        item.copy(
+                            payloadJson = JSONObject(item.payloadJson).put("result", resultJson).toString(),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    )
+                    Result.success(Unit)
+                }
+            },
+            onFailure = { error ->
+                if (feedImportFailureDisposition(error) == FeedImportFailureDisposition.TERMINAL) {
+                    Result.failure(TerminalFeedImportException(error.message ?: "Soll отклонил ссылку", error))
+                } else {
+                    Result.failure(error)
+                }
+            },
+        )
 
     private suspend fun retryTaskAction(payload: JSONObject): Result<Unit> {
         val taskId = payload.getString("task_id")
@@ -275,6 +434,17 @@ class SollSyncQueueRepository @Inject constructor(
                 lastError = error,
                 updatedAt = now,
                 nextAttemptAt = now + delayMs,
+            )
+        )
+    }
+
+    private suspend fun markRejected(item: SyncQueueEntity, error: String) {
+        syncQueueDao.update(
+            item.copy(
+                status = SyncQueueEntity.STATUS_REJECTED,
+                lastError = error,
+                updatedAt = System.currentTimeMillis(),
+                nextAttemptAt = 0L,
             )
         )
     }
@@ -358,9 +528,49 @@ class SollSyncQueueRepository @Inject constructor(
         private const val BASE_RETRY_DELAY_MS = 60_000L
         private const val MAX_RETRY_DELAY_MS = 30 * 60_000L
         private const val COMPLETED_RETENTION_MS = 7 * 24 * 60 * 60_000L
+        private const val STALE_RUNNING_TIMEOUT_MS = 5 * 60_000L
         private const val UNIQUE_WORK_NAME = "soll_sync_queue"
         private const val WORK_TAG = "soll_sync_queue"
     }
+}
+
+internal enum class FeedImportFailureDisposition {
+    RETRYABLE,
+    TERMINAL,
+}
+
+internal fun feedImportFailureDisposition(error: Throwable): FeedImportFailureDisposition =
+    when (error) {
+        is HttpException -> feedImportHttpFailureDisposition(error.code())
+        is IllegalArgumentException, is SecurityException -> FeedImportFailureDisposition.TERMINAL
+        else -> FeedImportFailureDisposition.RETRYABLE
+    }
+
+internal fun feedImportHttpFailureDisposition(statusCode: Int): FeedImportFailureDisposition =
+    if (statusCode in 400..499 && statusCode !in setOf(408, 425, 429)) {
+        FeedImportFailureDisposition.TERMINAL
+    } else {
+        FeedImportFailureDisposition.RETRYABLE
+    }
+
+private class TerminalFeedImportException(
+    message: String,
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)
+
+internal fun interruptedFeedImportRecovery(
+    item: SyncQueueEntity,
+    recoveredAt: Long,
+): SyncQueueEntity? {
+    if (item.kind != SyncQueueEntity.KIND_FEED_IMPORT || item.status != SyncQueueEntity.STATUS_RUNNING) {
+        return null
+    }
+    return item.copy(
+        status = SyncQueueEntity.STATUS_PENDING,
+        lastError = "Предыдущая отправка была прервана и поставлена в очередь повторно",
+        updatedAt = recoveredAt,
+        nextAttemptAt = 0L,
+    )
 }
 
 class SollSyncQueueWorker(

@@ -12,6 +12,7 @@ import android.speech.SpeechRecognizer
 import com.soll.domain.voice.SttAdapter
 import com.soll.domain.voice.SttAdapterState
 import com.soll.domain.voice.SttRecognitionMode
+import com.soll.domain.voice.MAX_PTT_DURATION_MS
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private val handler = Handler(Looper.getMainLooper())
     private var holdUntilStop: Boolean = false
     private var stopRequested: Boolean = false
+    private var cancelRequested: Boolean = false
     private var lastPreferOffline: Boolean = false
     private var manualFinalEmitted: Boolean = false
     private val manualSegments = mutableListOf<String>()
@@ -34,13 +36,30 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private val _state = MutableStateFlow(currentAvailability())
     override val state: StateFlow<SttAdapterState> = _state.asStateFlow()
 
-    override fun startListening(preferOffline: Boolean, holdUntilStop: Boolean) {
+    private val durationLimit = Runnable {
+        if (_state.value.isListening) {
+            _state.value = _state.value.copy(recordingLimitReached = true)
+            stopListening()
+        }
+    }
+
+    override fun startListening(
+        preferOffline: Boolean,
+        holdUntilStop: Boolean,
+        maxDurationMillis: Long,
+    ) {
+        handler.removeCallbacks(durationLimit)
         this.holdUntilStop = holdUntilStop
         this.stopRequested = false
+        this.cancelRequested = false
         this.lastPreferOffline = preferOffline
         this.manualFinalEmitted = false
         manualSegments.clear()
         startRecognizer(preferOffline = preferOffline, resetText = true)
+        handler.postDelayed(
+            durationLimit,
+            maxDurationMillis.coerceIn(MIN_PTT_DURATION_MS, MAX_PTT_DURATION_MS),
+        )
     }
 
     private fun startRecognizer(preferOffline: Boolean, resetText: Boolean) {
@@ -69,6 +88,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             partialText = if (resetText) "" else _state.value.partialText,
             finalText = null,
             errorMessage = null,
+            recordingLimitReached = false,
             holdUntilStop = holdUntilStop,
             activeMode = desiredMode,
         )
@@ -77,6 +97,8 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     }
 
     override fun stopListening() {
+        if (!_state.value.isListening) return
+        handler.removeCallbacks(durationLimit)
         stopRequested = true
         recognizer?.stopListening()
         if (holdUntilStop) {
@@ -86,12 +108,31 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
     }
 
+    override fun cancelListening() {
+        handler.removeCallbacks(durationLimit)
+        cancelRequested = true
+        stopRequested = false
+        holdUntilStop = false
+        manualFinalEmitted = true
+        manualSegments.clear()
+        recognizer?.cancel()
+        _state.value = _state.value.copy(
+            isListening = false,
+            partialText = "",
+            finalText = null,
+            errorMessage = null,
+            holdUntilStop = false,
+            recordingLimitReached = false,
+        )
+    }
+
     override fun clearFinalResult() {
         _state.value = _state.value.copy(finalText = null)
     }
 
     override fun destroy() {
         handler.removeCallbacksAndMessages(null)
+        cancelRequested = true
         recognizer?.destroy()
         recognizer = null
     }
@@ -159,6 +200,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
 
         override fun onError(error: Int) {
+            if (cancelRequested) return
             if (holdUntilStop && !stopRequested && error.isManualRetryable()) {
                 restartManualRecognition()
                 return
@@ -171,6 +213,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
 
         override fun onResults(results: Bundle?) {
+            if (cancelRequested) return
             val text = results.bestText()
             if (holdUntilStop) {
                 rememberManualSegment(text)
@@ -190,6 +233,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
+            if (cancelRequested) return
             _state.value = _state.value.copy(partialText = partialResults.bestText().orEmpty())
         }
 
@@ -262,3 +306,4 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
 
 private const val MANUAL_RESTART_DELAY_MS = 300L
 private const val STOP_RESULT_GRACE_MS = 800L
+private const val MIN_PTT_DURATION_MS = 1_000L

@@ -1,6 +1,7 @@
 package com.soll.presentation
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -24,10 +25,12 @@ import com.soll.domain.soll.SollPairingPayloadParser
 import com.soll.presentation.navigation.AppLaunchCommand
 import com.soll.presentation.navigation.AppLaunchTargets
 import com.soll.presentation.navigation.AppNavigation
+import com.soll.presentation.navigation.SharedLinkParser
 import com.soll.ui.theme.SollTheme
 import com.soll.ui.theme.SollThemeVariant
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import java.util.UUID
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -67,19 +70,41 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         launchCommand = intent.toLaunchCommand()
     }
 
-    private fun android.content.Intent.toLaunchCommand(): AppLaunchCommand? {
+    private fun Intent.toLaunchCommand(): AppLaunchCommand? {
+        if (action == Intent.ACTION_SEND && type.equals("text/plain", ignoreCase = true)) {
+            val clientId = getStringExtra(EXTRA_SHARE_CLIENT_ID)
+                ?.takeIf(String::isNotBlank)
+                ?: UUID.randomUUID().toString().also { putExtra(EXTRA_SHARE_CLIENT_ID, it) }
+            val title = getCharSequenceExtra(Intent.EXTRA_TITLE)?.toString()
+                ?: getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString()
+            return AppLaunchCommand(
+                section = AppLaunchTargets.SECTION_SHARE_IMPORT,
+                sharedLink = SharedLinkParser.parse(
+                    sharedText = getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(),
+                    explicitTitle = title,
+                    clientId = clientId,
+                ),
+            )
+        }
+
         dataString
             ?.let(SollPairingPayloadParser::parse)
             ?.let { payload ->
                 applySollPairingPayload(payload, reason = "deep_link_pairing")
                 return AppLaunchCommand(section = AppLaunchTargets.SECTION_SETTINGS)
             }
+
+        if (data?.scheme.equals("soll", ignoreCase = true) &&
+            data?.host.equals(AppLaunchTargets.SECTION_TODAY, ignoreCase = true)
+        ) {
+            return AppLaunchCommand(section = AppLaunchTargets.SECTION_TODAY)
+        }
 
         return AppLaunchTargets.fromExtras(
             section = getStringExtra(AppLaunchTargets.EXTRA_OPEN_SECTION),
@@ -90,7 +115,13 @@ class MainActivity : ComponentActivity() {
     private fun applySollPairingPayload(payload: SollPairingPayload, reason: String) {
         settingsRepository.applySollPairingPayload(payload)
         GadgetServerSyncScheduler.schedule(applicationContext, settingsRepository)
-        SollServerSyncScheduler.schedule(applicationContext, settingsRepository)
+        GadgetServerSyncScheduler.runNow(applicationContext, settingsRepository)
+        SollServerSyncScheduler.schedule(
+            applicationContext,
+            settingsRepository,
+            initialDelayMs = 0L,
+            replaceExisting = true,
+        )
         AndroidPushTokenRegistrar.registerCurrentToken(
             applicationContext,
             reason = reason,
@@ -107,5 +138,9 @@ class MainActivity : ComponentActivity() {
         if (!granted) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private companion object {
+        const val EXTRA_SHARE_CLIENT_ID = "com.soll.extra.SHARE_CLIENT_ID"
     }
 }

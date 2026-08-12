@@ -10,8 +10,10 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.ui.graphics.vector.ImageVector
 
 data class AppDestination(
@@ -28,6 +30,7 @@ data class ToolDestination(
 )
 
 object Routes {
+    const val TODAY = "today"
     const val CHAT = "chat"
     const val TASKS = "tasks"
     const val DEVICES = "devices"
@@ -42,9 +45,12 @@ object Routes {
     const val DAILY_TODO = "daily_todo"
     const val SCANNER = "scanner"
     const val DEVICE_QA = "device_qa"
+    const val SHARE_IMPORT = "share_import"
+    const val VOICE = "voice"
 }
 
 object AppDestinations {
+    val Today = AppDestination(Routes.TODAY, "Сегодня", Icons.Default.Today)
     val Chat = AppDestination(Routes.CHAT, "Чат", Icons.AutoMirrored.Filled.Message)
     val Tasks = AppDestination(Routes.TASKS, "Задачи", Icons.Default.TaskAlt)
     val Devices = AppDestination(Routes.DEVICES, "Гаджеты", Icons.Default.Devices)
@@ -52,9 +58,15 @@ object AppDestinations {
     val Logs = AppDestination(Routes.LOGS, "Логи", Icons.Default.History)
     val Settings = AppDestination(Routes.SETTINGS, "Настройки", Icons.Default.Settings)
 
-    val bottomBar = listOf(Chat, Tasks, Tools, Settings)
+    val bottomBar = listOf(Today, Chat, Tasks, Tools, Settings)
 
     val tools = listOf(
+        ToolDestination(
+            route = Routes.VOICE,
+            title = "Голос Soll",
+            description = "Push-to-talk на экране с безопасным ответом ассистента",
+            icon = Icons.Default.Mic,
+        ),
         ToolDestination(
             route = Routes.DAILY_TODO,
             title = "Список дел",

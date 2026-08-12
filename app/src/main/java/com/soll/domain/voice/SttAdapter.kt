@@ -13,14 +13,22 @@ data class SttAdapterState(
     val errorMessage: String? = null,
     val preferOffline: Boolean = false,
     val holdUntilStop: Boolean = false,
+    val recordingLimitReached: Boolean = false,
     val isOnDeviceRecognitionAvailable: Boolean = false,
     val activeMode: SttRecognitionMode = SttRecognitionMode.SYSTEM,
 )
 
 interface SttAdapter {
     val state: kotlinx.coroutines.flow.StateFlow<SttAdapterState>
-    fun startListening(preferOffline: Boolean = false, holdUntilStop: Boolean = false)
+    fun startListening(
+        preferOffline: Boolean = false,
+        holdUntilStop: Boolean = false,
+        maxDurationMillis: Long = MAX_PTT_DURATION_MS,
+    )
     fun stopListening()
+    fun cancelListening()
     fun clearFinalResult()
     fun destroy()
 }
+
+const val MAX_PTT_DURATION_MS = 30_000L

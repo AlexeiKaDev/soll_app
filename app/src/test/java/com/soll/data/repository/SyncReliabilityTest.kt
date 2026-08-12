@@ -6,12 +6,129 @@ import com.soll.domain.device.GadgetCloudCommand
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.device.KnownDevice
 import com.soll.domain.soll.SollMeshOutboxItem
+import com.soll.data.local.entity.SyncQueueEntity
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncReliabilityTest {
+    @Test
+    fun `background server sync interval stays inside WorkManager safe bounds`() {
+        assertEquals(TimeUnit.MINUTES.toMillis(15), serverSyncDelayMs(1))
+        assertEquals(TimeUnit.MINUTES.toMillis(15), serverSyncDelayMs(15))
+        assertEquals(TimeUnit.MINUTES.toMillis(60), serverSyncDelayMs(90))
+    }
+
+    @Test
+    fun `periodic and immediate server sync use separate unique work names`() {
+        assertTrue(SollServerSyncScheduler.PERIODIC_WORK_NAME.isNotBlank())
+        assertTrue(SollServerSyncScheduler.IMMEDIATE_WORK_NAME.isNotBlank())
+        assertTrue(SollServerSyncScheduler.PERIODIC_WORK_NAME != SollServerSyncScheduler.IMMEDIATE_WORK_NAME)
+        assertTrue(SollServerSyncScheduler.PERIODIC_WORK_NAME != SollServerSyncWorker.UNIQUE_WORK_NAME)
+    }
+
+    @Test
+    fun `feed import treats permanent client responses as terminal`() {
+        listOf(400, 401, 403, 404, 409, 413, 422).forEach { statusCode ->
+            assertEquals(
+                FeedImportFailureDisposition.TERMINAL,
+                feedImportHttpFailureDisposition(statusCode),
+            )
+        }
+    }
+
+    @Test
+    fun `feed import retries transient http responses`() {
+        listOf(408, 425, 429, 500, 502, 503).forEach { statusCode ->
+            assertEquals(
+                FeedImportFailureDisposition.RETRYABLE,
+                feedImportHttpFailureDisposition(statusCode),
+            )
+        }
+    }
+
+    @Test
+    fun `terminal feed import does not keep worker retrying`() {
+        val summary = SyncRetrySummary(
+            retried = 1,
+            succeeded = 0,
+            failed = 0,
+            terminal = 1,
+            remainingOpen = 0,
+        )
+
+        assertEquals(SyncWorkDecision.SUCCESS, syncQueueWorkDecision(summary))
+    }
+
+    @Test
+    fun `interrupted feed import is returned to pending without losing idempotency payload`() {
+        val running = SyncQueueEntity(
+            id = "feed-import:share-1",
+            kind = SyncQueueEntity.KIND_FEED_IMPORT,
+            status = SyncQueueEntity.STATUS_RUNNING,
+            payloadJson = """{"url":"https://example.com","client_id":"share-1"}""",
+            attempts = 1,
+            lastError = null,
+            createdAt = 1L,
+            updatedAt = 2L,
+            nextAttemptAt = 3L,
+        )
+
+        val recovered = requireNotNull(interruptedFeedImportRecovery(running, recoveredAt = 10L))
+
+        assertEquals(SyncQueueEntity.STATUS_PENDING, recovered.status)
+        assertEquals(running.payloadJson, recovered.payloadJson)
+        assertEquals(running.attempts, recovered.attempts)
+        assertEquals(0L, recovered.nextAttemptAt)
+        assertEquals(10L, recovered.updatedAt)
+    }
+
+    @Test
+    fun `interrupted recovery does not reset unrelated running actions`() {
+        val running = SyncQueueEntity(
+            id = "note-1",
+            kind = SyncQueueEntity.KIND_RAW_NOTE,
+            status = SyncQueueEntity.STATUS_RUNNING,
+            payloadJson = "{}",
+            attempts = 1,
+            lastError = null,
+            createdAt = 1L,
+            updatedAt = 2L,
+            nextAttemptAt = 0L,
+        )
+
+        assertNull(interruptedFeedImportRecovery(running, recoveredAt = 10L))
+    }
+
+    @Test
+    fun `refresh aware auth accepts renewed device token and rejects stale token`() {
+        assertEquals(
+            "Bearer renewed-device",
+            selectRefreshAwareAuthorizationHeader(
+                deviceAuthorization = "Bearer renewed-device",
+                deviceTokenNeedsRefresh = false,
+                fallbackAuthorization = "Bearer owner",
+            ),
+        )
+        assertEquals(
+            "Bearer owner",
+            selectRefreshAwareAuthorizationHeader(
+                deviceAuthorization = "Bearer stale-device",
+                deviceTokenNeedsRefresh = true,
+                fallbackAuthorization = "Bearer owner",
+            ),
+        )
+        assertNull(
+            selectRefreshAwareAuthorizationHeader(
+                deviceAuthorization = "Bearer stale-device",
+                deviceTokenNeedsRefresh = true,
+                fallbackAuthorization = null,
+            )
+        )
+    }
+
     @Test
     fun `note worker retries mixed success and failure batches`() {
         val summary = NoteSyncSummary(
@@ -131,10 +248,11 @@ class SyncReliabilityTest {
     }
 
     @Test
-    fun `mesh worker acks allowlisted status payload`() {
+    fun `mesh worker fails closed for status payload without local consumer`() {
         val decision = meshOutboxDeliveryDecision(meshItem("""{"type":"status","message":"ok"}"""))
 
-        assertEquals(MeshOutboxDeliveryAction.ACK, decision.action)
+        assertEquals(MeshOutboxDeliveryAction.FAIL, decision.action)
+        assertTrue(decision.error.orEmpty().contains("No registered local consumer"))
     }
 
     @Test
@@ -156,6 +274,14 @@ class SyncReliabilityTest {
         val decision = meshOutboxDeliveryDecision(meshItem("turn pump on"))
 
         assertEquals(MeshOutboxDeliveryAction.FAIL, decision.action)
+    }
+
+    @Test
+    fun `mesh worker fails closed for legacy note until note consumer exists`() {
+        val decision = meshOutboxDeliveryDecision(meshItem("/note сохранить идею"))
+
+        assertEquals(MeshOutboxDeliveryAction.FAIL, decision.action)
+        assertTrue(decision.error.orEmpty().contains("No registered local consumer"))
     }
 
     @Test

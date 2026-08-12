@@ -13,7 +13,10 @@ data class SollPairingPayload(
     val pairingSecret: String = "",
     val clientId: String = "",
     val sessionId: String = "",
-)
+) {
+    val usesRelayBearerAuth: Boolean
+        get() = accessToken.isNotBlank() && deviceId.isBlank() && pairingSecret.isBlank()
+}
 
 object SollPairingPayloadParser {
     private const val PAYLOAD_TYPE = "soll_android_pairing"

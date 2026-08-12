@@ -64,6 +64,7 @@ import com.soll.data.api.LearningItemResponse
 import com.soll.data.api.LearningItemStatusRequest
 import com.soll.data.api.LearningItemTaskRequest
 import com.soll.data.api.MeshOutboxAttemptRequest
+import com.soll.data.api.MeshOutboxAckRequest
 import com.soll.data.api.MeshOutboxItemResponse
 import com.soll.data.api.MeshStatusResponse
 import com.soll.data.api.MonitoredSourceCreateRequest
@@ -79,6 +80,11 @@ import com.soll.data.api.RoadmapStageResponse
 import com.soll.data.api.RoadmapLineResponse
 import com.soll.data.api.RoadmapReadinessResponse
 import com.soll.data.api.SollApiService
+import com.soll.data.api.CalendarEventRequest
+import com.soll.data.api.CalendarSnapshotRequest
+import com.soll.data.api.FeedFeedbackRequest
+import com.soll.data.api.FeedImportLinkRequest
+import com.soll.data.api.toDomain
 import com.soll.data.api.SollBookStatusResponse
 import com.soll.data.api.SollBriefingResponse
 import com.soll.data.api.SollDeviceResponse
@@ -113,6 +119,7 @@ import com.soll.domain.device.GadgetCloudHistory
 import com.soll.domain.device.GadgetCloudHistoryPoint
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollAndroidChatSync
 import com.soll.domain.soll.SollAndroidLocationStatus
@@ -133,6 +140,8 @@ import com.soll.domain.soll.SollBookSelection
 import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
 import com.soll.domain.soll.SollBriefing
+import com.soll.domain.soll.SollCalendarEvent
+import com.soll.domain.soll.SollCalendarSnapshot
 import com.soll.domain.soll.SollChatActionResult
 import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
@@ -146,6 +155,8 @@ import com.soll.domain.soll.SollDailyTaskResearch
 import com.soll.domain.soll.SollDevice
 import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
+import com.soll.domain.soll.SollFeedPage
+import com.soll.domain.soll.SollFeedImportResult
 import com.soll.domain.soll.SollLearningItem
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollNodeIdentity
@@ -173,6 +184,7 @@ import com.soll.domain.soll.SollTaskBoardCounts
 import com.soll.domain.soll.SollTaskGraph
 import com.soll.domain.soll.SollTaskGraphEdge
 import com.soll.domain.soll.SollTaskGraphNode
+import com.soll.domain.soll.SollTodaySnapshot
 import com.soll.domain.soll.buildSollDeviceTokenSignature
 import com.soll.domain.soll.isSollVoiceWav
 import com.soll.domain.soll.withoutDailyTodoTasks
@@ -223,6 +235,95 @@ class SollRepository @Inject constructor(
 
     override suspend fun getHealth(): Result<SollHealth> = runSuspendCatching {
         service().getHealth(readAuthorizationHeader()).toDomain()
+    }
+
+    override suspend fun getTodayIntelligence(): Result<SollTodaySnapshot> = runSuspendCatching {
+        service().getTodayIntelligence(refreshAwareReadAuthorizationHeader()).toDomain()
+    }
+
+    override suspend fun getPersonalFeed(
+        limit: Int,
+        cursor: String,
+        category: String,
+    ): Result<SollFeedPage> = runSuspendCatching {
+        service().getPersonalFeed(
+            authorization = refreshAwareReadAuthorizationHeader(),
+            limit = limit.coerceIn(1, 50),
+            cursor = cursor,
+            category = category,
+        ).toDomain()
+    }
+
+    override suspend fun importFeedLink(
+        url: String,
+        title: String,
+        sharedText: String,
+        clientId: String?,
+    ): Result<SollFeedImportResult> = runSuspendCatching {
+        val cleanUrl = url.trim()
+        require(cleanUrl.isNotBlank()) { "Ссылка не задана" }
+        require(cleanUrl.length <= 2_048) { "Ссылка слишком длинная" }
+        val parsedUrl = requireNotNull(cleanUrl.toHttpUrlOrNull()) {
+            "Допустимы только корректные HTTP(S)-ссылки"
+        }
+        require(parsedUrl.scheme == "http" || parsedUrl.scheme == "https") {
+            "Допустимы только HTTP(S)-ссылки"
+        }
+        require(parsedUrl.username.isBlank() && parsedUrl.password.isBlank()) {
+            "Ссылки со встроенными учётными данными не поддерживаются"
+        }
+        val cleanClientId = clientId
+            ?.trim()
+            ?.take(SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH)
+            ?.takeIf(String::isNotBlank)
+        service().importFeedLink(
+            authorization = writeAuthorizationHeader(),
+            request = FeedImportLinkRequest(
+                url = parsedUrl.toString(),
+                title = title.trim().take(240),
+                sharedText = sharedText.trim().take(16_000),
+                source = "android_share",
+                clientId = cleanClientId,
+                idempotencyKey = cleanClientId,
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun sendFeedFeedback(
+        entityId: String,
+        decision: String,
+        topic: String,
+        source: String,
+        note: String,
+    ): Result<Boolean> = runSuspendCatching {
+        require(entityId.isNotBlank()) { "ID материала не задан" }
+        service().sendFeedFeedback(
+            authorization = writeAuthorizationHeader(),
+            entityId = entityId,
+            request = FeedFeedbackRequest(decision, topic, source, note),
+        ).success
+    }
+
+    override suspend fun syncCalendarSnapshot(
+        timezone: String,
+        events: List<SollCalendarEvent>,
+    ): Result<SollCalendarSnapshot> = runSuspendCatching {
+        service().syncCalendarSnapshot(
+            authorization = writeAuthorizationHeader(),
+            request = CalendarSnapshotRequest(
+                timezone = timezone,
+                events = events.take(200).map { event ->
+                    CalendarEventRequest(
+                        eventId = event.eventId,
+                        title = event.title,
+                        startAt = event.startAt,
+                        endAt = event.endAt,
+                        allDay = event.allDay,
+                        location = event.location,
+                    )
+                },
+            ),
+        ).toDomain()
     }
 
     override suspend fun getTaskBoard(limitPerSection: Int?): Result<SollTaskBoard> {
@@ -389,13 +490,16 @@ class SollRepository @Inject constructor(
         content: String,
         sessionId: String?,
         runAssistant: Boolean,
+        taskIntake: Boolean,
+        allowActions: Boolean,
+        metadata: Map<String, Any?>,
     ): Result<Pair<SollChatMessage, SollChatMessage?>> = runSuspendCatching {
         val cleanContent = content.trim()
         require(cleanContent.isNotBlank()) { "Сообщение пустое" }
-        val metadata = mapOf("source" to "android_app")
+        val requestMetadata = mapOf("source" to "android_app") + metadata
         val encrypted = encryptedEnvelopeOrNull(
             content = cleanContent,
-            metadata = metadata,
+            metadata = requestMetadata,
             aad = "POST /api/v1/chat/turn",
         )
         val response = service().sendChatTurn(
@@ -403,10 +507,11 @@ class SollRepository @Inject constructor(
             request = ChatTurnRequest(
                 sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
                 content = if (encrypted == null) cleanContent else null,
-                metadata = if (encrypted == null) metadata else null,
+                metadata = if (encrypted == null) requestMetadata else null,
                 encrypted = encrypted,
                 runAssistant = runAssistant,
-                taskIntake = true,
+                taskIntake = taskIntake,
+                allowActions = allowActions,
             ),
         )
         response.message.toDomain() to response.assistant?.toDomain()
@@ -1037,12 +1142,17 @@ class SollRepository @Inject constructor(
         ).outbox?.toDomain()
     }
 
-    override suspend fun ackMeshOutbox(outboundId: String): Result<SollMeshOutboxItem> = runSuspendCatching {
+    override suspend fun ackMeshOutbox(
+        outboundId: String,
+        claimToken: String?,
+    ): Result<SollMeshOutboxItem> = runSuspendCatching {
         val cleanId = outboundId.trim()
         require(cleanId.isNotBlank()) { "ID outbox-сообщения не задан" }
+        val cleanClaimToken = claimToken?.trim()?.takeIf { it.isNotBlank() }
         service().ackMeshOutbox(
             authorization = readAuthorizationHeader(),
             outboundId = cleanId,
+            request = MeshOutboxAckRequest(claimToken = cleanClaimToken),
         ).toDomain()
     }
 
@@ -1050,15 +1160,18 @@ class SollRepository @Inject constructor(
         outboundId: String,
         success: Boolean,
         error: String?,
+        claimToken: String?,
     ): Result<SollMeshOutboxItem> = runSuspendCatching {
         val cleanId = outboundId.trim()
         require(cleanId.isNotBlank()) { "ID outbox-сообщения не задан" }
+        val cleanClaimToken = claimToken?.trim()?.takeIf { it.isNotBlank() }
         service().markMeshOutboxAttempt(
             authorization = readAuthorizationHeader(),
             outboundId = cleanId,
             request = MeshOutboxAttemptRequest(
                 success = success,
                 error = error?.trim()?.takeIf { it.isNotBlank() },
+                claimToken = cleanClaimToken,
             ),
         ).toDomain()
     }
@@ -1244,6 +1357,15 @@ class SollRepository @Inject constructor(
 
     private fun readAuthorizationHeader(): String? {
         return deviceAuthorizationHeader() ?: authorizationHeader()
+    }
+
+    private suspend fun refreshAwareReadAuthorizationHeader(): String? {
+        val deviceAuthorization = ensureDeviceAuthorizationHeader()
+        return selectRefreshAwareAuthorizationHeader(
+            deviceAuthorization = deviceAuthorization,
+            deviceTokenNeedsRefresh = deviceTokenNeedsRefresh(),
+            fallbackAuthorization = authorizationHeader(),
+        )
     }
 
     private suspend fun writeAuthorizationHeader(): String? {
@@ -1968,6 +2090,8 @@ class SollRepository @Inject constructor(
             outboundId = outboundId,
             toPeer = toPeer,
             text = text,
+            claimToken = claimToken,
+            securePayload = securePayload,
             status = status,
             retryCount = retryCount,
             maxRetries = maxRetries,
@@ -2147,6 +2271,14 @@ class SollRepository @Inject constructor(
         }
     }
 }
+
+internal fun selectRefreshAwareAuthorizationHeader(
+    deviceAuthorization: String?,
+    deviceTokenNeedsRefresh: Boolean,
+    fallbackAuthorization: String?,
+): String? = deviceAuthorization
+    ?.takeUnless { deviceTokenNeedsRefresh }
+    ?: fallbackAuthorization
 
 private data class RawUploadMetadata(
     val displayName: String,

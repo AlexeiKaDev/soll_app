@@ -488,7 +488,7 @@ fun DevicesScreen(
                 onExecuteManualCommand = viewModel::executeManualServerCommand,
                 onRefreshMesh = { viewModel.refreshMeshWorker() },
                 onClaimNextMesh = viewModel::claimNextMeshOutbox,
-                onAckMesh = viewModel::ackMeshOutbox,
+                onAckMesh = { item -> viewModel.ackMeshOutbox(item.outboundId, item.claimToken) },
                 onRetryMesh = viewModel::retryMeshOutbox,
             )
 
@@ -2144,7 +2144,7 @@ private fun GadgetServerCard(
     onExecuteManualCommand: (String) -> Unit,
     onRefreshMesh: () -> Unit,
     onClaimNextMesh: () -> Unit,
-    onAckMesh: (String) -> Unit,
+    onAckMesh: (SollMeshOutboxItem) -> Unit,
     onRetryMesh: (String) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -2314,7 +2314,7 @@ private fun MeshWorkerSection(
     isBusy: Boolean,
     onRefresh: () -> Unit,
     onClaimNext: () -> Unit,
-    onAck: (String) -> Unit,
+    onAck: (SollMeshOutboxItem) -> Unit,
     onRetry: (String) -> Unit,
 ) {
     Surface(
@@ -2405,7 +2405,7 @@ private fun MeshWorkerSection(
                         MeshOutboxRow(
                             item = item,
                             isBusy = isBusy,
-                            onAck = onAck,
+                    onAck = onAck,
                             onRetry = onRetry,
                         )
                     }
@@ -2420,7 +2420,7 @@ private fun MeshWorkerSection(
 private fun MeshOutboxRow(
     item: SollMeshOutboxItem,
     isBusy: Boolean,
-    onAck: (String) -> Unit,
+    onAck: (SollMeshOutboxItem) -> Unit,
     onRetry: (String) -> Unit,
 ) {
     Surface(
@@ -2466,7 +2466,7 @@ private fun MeshOutboxRow(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
-                    onClick = { onAck(item.outboundId) },
+                    onClick = { onAck(item) },
                     enabled = !isBusy && item.status == "sent",
                 ) {
                     Text("ACK")

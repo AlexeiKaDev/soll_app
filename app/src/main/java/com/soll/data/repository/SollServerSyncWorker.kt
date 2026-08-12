@@ -5,11 +5,13 @@ import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ListenableWorker.Result
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.soll.BuildConfig
@@ -25,7 +27,6 @@ import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
-import com.soll.data.service.SollServerSyncAlarmScheduler
 import com.soll.presentation.navigation.AppLaunchTargets
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -46,7 +47,7 @@ class SollServerSyncWorker(
         )
         val settings = entryPoint.settingsRepository()
         if (settings.sollServerUrl.isBlank()) {
-            WorkManager.getInstance(applicationContext).cancelUniqueWork(UNIQUE_WORK_NAME)
+            SollServerSyncScheduler.schedule(applicationContext, settings)
             return Result.success()
         }
 
@@ -71,13 +72,9 @@ class SollServerSyncWorker(
                 notificationCenter = entryPoint.notificationCenter(),
                 appInForeground = appInForeground,
             )
-            SollServerSyncAlarmScheduler.scheduleNext(applicationContext)
-            SollServerSyncScheduler.schedule(applicationContext, settings)
             Result.success()
         } catch (error: Throwable) {
             Timber.w(error, "Soll server sync failed")
-            SollServerSyncAlarmScheduler.scheduleNext(applicationContext)
-            SollServerSyncScheduler.schedule(applicationContext, settings)
             Result.retry()
         }
     }
@@ -201,12 +198,12 @@ object SollServerSyncScheduler {
     fun schedule(
         context: Context,
         settingsRepository: SettingsRepository,
-        initialDelayMs: Long = nextDelayMs(settingsRepository),
-        replaceExisting: Boolean = initialDelayMs <= 0L,
+        initialDelayMs: Long? = null,
+        replaceExisting: Boolean = initialDelayMs != null && initialDelayMs <= 0L,
     ) {
+        val workManager = WorkManager.getInstance(context)
         if (settingsRepository.sollServerUrl.isBlank()) {
-            WorkManager.getInstance(context).cancelUniqueWork(SollServerSyncWorker.UNIQUE_WORK_NAME)
-            SollServerSyncAlarmScheduler.cancel(context)
+            cancel(workManager)
             return
         }
 
@@ -215,11 +212,30 @@ object SollServerSyncScheduler {
         } else {
             NetworkType.CONNECTED
         }
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(networkType)
+            .build()
+        val intervalMs = serverSyncDelayMs(settingsRepository.sollSyncIntervalMinutes)
+        val periodicRequest = PeriodicWorkRequestBuilder<SollServerSyncWorker>(
+            intervalMs,
+            TimeUnit.MILLISECONDS,
+        )
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 60_000L, TimeUnit.MILLISECONDS)
+            .build()
+
+        workManager.cancelUniqueWork(SollServerSyncWorker.UNIQUE_WORK_NAME)
+        workManager.enqueueUniquePeriodicWork(
+            PERIODIC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            periodicRequest,
+        )
+
+        if (initialDelayMs == null) return
+
         val requestBuilder = OneTimeWorkRequestBuilder<SollServerSyncWorker>()
             .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(networkType)
-                    .build()
+                constraints
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 60_000L, TimeUnit.MILLISECONDS)
         if (initialDelayMs > 0L) {
@@ -229,25 +245,27 @@ object SollServerSyncScheduler {
         }
         val request = requestBuilder.build()
 
-        val policy = if (replaceExisting) {
-            ExistingWorkPolicy.REPLACE
-        } else {
-            ExistingWorkPolicy.APPEND_OR_REPLACE
-        }
+        val policy = if (replaceExisting) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            SollServerSyncWorker.UNIQUE_WORK_NAME,
+        workManager.enqueueUniqueWork(
+            IMMEDIATE_WORK_NAME,
             policy,
             request,
         )
     }
 
-    private fun nextDelayMs(settingsRepository: SettingsRepository): Long =
-        settingsRepository.sollSyncIntervalMinutes
-            .coerceIn(1, 60)
-            .coerceAtMost(5)
-            .toLong() * 60_000L
+    private fun cancel(workManager: WorkManager) {
+        workManager.cancelUniqueWork(SollServerSyncWorker.UNIQUE_WORK_NAME)
+        workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
+        workManager.cancelUniqueWork(IMMEDIATE_WORK_NAME)
+    }
+
+    internal const val PERIODIC_WORK_NAME = "soll_server_chat_task_sync_periodic_v2"
+    internal const val IMMEDIATE_WORK_NAME = "soll_server_chat_task_sync_immediate_v2"
 }
+
+internal fun serverSyncDelayMs(configuredMinutes: Int): Long =
+    configuredMinutes.coerceIn(15, 60).toLong() * 60_000L
 
 @EntryPoint
 @InstallIn(SingletonComponent::class)

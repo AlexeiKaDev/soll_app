@@ -143,6 +143,21 @@ class SollFirebaseMessagingServiceTest {
     }
 
     @Test
+    fun `morning briefing payload opens Today`() {
+        val route = classifyFcmNotification(
+            mapOf(
+                "route" to "assistant/today",
+                "type" to "morning_briefing",
+            )
+        )
+
+        assertEquals(SollNotificationChannel.EVENTS, route.channel)
+        assertEquals(SollNotificationPriority.DEFAULT, route.priority)
+        assertEquals(AppLaunchTargets.SECTION_TODAY, route.launchSection)
+        assertEquals(true, shouldShowFcmSystemNotification(route, emptyMap()))
+    }
+
+    @Test
     fun `alert push becomes high priority alert`() {
         val route = classifyFcmNotification(mapOf("route" to "critical-alert"))
 

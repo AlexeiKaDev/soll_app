@@ -48,10 +48,12 @@ data class SyncQueueEntity(
         const val KIND_RAW_NOTE = "RAW_NOTE"
         const val KIND_RAW_FILE = "RAW_FILE"
         const val KIND_TASK_ACTION = "TASK_ACTION"
+        const val KIND_FEED_IMPORT = "FEED_IMPORT"
 
         const val STATUS_PENDING = "PENDING"
         const val STATUS_RUNNING = "RUNNING"
         const val STATUS_DONE = "DONE"
         const val STATUS_FAILED = "FAILED"
+        const val STATUS_REJECTED = "REJECTED"
     }
 }

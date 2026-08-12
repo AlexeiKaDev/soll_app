@@ -81,6 +81,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.delay
 import timber.log.Timber
 
 private const val PAIRING_CAMERA_PROMPT = "Наведи камеру на QR pairing в Desktop"
@@ -89,6 +90,7 @@ private const val PAIRING_CAMERA_PROMPT = "Наведи камеру на QR pai
 @Composable
 fun ScannerScreen(
     onBack: () -> Unit,
+    onPairingCompleted: () -> Unit = onBack,
     autoStartCamera: Boolean = false,
     pairingMode: Boolean = false,
     viewModel: ScannerViewModel = hiltViewModel(),
@@ -116,6 +118,13 @@ fun ScannerScreen(
         }
     }
     var autoStartRequested by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pairingMode, uiState.pairingCompleted) {
+        if (pairingMode && uiState.pairingCompleted) {
+            delay(900)
+            onPairingCompleted()
+        }
+    }
 
     LaunchedEffect(autoStartCamera, pairingMode, hasCameraPermission, uiState.cameraEnabled) {
         if (!autoStartCamera || autoStartRequested || uiState.cameraEnabled) return@LaunchedEffect

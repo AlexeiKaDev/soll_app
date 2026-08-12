@@ -1134,11 +1134,11 @@ class DevicesViewModel @Inject constructor(
         }
     }
 
-    fun ackMeshOutbox(outboundId: String) {
+    fun ackMeshOutbox(outboundId: String, claimToken: String? = null) {
         if (!ensureDeviceCapability("soll-mesh")) return
         updateMeshOutboxItem(
             busyMessage = "ACK outbox ${outboundId.take(8)}...",
-            action = { sollGateway.ackMeshOutbox(outboundId) },
+            action = { sollGateway.ackMeshOutbox(outboundId = outboundId, claimToken = claimToken?.takeIf { it.isNotBlank() }) },
             successMessage = { "ACK ${it.shortId()} -> ${it.status}" },
         )
     }

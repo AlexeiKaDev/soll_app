@@ -94,7 +94,6 @@ class SollServerSyncForegroundService : Service() {
             initialDelayMs = 0L,
             replaceExisting = true,
         )
-        SollServerSyncAlarmScheduler.scheduleNext(applicationContext)
     }
 
     private fun buildNotification(): Notification =

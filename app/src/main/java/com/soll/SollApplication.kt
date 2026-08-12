@@ -8,7 +8,6 @@ import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollServerSyncScheduler
 import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.data.service.SollServerSyncAlarmScheduler
-import com.soll.data.service.SollServerSyncForegroundService
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import timber.log.Timber
@@ -28,11 +27,6 @@ class SollApplication : Application() {
         SollNotificationChannels.ensureAll(this)
         AppForegroundState.register(this)
         AppForegroundState.addBackgroundListener {
-            SollServerSyncForegroundService.startIfConfigured(this, settingsRepository)
-            SollServerSyncAlarmScheduler.scheduleNext(
-                this,
-                delayMs = BACKGROUND_SYNC_DELAY_MS,
-            )
             SollServerSyncScheduler.schedule(
                 this,
                 settingsRepository,
@@ -40,12 +34,10 @@ class SollApplication : Application() {
                 replaceExisting = true,
             )
         }
-        AppForegroundState.addForegroundListener {
-            SollServerSyncForegroundService.stop(this)
-        }
+        SollServerSyncAlarmScheduler.cancel(this)
         GadgetServerSyncScheduler.schedule(this, settingsRepository)
+        GadgetServerSyncScheduler.runNow(this, settingsRepository)
         SollServerSyncScheduler.schedule(this, settingsRepository)
-        SollServerSyncAlarmScheduler.scheduleNext(this)
         AndroidPushTokenRegistrar.registerCurrentToken(
             this,
             reason = "startup",

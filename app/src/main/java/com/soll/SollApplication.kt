@@ -57,7 +57,6 @@ class SollApplication : Application() {
         const val MUSIC_NOTIFICATION_ID = SollNotificationChannels.MUSIC_NOTIFICATION_ID
         const val ACTIVITY_TRACKING_NOTIFICATION_CHANNEL_ID = "soll_activity_tracking"
         const val ACTIVITY_TRACKING_NOTIFICATION_ID = SollNotificationChannels.ACTIVITY_TRACKING_NOTIFICATION_ID
-        const val SERVER_SYNC_NOTIFICATION_ID = SollNotificationChannels.SERVER_SYNC_NOTIFICATION_ID
         const val EVENTS_NOTIFICATION_CHANNEL_ID = "soll_events"
         const val ALERTS_NOTIFICATION_CHANNEL_ID = "soll_alerts"
         const val TOOL_JOBS_NOTIFICATION_CHANNEL_ID = "soll_tool_jobs"

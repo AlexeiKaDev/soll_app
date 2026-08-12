@@ -80,6 +80,15 @@ class VoicePttSafetyGuardTest {
         assertFalse(voiceTree.contains("AlwaysOnHotwordDetector"))
     }
 
+    @Test
+    fun `retired action capable voice router stays removed`() {
+        val root = projectRoot()
+
+        assertFalse(File(root, "app/src/main/java/com/soll/domain/voice/VoiceCommandRouter.kt").exists())
+        assertFalse(File(root, "app/src/main/java/com/soll/domain/voice/VoiceCommandParser.kt").exists())
+        assertFalse(File(root, "app/src/main/java/com/soll/data/music/MusicVoiceController.kt").exists())
+    }
+
     private fun projectFile(relativePath: String): String =
         File(projectRoot(), relativePath).readText()
 

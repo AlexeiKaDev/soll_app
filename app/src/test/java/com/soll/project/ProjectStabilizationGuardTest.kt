@@ -285,14 +285,13 @@ class ProjectStabilizationGuardTest {
         val musicService = projectFile("app/src/main/java/com/soll/data/service/MusicPlaybackService.kt").readText()
         val activityService = projectFile("app/src/main/java/com/soll/data/service/ActivityTrackingService.kt").readText()
         val notificationRepository = projectFile("app/src/main/java/com/soll/data/repository/SollNotificationRepository.kt").readText()
-        val serverSyncService = projectFile("app/src/main/java/com/soll/data/service/SollServerSyncForegroundService.kt").readText()
         val sollIcon = projectFile("app/src/main/res/drawable/ic_soll_notification.xml").readText()
 
         assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_icon"))
         assertTrue(manifest.contains("@drawable/ic_ai_robot_notification"))
         assertFalse(manifest.contains("com.google.firebase.messaging.default_notification_color"))
         assertFalse(colors.contains("notification_icon_tint"))
-        listOf(ttsService, musicService, activityService, serverSyncService).forEach { source ->
+        listOf(ttsService, musicService, activityService).forEach { source ->
             assertTrue(source.contains("ic_soll_notification"))
             assertFalse(source.contains("ic_ai_robot_notification"))
             assertFalse(source.contains("R.drawable.ic_notification"))
@@ -976,25 +975,8 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
-    fun `server sync foreground service enters foreground before optional stop`() {
-        val source = projectFile("app/src/main/java/com/soll/data/service/SollServerSyncForegroundService.kt").readText()
-        val onStart = source.indexOf("override fun onStartCommand")
-        val foregroundCall = source.indexOf("startSyncForeground()", startIndex = onStart)
-        val actionStop = source.indexOf("if (intent?.action == ACTION_STOP)", startIndex = onStart)
-        val blankSettingsStop = source.indexOf("if (settings.sollServerUrl.isBlank())", startIndex = onStart)
-
-        assertTrue(foregroundCall > onStart)
-        assertTrue(actionStop > foregroundCall)
-        assertTrue(blankSettingsStop > foregroundCall)
-        assertFalse(
-            source.substring(onStart, foregroundCall).contains("stopSelf()"),
-        )
-        assertTrue(source.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC"))
-        assertTrue(source.contains(".setAction(ACTION_STOP)"))
-    }
-
-    @Test
     fun `default background sync uses WorkManager and retires legacy two minute alarm`() {
+        val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
         val application = projectFile("app/src/main/java/com/soll/SollApplication.kt").readText()
         val bootReceiver = projectFile(
             "app/src/main/java/com/soll/data/service/BootReceiver.kt"
@@ -1007,6 +989,8 @@ class ProjectStabilizationGuardTest {
         ).readText()
 
         assertFalse(application.contains("SollServerSyncForegroundService.startIfConfigured"))
+        assertFalse(manifest.contains("SollServerSyncForegroundService"))
+        assertFalse(manifest.contains("FOREGROUND_SERVICE_DATA_SYNC"))
         assertFalse(application.contains("SollServerSyncAlarmScheduler.scheduleNext"))
         assertTrue(application.contains("SollServerSyncAlarmScheduler.cancel(this)"))
         assertTrue(bootReceiver.contains("SollServerSyncAlarmScheduler.cancel"))

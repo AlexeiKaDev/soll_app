@@ -84,6 +84,19 @@ class SollRepositoryTest {
     }
 
     @Test
+    fun `api prefix keeps canonical public roadmap path without trailing slash`() {
+        val rewritten = rewriteSollApiUrl(
+            "https://sales.monolith-ost.com/api/v1/roadmap".toHttpUrl(),
+            "api/v1/soll",
+        )
+
+        assertEquals(
+            "https://sales.monolith-ost.com/api/v1/soll/roadmap",
+            rewritten.toString(),
+        )
+    }
+
+    @Test
     fun `raw note filename keeps readable russian slug`() {
         assertEquals(
             "mobile-19700101-000000-идея-для-soll.md",

@@ -273,7 +273,7 @@ interface SollApiService {
         @Body request: LearningItemTaskRequest = LearningItemTaskRequest(),
     ): LearningItemTaskResponse
 
-    @GET("api/v1/roadmap/")
+    @GET("api/v1/roadmap")
     suspend fun getRoadmap(
         @Header("Authorization") authorization: String? = null,
     ): RoadmapResponse

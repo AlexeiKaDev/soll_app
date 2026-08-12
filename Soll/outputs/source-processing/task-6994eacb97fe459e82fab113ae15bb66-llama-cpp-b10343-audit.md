@@ -1,7 +1,7 @@
 # llama.cpp b10343 applicability audit
 
-Date: 2026-08-12  
-Task: `6994eacb97fe459e82fab113ae15bb66`  
+Date: 2026-08-12
+Task: `6994eacb97fe459e82fab113ae15bb66`
 Decision: **reject current Soll app integration; retain as a future standalone-server baseline**
 
 ## Verified upstream change

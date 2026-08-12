@@ -6,6 +6,20 @@ import org.junit.Test
 
 class DailyIntelligenceApiModelsTest {
     @Test
+    fun feedFeedbackRequestCarriesStableIdempotencyValue() {
+        val request = FeedFeedbackRequest(
+            decision = "useful",
+            topic = "soll_project",
+            source = "source-1",
+            clientId = "feedback-event-1",
+            idempotencyKey = "feedback-event-1",
+        )
+
+        assertEquals("feedback-event-1", request.clientId)
+        assertEquals(request.clientId, request.idempotencyKey)
+    }
+
+    @Test
     fun todayResponsePreservesBriefingFeedAndApplicability() {
         val feed = FeedItemResponse(
             id = "feed:source:item",

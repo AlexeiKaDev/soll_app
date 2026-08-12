@@ -297,10 +297,18 @@ class SollRepository @Inject constructor(
         note: String,
     ): Result<Boolean> = runSuspendCatching {
         require(entityId.isNotBlank()) { "ID материала не задан" }
+        val feedbackEventId = UUID.randomUUID().toString()
         service().sendFeedFeedback(
             authorization = writeAuthorizationHeader(),
             entityId = entityId,
-            request = FeedFeedbackRequest(decision, topic, source, note),
+            request = FeedFeedbackRequest(
+                decision = decision,
+                topic = topic,
+                source = source,
+                note = note,
+                clientId = feedbackEventId,
+                idempotencyKey = feedbackEventId,
+            ),
         ).success
     }
 

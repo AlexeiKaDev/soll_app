@@ -102,6 +102,8 @@ data class FeedFeedbackRequest(
     val topic: String,
     val source: String,
     val note: String = "",
+    @Json(name = "client_id") val clientId: String,
+    @Json(name = "idempotency_key") val idempotencyKey: String = clientId,
 )
 
 data class FeedFeedbackResponse(

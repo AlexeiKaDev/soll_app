@@ -667,6 +667,29 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
+    fun `roadmap cards keep long content in a vertical readable flow`() {
+        val screen = projectFile(
+            "app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt",
+        ).readText().normalizeLineEndings()
+
+        val header = screen
+            .substringAfter("private fun RoadmapHeaderCard(")
+            .substringBefore("private fun RoadmapReadinessCard(")
+        assertTrue(header.contains("text = \"Текущий этап\""))
+        assertTrue(header.contains("text = currentStage"))
+        assertFalse(screen.contains("PassiveChip(text = \"Текущий: \${roadmap.currentStage}\")"))
+
+        val lineCard = screen
+            .substringAfter("private fun RoadmapLineRow(")
+            .substringBefore("private fun SourcesMode(")
+        assertTrue(lineCard.contains("Column(\n        modifier = modifier.fillMaxWidth()"))
+        assertTrue(lineCard.contains("text = item.line"))
+        assertTrue(lineCard.contains("text = item.text"))
+        assertTrue(lineCard.contains("horizontalArrangement = Arrangement.End"))
+        assertFalse(lineCard.contains("modifier = Modifier.weight(1f)"))
+    }
+
+    @Test
     fun `task priority badges normalize ABCD and keep app palette colors`() {
         val screen = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardScreen.kt").readText()
         val viewModel = projectFile("app/src/main/java/com/soll/presentation/screens/tasks/TaskBoardViewModel.kt").readText()

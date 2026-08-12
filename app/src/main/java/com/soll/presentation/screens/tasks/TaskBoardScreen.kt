@@ -592,10 +592,10 @@ private fun RoadmapMode(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "roadmap-head", contentType = "roadmap-head") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                PassiveChip(text = "Текущий: ${roadmap.currentStage}")
-                roadmap.updated?.let { PassiveChip(text = it) }
-            }
+            RoadmapHeaderCard(
+                currentStage = roadmap.currentStage,
+                updated = roadmap.updated,
+            )
         }
         if (roadmap.readiness.isNotEmpty()) {
             item(key = "roadmap-readiness-title", contentType = "roadmap-readiness-title") {
@@ -631,20 +631,51 @@ private fun RoadmapMode(
 }
 
 @Composable
+private fun RoadmapHeaderCard(
+    currentStage: String,
+    updated: String?,
+) {
+    Card(shape = RoundedCornerShape(8.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Текущий этап",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = currentStage,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            updated?.takeIf { it.isNotBlank() }?.let { value ->
+                PassiveChip(text = "Обновлено: $value")
+            }
+        }
+    }
+}
+
+@Composable
 private fun RoadmapReadinessCard(item: SollRoadmapReadiness) {
     Card(shape = RoundedCornerShape(8.dp)) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
+            Text(
+                text = item.area,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(item.area, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                PassiveChip(text = "${item.percent.coerceIn(0, 100)}%")
-            }
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            PassiveChip(text = "Готовность: ${item.percent.coerceIn(0, 100)}%")
             LinearProgressIndicator(
                 progress = { item.percent.coerceIn(0, 100) / 100f },
                 modifier = Modifier.fillMaxWidth(),
@@ -665,15 +696,19 @@ private fun RoadmapStageHeader(
     stage: SollRoadmapStage,
 ) {
     Card(shape = RoundedCornerShape(8.dp)) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stage.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                PassiveChip(text = stage.status)
-            }
+            Text(
+                text = stage.label,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            PassiveChip(text = stage.status)
         }
     }
 }
@@ -701,18 +736,27 @@ private fun RoadmapLineRow(
     onCreateTask: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Top,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        PassiveChip(text = item.line)
+        Text(
+            text = item.line,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
         Text(
             text = item.text,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Column(horizontalAlignment = Alignment.End) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (isCreatingTask) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             } else {

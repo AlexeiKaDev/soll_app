@@ -8,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.http.GET
 
 class ChatTurnRequestTest {
     private val adapter = Moshi.Builder()
@@ -85,5 +86,41 @@ class ChatTurnRequestTest {
 
         assertEquals("stable-client-turn", stableChatClientTurnId(metadata))
         assertNull(stableChatClientTurnId(mapOf("request_id" to 42)))
+    }
+
+    @Test
+    fun `queued and failed turn status fields survive wire decoding`() {
+        val responseAdapter = Moshi.Builder()
+            .add(KotlinJsonAdapterFactory())
+            .build()
+            .adapter(ChatTurnResponse::class.java)
+
+        val queued = requireNotNull(
+            responseAdapter.fromJson(
+                """{"turn_id":"turn-1","client_turn_id":"android-chat:1","status":"queued","final":false}"""
+            )
+        )
+        val failed = requireNotNull(
+            responseAdapter.fromJson(
+                """{"turn_id":"turn-1","client_turn_id":"android-chat:1","status":"failed","final":true,"error":{"code":"core_failed","message":"Core failed"}}"""
+            )
+        )
+
+        assertEquals("turn-1", queued.turnId)
+        assertEquals("android-chat:1", queued.clientTurnId)
+        assertEquals("queued", queued.status)
+        assertFalse(queued.final)
+        assertEquals("failed", failed.status)
+        assertTrue(failed.final)
+        assertEquals("core_failed", failed.error?.code)
+        assertEquals("Core failed", failed.error?.message)
+    }
+
+    @Test
+    fun `turn status uses deployed authenticated get route`() {
+        val method = SollApiService::class.java.methods.single { it.name == "getChatTurnStatus" }
+        val route = requireNotNull(method.getAnnotation(GET::class.java))
+
+        assertEquals("api/v1/chat/turns/{turn_id}", route.value)
     }
 }

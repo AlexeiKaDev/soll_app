@@ -186,6 +186,34 @@ data class SollChatMessage(
         get() = role == "user"
 }
 
+data class SollChatTurnError(
+    val code: String = "",
+    val message: String = "",
+)
+
+data class SollChatTurnResult(
+    val sessionId: String,
+    val message: SollChatMessage,
+    val assistant: SollChatMessage? = null,
+    val turnId: String = "",
+    val clientTurnId: String = "",
+    val status: String = "",
+    val final: Boolean = false,
+    val error: SollChatTurnError? = null,
+) {
+    val normalizedStatus: String
+        get() = status.trim().lowercase()
+
+    val isQueued: Boolean
+        get() = normalizedStatus == "queued" && !final
+
+    val isFailed: Boolean
+        get() = normalizedStatus == "failed"
+
+    fun permitsAssistantPayload(): Boolean =
+        normalizedStatus.isBlank() || (normalizedStatus == "answered" && final)
+}
+
 data class SollTaskGraph(
     val nodes: List<SollTaskGraphNode> = emptyList(),
     val edges: List<SollTaskGraphEdge> = emptyList(),
@@ -706,7 +734,10 @@ interface SollGateway {
         taskIntake: Boolean = false,
         allowActions: Boolean = false,
         metadata: Map<String, Any?> = emptyMap(),
-    ): Result<Pair<SollChatMessage, SollChatMessage?>>
+        encryptionNonceSeed: String? = null,
+    ): Result<SollChatTurnResult>
+
+    suspend fun getChatTurnStatus(turnId: String): Result<SollChatTurnResult>
 
     suspend fun synthesizeVoice(text: String): Result<ByteArray>
 

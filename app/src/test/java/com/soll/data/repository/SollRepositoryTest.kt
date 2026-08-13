@@ -11,9 +11,21 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class SollRepositoryTest {
+    @Test
+    fun `chat encryption nonce is stable only for the persisted owner intent seed`() {
+        val initial = deriveChatTurnEncryptionNonce("android-chat-nonce:owner-intent-1")
+        val retry = deriveChatTurnEncryptionNonce("android-chat-nonce:owner-intent-1")
+        val nextIntent = deriveChatTurnEncryptionNonce("android-chat-nonce:owner-intent-2")
+
+        assertEquals(12, initial.size)
+        assertEquals(initial.toList(), retry.toList())
+        assertFalse(initial.contentEquals(nextIntent))
+    }
+
     @Test
     fun `normalize base url adds scheme and trailing slash`() {
         assertEquals("http://192.168.1.10:8000/", normalizeSollBaseUrl("192.168.1.10:8000"))

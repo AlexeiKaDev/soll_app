@@ -1,5 +1,6 @@
 package com.soll.presentation.screens.chat
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.repository.SettingsRepository
@@ -7,6 +8,7 @@ import com.soll.data.voice.AndroidSpeechRecognizerAdapter
 import com.soll.domain.assistant.CapabilityRegistry
 import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
+import com.soll.domain.soll.SollChatTurnResult
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.tts.AssistantVoicePlaybackPhase
 import com.soll.domain.tts.AssistantVoicePlaybackState
@@ -21,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 import javax.inject.Inject
 
 data class ChatUiState(
@@ -67,6 +70,7 @@ data class ChatActionUi(
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val sollGateway: SollGateway,
     private val sttAdapter: AndroidSpeechRecognizerAdapter,
     private val settingsRepository: SettingsRepository,
@@ -74,7 +78,14 @@ class ChatViewModel @Inject constructor(
     private val ttsManager: TextToSpeechManager,
     private val assistantVoicePlayer: AssistantVoicePlayer,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(ChatUiState())
+    private val turnIntentStore = ChatTurnIntentStore(savedStateHandle)
+    private val restoredTurn = turnIntentStore.restore()
+    private val _uiState = MutableStateFlow(
+        ChatUiState(
+            sessionId = restoredTurn?.sessionId ?: "soll-main",
+            input = restoredTurn?.content.orEmpty(),
+        )
+    )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private var refreshInFlight = false
     private var lastSpokenMessageId = 0L
@@ -83,6 +94,7 @@ class ChatViewModel @Inject constructor(
     private var voiceFallbackMessageId: Long? = null
     private var voiceFallbackText = ""
     private var voiceFallbackHandled = false
+    private val pendingTurnStatusJobs = mutableMapOf<String, Job>()
 
     init {
         observeVoiceInput()
@@ -92,6 +104,7 @@ class ChatViewModel @Inject constructor(
     }
 
     fun onInputChanged(value: String) {
+        turnIntentStore.invalidateIfContentChanged(value)
         _uiState.update { it.copy(input = value, error = null) }
     }
 
@@ -246,36 +259,58 @@ class ChatViewModel @Inject constructor(
         val content = _uiState.value.input.trim()
         if (content.isBlank()) return
         viewModelScope.launch {
-            val sessionId = _uiState.value.sessionId
+            val restoredIntent = turnIntentStore.restore()?.takeIf { it.content == content }
+            val sessionId = restoredIntent?.sessionId ?: _uiState.value.sessionId
+            val pendingTurn = turnIntentStore.resolve(content, sessionId)
             val previousLastId = _uiState.value.messages.maxOfOrNull { it.id }
-            _uiState.update { it.copy(isSending = true, error = null, input = "") }
+            _uiState.update {
+                it.copy(
+                    isSending = true,
+                    error = null,
+                    actionFeedback = null,
+                    input = "",
+                )
+            }
             sollGateway.sendChatTurn(
                 content = content,
                 sessionId = sessionId,
                 runAssistant = true,
                 taskIntake = false,
                 allowActions = false,
+                metadata = mapOf(
+                    "client_turn_id" to pendingTurn.clientTurnId,
+                    "request_id" to pendingTurn.clientTurnId,
+                ),
+                encryptionNonceSeed = pendingTurn.encryptionNonceSeed,
             ).fold(
-                onSuccess = { (user, assistant) ->
-                    val appended = buildList {
-                        addAll(_uiState.value.messages)
-                        add(user)
-                        assistant?.let(::add)
-                    }
-                        .filter { message -> message.isDisplayableChatMessage() }
-                        .distinctBy { it.id }
+                onSuccess = { result ->
+                    turnIntentStore.complete(pendingTurn.clientTurnId)
+                    val assistant = result.immediateAssistantForChat()
+                    val appended = mergeChatMessages(
+                        _uiState.value.messages,
+                        result.immediateMessagesForChat(),
+                    )
                     _uiState.update {
                         it.copy(
                             isSending = false,
                             messages = appended,
+                            input = if (result.isFailed) content else it.input,
+                            error = result.failureMessageForChat(),
+                            actionFeedback = when {
+                                result.isQueued -> "Запрос принят. Жду ответ Soll Core…"
+                                result.isFailed -> "Ошибка Soll Core: ${result.failureMessageForChat()}"
+                                else -> null
+                            },
                             scrollToBottomToken = it.scrollToBottomToken + 1,
                             scrollToBottomReason = ChatScrollReason.USER_SEND,
                         )
                     }
-                    if (assistant != null && settingsRepository.voiceChatResponsesEnabled) {
-                        speakMessage(assistant)
+                    assistant?.let(::speakAutomaticallyIfNew)
+                    if (result.isQueued && result.turnId.isNotBlank()) {
+                        observeQueuedChatTurn(result.turnId, content, previousLastId)
+                    } else {
+                        refresh(showLoading = false, afterIdOverride = previousLastId)
                     }
-                    refresh(showLoading = false, afterIdOverride = previousLastId)
                 },
                 onFailure = { error ->
                     _uiState.update {
@@ -287,6 +322,64 @@ class ChatViewModel @Inject constructor(
                     }
                 },
             )
+        }
+    }
+
+    private fun observeQueuedChatTurn(turnId: String, content: String, previousLastId: Long?) {
+        pendingTurnStatusJobs.remove(turnId)?.cancel()
+        pendingTurnStatusJobs[turnId] = viewModelScope.launch {
+            try {
+                repeat(CHAT_TURN_STATUS_POLL_ATTEMPTS) {
+                    delay(CHAT_TURN_STATUS_POLL_INTERVAL_MS)
+                    val statusResult = sollGateway.getChatTurnStatus(turnId)
+                    val error = statusResult.exceptionOrNull()
+                    if (error is HttpException && error.code() == 404) {
+                        _uiState.update {
+                            it.copy(
+                                actionFeedback = chatTurnTimeoutMessage(),
+                                error = null,
+                            )
+                        }
+                        refresh(showLoading = false, afterIdOverride = previousLastId)
+                        return@launch
+                    }
+                    val result = statusResult.getOrNull() ?: return@repeat
+                    if (result.isFailed) {
+                        _uiState.update {
+                            it.copy(
+                                isSending = false,
+                                input = content,
+                                actionFeedback = "Ошибка Soll Core: ${result.failureMessageForChat()}",
+                                error = result.failureMessageForChat(),
+                            )
+                        }
+                        return@launch
+                    }
+                    val assistant = result.immediateAssistantForChat()
+                    if (assistant != null) {
+                        _uiState.update {
+                            it.copy(
+                                messages = mergeChatMessages(it.messages, listOf(assistant)),
+                                actionFeedback = null,
+                                error = null,
+                                scrollToBottomToken = it.scrollToBottomToken + 1,
+                                scrollToBottomReason = ChatScrollReason.REMOTE_APPEND,
+                            )
+                        }
+                        speakAutomaticallyIfNew(assistant)
+                        refresh(showLoading = false, afterIdOverride = previousLastId)
+                        return@launch
+                    }
+                }
+                _uiState.update {
+                    it.copy(
+                        actionFeedback = chatTurnTimeoutMessage(),
+                        error = null,
+                    )
+                }
+            } finally {
+                pendingTurnStatusJobs.remove(turnId)
+            }
         }
     }
 
@@ -453,8 +546,10 @@ class ChatViewModel @Inject constructor(
                 stt.finalText?.let { text ->
                     sttAdapter.clearFinalResult()
                     _uiState.update {
+                        val updatedInput = appendDictatedChatText(it.input, text)
+                        turnIntentStore.invalidateIfContentChanged(updatedInput)
                         it.copy(
-                            input = appendDictatedChatText(it.input, text),
+                            input = updatedInput,
                             voicePartialText = "",
                             voiceError = null,
                         )
@@ -505,6 +600,18 @@ class ChatViewModel @Inject constructor(
         ttsManager.speakAssistantResponse(text)
     }
 
+    private fun speakAutomaticallyIfNew(message: SollChatMessage) {
+        if (
+            shouldAutomaticallySpeakChatMessage(
+                enabled = settingsRepository.voiceChatResponsesEnabled,
+                messageId = message.id,
+                lastSpokenMessageId = lastSpokenMessageId,
+            )
+        ) {
+            speakMessage(message)
+        }
+    }
+
     private fun speakLatestAssistantMessage(messages: List<SollChatMessage>, afterId: Long?) {
         if (!settingsRepository.voiceChatResponsesEnabled || afterId == null) return
         messages.asSequence()
@@ -518,6 +625,8 @@ class ChatViewModel @Inject constructor(
     override fun onCleared() {
         voiceRequestGeneration += 1
         voiceRequestJob?.cancel()
+        pendingTurnStatusJobs.values.forEach(Job::cancel)
+        pendingTurnStatusJobs.clear()
         voiceFallbackMessageId = null
         voiceFallbackText = ""
         assistantVoicePlayer.stop()
@@ -529,6 +638,34 @@ class ChatViewModel @Inject constructor(
 
 private const val CHAT_REFRESH_INTERVAL_MS = 10_000L
 private const val CHAT_PAGE_SIZE = 80
+internal const val CHAT_TURN_STATUS_POLL_INTERVAL_MS = 2_000L
+internal const val CHAT_TURN_STATUS_POLL_ATTEMPTS = 90
+
+internal fun chatTurnTimeoutMessage(): String =
+    "Ответ всё ещё обрабатывается и появится в чате позже."
+
+internal fun shouldAutomaticallySpeakChatMessage(
+    enabled: Boolean,
+    messageId: Long,
+    lastSpokenMessageId: Long,
+): Boolean = enabled && messageId > lastSpokenMessageId
+
+internal fun SollChatTurnResult.immediateAssistantForChat(): SollChatMessage? =
+    assistant
+        ?.takeIf { permitsAssistantPayload() }
+        ?.takeIf { it.content.isNotBlank() && it.isDisplayableChatMessage() }
+
+internal fun SollChatTurnResult.immediateMessagesForChat(): List<SollChatMessage> =
+    listOfNotNull(
+        message.takeIf { it.content.isNotBlank() && it.isDisplayableChatMessage() },
+        immediateAssistantForChat(),
+    )
+
+internal fun SollChatTurnResult.failureMessageForChat(): String? {
+    if (!isFailed) return null
+    return error?.message?.trim()?.takeIf { it.isNotBlank() }
+        ?: "Soll Core не смог обработать запрос."
+}
 
 internal fun mergeChatMessages(left: List<SollChatMessage>, right: List<SollChatMessage>): List<SollChatMessage> =
     (left + right)

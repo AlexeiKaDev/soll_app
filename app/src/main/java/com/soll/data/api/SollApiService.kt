@@ -129,6 +129,12 @@ interface SollApiService {
         @Body request: ChatTurnRequest,
     ): ChatTurnResponse
 
+    @GET("api/v1/chat/turns/{turn_id}")
+    suspend fun getChatTurnStatus(
+        @Header("Authorization") authorization: String? = null,
+        @Path(value = "turn_id", encoded = true) turnId: String,
+    ): ChatTurnResponse
+
     @POST("api/v1/voice/synthesize")
     suspend fun synthesizeVoice(
         @Header("Authorization") authorization: String? = null,
@@ -811,8 +817,20 @@ data class ChatTurnResponse(
     val sessionId: String = "",
     val message: ChatMessageResponse = ChatMessageResponse(),
     val assistant: ChatMessageResponse? = null,
+    @Json(name = "turn_id")
+    val turnId: String = "",
+    @Json(name = "client_turn_id")
+    val clientTurnId: String = "",
+    val status: String = "",
+    val final: Boolean = false,
+    val error: ChatTurnErrorResponse? = null,
     @Json(name = "task_intake")
     val taskIntake: ChatTaskIntakeResponse? = null,
+)
+
+data class ChatTurnErrorResponse(
+    val code: String = "",
+    val message: String = "",
 )
 
 data class ChatTaskIntakeResponse(

@@ -1,6 +1,8 @@
 package com.soll.presentation.screens.chat
 
 import com.soll.domain.soll.SollChatMessage
+import com.soll.domain.soll.SollChatTurnError
+import com.soll.domain.soll.SollChatTurnResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -8,6 +10,69 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatMessageFiltersTest {
+    @Test
+    fun `automatic chat speech is deduped by the last spoken message id`() {
+        assertTrue(shouldAutomaticallySpeakChatMessage(enabled = true, messageId = 42L, lastSpokenMessageId = 41L))
+        assertFalse(shouldAutomaticallySpeakChatMessage(enabled = true, messageId = 42L, lastSpokenMessageId = 42L))
+        assertFalse(shouldAutomaticallySpeakChatMessage(enabled = false, messageId = 43L, lastSpokenMessageId = 42L))
+    }
+
+    @Test
+    fun `queued turn wait is bounded and timeout is truthful`() {
+        assertEquals(180_000L, CHAT_TURN_STATUS_POLL_INTERVAL_MS * CHAT_TURN_STATUS_POLL_ATTEMPTS)
+        assertEquals("Ответ всё ещё обрабатывается и появится в чате позже.", chatTurnTimeoutMessage())
+    }
+
+    @Test
+    fun `queued assistant payload cannot be displayed spoken or actioned`() {
+        val user = chatMessage(content = "Запрос", id = 41).copy(role = "user")
+        val unsafeAssistant = chatMessage(
+            content = "Промежуточный relay ответ",
+            id = 42,
+            metadata = mapOf(
+                "source" to "local_agent_chat_bridge",
+                "send_voice" to true,
+                "action" to mapOf("id" to "notice:1", "type" to "notice.ack"),
+            ),
+        )
+        val queued = SollChatTurnResult(
+            sessionId = "soll-main",
+            message = user,
+            assistant = unsafeAssistant,
+            turnId = "turn-1",
+            clientTurnId = "android-chat:1",
+            status = "queued",
+            final = false,
+        )
+
+        assertEquals(listOf(user), queued.immediateMessagesForChat())
+        assertEquals(null, queued.immediateAssistantForChat())
+        assertTrue(queued.immediateMessagesForChat().flatMap(SollChatMessage::actionUis).isEmpty())
+    }
+
+    @Test
+    fun `failed turn cannot expose assistant actions and keeps truthful error`() {
+        val user = chatMessage(content = "Запрос", id = 51).copy(role = "user")
+        val unsafeAssistant = chatMessage(
+            content = "Не должен отображаться",
+            id = 52,
+            metadata = mapOf("action" to mapOf("id" to "notice:2", "type" to "notice.ack")),
+        )
+        val failed = SollChatTurnResult(
+            sessionId = "soll-main",
+            message = user,
+            assistant = unsafeAssistant,
+            status = "failed",
+            final = true,
+            error = SollChatTurnError(code = "core_failed", message = "Core отказал"),
+        )
+
+        assertEquals(listOf(user), failed.immediateMessagesForChat())
+        assertEquals(null, failed.immediateAssistantForChat())
+        assertEquals("Core отказал", failed.failureMessageForChat())
+        assertTrue(failed.immediateMessagesForChat().flatMap(SollChatMessage::actionUis).isEmpty())
+    }
+
     @Test
     fun `queued approval is accepted but not completed before core receipt`() {
         val queued = com.soll.domain.soll.SollChatActionResult(

@@ -41,6 +41,7 @@ import com.soll.data.api.ChatSessionCreateRequest
 import com.soll.data.api.ChatSessionCreateResponse
 import com.soll.data.api.ChatSessionSummaryResponse
 import com.soll.data.api.ChatTurnRequest
+import com.soll.data.api.ChatTurnResponse
 import com.soll.data.api.stableChatClientTurnId
 import com.soll.data.api.CreateRawFileRequest
 import com.soll.data.api.DailyTaskAttachmentResponse
@@ -149,6 +150,8 @@ import com.soll.domain.soll.SollCalendarSnapshot
 import com.soll.domain.soll.SollChatActionResult
 import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
+import com.soll.domain.soll.SollChatTurnError
+import com.soll.domain.soll.SollChatTurnResult
 import com.soll.domain.soll.SollChatSession
 import com.soll.domain.soll.SollDailyTask
 import com.soll.domain.soll.SollDailyTaskAttachment
@@ -558,7 +561,8 @@ class SollRepository @Inject constructor(
         taskIntake: Boolean,
         allowActions: Boolean,
         metadata: Map<String, Any?>,
-    ): Result<Pair<SollChatMessage, SollChatMessage?>> = runSuspendCatching {
+        encryptionNonceSeed: String?,
+    ): Result<SollChatTurnResult> = runSuspendCatching {
         val cleanContent = content.trim()
         require(cleanContent.isNotBlank()) { "Сообщение пустое" }
         val requestMetadata = mapOf("source" to "android_app") + metadata
@@ -566,9 +570,10 @@ class SollRepository @Inject constructor(
             content = cleanContent,
             metadata = requestMetadata,
             aad = "POST /api/v1/chat/turn",
+            nonceSeed = encryptionNonceSeed,
         )
         val response = service().sendChatTurn(
-            authorization = readAuthorizationHeader(),
+            authorization = refreshAwareReadAuthorizationHeader(),
             request = ChatTurnRequest(
                 sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
                 clientTurnId = stableChatClientTurnId(metadata),
@@ -580,7 +585,16 @@ class SollRepository @Inject constructor(
                 allowActions = allowActions,
             ),
         )
-        response.message.toDomain() to response.assistant?.toDomain()
+        response.toDomain()
+    }
+
+    override suspend fun getChatTurnStatus(turnId: String): Result<SollChatTurnResult> = runSuspendCatching {
+        val cleanTurnId = turnId.trim()
+        require(cleanTurnId.isNotBlank()) { "ID запроса не задан" }
+        service().getChatTurnStatus(
+            authorization = refreshAwareReadAuthorizationHeader(),
+            turnId = cleanTurnId,
+        ).toDomain()
     }
 
     override suspend fun synthesizeVoice(text: String): Result<ByteArray> = runSuspendCatching {
@@ -1497,12 +1511,16 @@ class SollRepository @Inject constructor(
         metadata: Map<String, Any?>,
         aad: String,
         extra: Map<String, Any?> = emptyMap(),
+        nonceSeed: String? = null,
     ): SecurePayloadEnvelopeRequest? {
         val pairingSecret = settingsRepository.sollDevicePairingSecret.trim()
         if (pairingSecret.isBlank()) return null
         val key = MessageDigest.getInstance("SHA-256").digest(pairingSecret.toByteArray(Charsets.UTF_8))
-        val nonce = ByteArray(12)
-        SecureRandom().nextBytes(nonce)
+        val nonce = nonceSeed
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::deriveChatTurnEncryptionNonce)
+            ?: ByteArray(12).also(SecureRandom()::nextBytes)
         val plaintext = org.json.JSONObject().apply {
             if (content.isNotBlank()) put("content", content)
             if (metadata.isNotEmpty()) put("metadata", org.json.JSONObject(metadata))
@@ -1649,6 +1667,20 @@ class SollRepository @Inject constructor(
             content = content,
             createdAt = createdAt,
             metadata = metadata,
+        )
+
+    private fun ChatTurnResponse.toDomain(): SollChatTurnResult =
+        SollChatTurnResult(
+            sessionId = sessionId,
+            message = message.toDomain(),
+            assistant = assistant?.toDomain(),
+            turnId = turnId,
+            clientTurnId = clientTurnId,
+            status = status,
+            final = final,
+            error = error?.let {
+                SollChatTurnError(code = it.code, message = it.message)
+            },
         )
 
     private fun ChatActionExecuteResponse.toDomain(): SollChatActionResult =
@@ -2345,6 +2377,14 @@ internal fun selectRefreshAwareAuthorizationHeader(
 ): String? = deviceAuthorization
     ?.takeUnless { deviceTokenNeedsRefresh }
     ?: fallbackAuthorization
+
+internal fun deriveChatTurnEncryptionNonce(seed: String): ByteArray {
+    val cleanSeed = seed.trim()
+    require(cleanSeed.length in 16..128) { "Некорректный nonce seed" }
+    return MessageDigest.getInstance("SHA-256")
+        .digest("soll-chat-turn-envelope-v1:$cleanSeed".toByteArray(Charsets.UTF_8))
+        .copyOf(12)
+}
 
 private data class RawUploadMetadata(
     val displayName: String,

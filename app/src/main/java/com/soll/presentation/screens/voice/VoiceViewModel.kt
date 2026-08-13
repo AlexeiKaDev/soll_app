@@ -12,8 +12,9 @@ import com.soll.data.repository.SettingsRepository
 import com.soll.data.voice.AndroidSpeechRecognizerAdapter
 import com.soll.domain.assistant.AssistantEvent
 import com.soll.domain.assistant.AssistantEventLogger
-import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollChatMessage
+import com.soll.domain.soll.SollChatTurnResult
+import com.soll.domain.soll.SollGateway
 import com.soll.domain.tts.TextToSpeechManager
 import com.soll.domain.voice.MAX_PTT_DURATION_MS
 import com.soll.domain.voice.SttRecognitionMode
@@ -32,6 +33,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import retrofit2.HttpException
 
 data class VoiceUiState(
     val isAvailable: Boolean = true,
@@ -298,7 +300,7 @@ class VoiceViewModel @Inject constructor(
                 allowActions = turn.allowActions,
                 metadata = turn.metadata,
             )
-            val (userMessage, immediateAssistant) = turnResult.getOrElse { error ->
+            val result = turnResult.getOrElse { error ->
                 failSession(
                     session = session,
                     recognizedText = text,
@@ -306,6 +308,7 @@ class VoiceViewModel @Inject constructor(
                 )
                 return@launch
             }
+            val userMessage = result.message
             logVoiceEvent(
                 type = "voice_assistant_turn",
                 summary = "Безопасный голосовой запрос принят",
@@ -318,8 +321,19 @@ class VoiceViewModel @Inject constructor(
                     .put("stt_mode", _uiState.value.activeSttMode.name),
             )
 
-            val immediateFinal = immediateAssistant
-                ?.takeIf { it.isFinalLocalAgentVoiceReply() }
+            if (result.isFailed) {
+                failSession(
+                    session = session,
+                    recognizedText = text,
+                    message = result.failureMessageForVoice(),
+                )
+                return@launch
+            }
+
+            val immediateFinal = result.finalVoiceAssistantOrNull(
+                userMessageId = userMessage.id,
+                requestId = turn.requestId,
+            )
             if (immediateFinal != null) {
                 completeWithFinalReply(session, turn.content, immediateFinal.content)
                 return@launch
@@ -334,29 +348,59 @@ class VoiceViewModel @Inject constructor(
                 )
             }
             val finalReply = awaitFinalLocalAgentReply(
+                turnId = result.turnId,
                 sessionId = turn.sessionId,
                 userMessageId = userMessage.id,
                 requestId = turn.requestId,
             )
-            if (finalReply != null) {
-                completeWithFinalReply(session, turn.content, finalReply.content)
-            } else {
-                failSession(
-                    session = session,
-                    recognizedText = text,
-                    message = "Ответ локального ядра пока не получен. Он появится в чате.",
-                )
+            when (finalReply) {
+                is VoiceReplyWaitResult.Answered -> {
+                    completeWithFinalReply(session, turn.content, finalReply.message.content)
+                }
+                is VoiceReplyWaitResult.Failed -> {
+                    failSession(
+                        session = session,
+                        recognizedText = text,
+                        message = finalReply.message,
+                    )
+                }
+                VoiceReplyWaitResult.Pending -> {
+                    failSession(
+                        session = session,
+                        recognizedText = text,
+                        message = "Ответ локального ядра пока не получен. Он появится в чате.",
+                    )
+                }
             }
         }
     }
 
     private suspend fun awaitFinalLocalAgentReply(
+        turnId: String,
         sessionId: String,
         userMessageId: Long,
         requestId: String,
-    ): SollChatMessage? {
-        repeat(VOICE_REPLY_POLL_ATTEMPTS) {
+    ): VoiceReplyWaitResult {
+        var exactStatusSupported = turnId.isNotBlank()
+        repeat(VOICE_EXACT_REPLY_POLL_ATTEMPTS) { attempt ->
             delay(VOICE_REPLY_POLL_INTERVAL_MS)
+            if (exactStatusSupported) {
+                val statusResult = sollGateway.getChatTurnStatus(turnId)
+                val statusError = statusResult.exceptionOrNull()
+                if (statusError is HttpException && statusError.code() == 404) {
+                    exactStatusSupported = false
+                } else {
+                    statusResult.getOrNull()?.let { result ->
+                        if (result.isFailed) {
+                            return VoiceReplyWaitResult.Failed(result.failureMessageForVoice())
+                        }
+                        result.finalVoiceAssistantOrNull(userMessageId, requestId)?.let { message ->
+                            return VoiceReplyWaitResult.Answered(message)
+                        }
+                    }
+                }
+            }
+            if (exactStatusSupported) return@repeat
             val messages = sollGateway.getChatSession(
                 sessionId = sessionId,
                 afterId = userMessageId,
@@ -364,9 +408,12 @@ class VoiceViewModel @Inject constructor(
             messages.firstOrNull { message ->
                 message.isFinalLocalAgentVoiceReply() &&
                     message.matchesVoiceRequest(userMessageId, requestId)
-            }?.let { return it }
+            }?.let { return VoiceReplyWaitResult.Answered(it) }
+            if (attempt >= VOICE_LEGACY_REPLY_POLL_ATTEMPTS - 1) {
+                return VoiceReplyWaitResult.Pending
+            }
         }
-        return null
+        return VoiceReplyWaitResult.Pending
     }
 
     private fun completeWithFinalReply(
@@ -475,8 +522,6 @@ class VoiceViewModel @Inject constructor(
 
     private companion object {
         private const val MAX_SPOKEN_RESPONSE_CHARS = 1_200
-        private const val VOICE_REPLY_POLL_INTERVAL_MS = 2_000L
-        private const val VOICE_REPLY_POLL_ATTEMPTS = 23
 
         @SuppressLint("InlinedApi")
         fun headsetOutputTypes(): Set<Int> = buildSet {
@@ -492,6 +537,10 @@ class VoiceViewModel @Inject constructor(
     }
 }
 
+internal const val VOICE_REPLY_POLL_INTERVAL_MS = 2_000L
+internal const val VOICE_EXACT_REPLY_POLL_ATTEMPTS = 90
+internal const val VOICE_LEGACY_REPLY_POLL_ATTEMPTS = 23
+
 internal fun SollChatMessage.isFinalLocalAgentVoiceReply(): Boolean {
     if (role.trim().lowercase() != "assistant" || content.isBlank()) return false
     if (content.trim().lowercase().contains("сервер soll сохранил сообщение")) return false
@@ -506,4 +555,26 @@ internal fun SollChatMessage.matchesVoiceRequest(userMessageId: Long, requestId:
         ?: metadata["reply_to_message_id"]?.toString()?.trim()?.toLongOrNull()
     val metadataRequestId = metadata["request_id"]?.toString()?.trim()
     return replyTo == userMessageId || metadataRequestId == requestId
+}
+
+internal fun SollChatTurnResult.finalVoiceAssistantOrNull(
+    userMessageId: Long,
+    requestId: String,
+): SollChatMessage? =
+    assistant
+        ?.takeIf { permitsAssistantPayload() }
+        ?.takeIf { it.isFinalLocalAgentVoiceReply() }
+        ?.takeIf {
+            clientTurnId.trim() == requestId.trim() ||
+                it.matchesVoiceRequest(userMessageId, requestId)
+        }
+
+internal fun SollChatTurnResult.failureMessageForVoice(): String =
+    error?.message?.trim()?.takeIf { it.isNotBlank() }
+        ?: "Soll Core не смог обработать голосовой запрос."
+
+private sealed interface VoiceReplyWaitResult {
+    data class Answered(val message: SollChatMessage) : VoiceReplyWaitResult
+    data class Failed(val message: String) : VoiceReplyWaitResult
+    data object Pending : VoiceReplyWaitResult
 }

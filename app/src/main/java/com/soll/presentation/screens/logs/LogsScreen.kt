@@ -120,7 +120,7 @@ fun LogsScreen(
                 )
                 3 -> NotificationsList(
                     uiState = uiState,
-                    onMarkRead = viewModel::markNotificationRead,
+                    onOpened = viewModel::recordNotificationOpened,
                     onMarkAllRead = viewModel::markAllNotificationsRead,
                     onFeedback = viewModel::sendNotificationFeedback,
                 )
@@ -210,7 +210,7 @@ fun LogsScreen(
 @Composable
 private fun NotificationsList(
     uiState: LogsUiState,
-    onMarkRead: (String) -> Unit,
+    onOpened: (SollNotification) -> Unit,
     onMarkAllRead: () -> Unit,
     onFeedback: (SollNotification, String) -> Unit,
 ) {
@@ -268,9 +268,13 @@ private fun NotificationsList(
                         notification = notification,
                         expanded = expandedId == notification.id,
                         onToggle = {
-                            expandedId = if (expandedId == notification.id) null else notification.id
-                            if (notification.status == SollNotificationStatus.UNREAD) {
-                                onMarkRead(notification.id)
+                            val expanding = shouldRecordNotificationOpened(
+                                expandedId = expandedId,
+                                notificationId = notification.id,
+                            )
+                            expandedId = if (expanding) notification.id else null
+                            if (expanding) {
+                                onOpened(notification)
                             }
                         },
                         feedbackBusy = notification.id in uiState.notificationFeedbackBusy,
@@ -282,6 +286,9 @@ private fun NotificationsList(
         }
     }
 }
+
+internal fun shouldRecordNotificationOpened(expandedId: String?, notificationId: String): Boolean =
+    expandedId != notificationId
 
 @Composable
 private fun MemoriesList(

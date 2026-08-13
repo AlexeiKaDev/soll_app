@@ -16,7 +16,10 @@ interface SyncQueueDao {
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status IN ('PENDING', 'FAILED', 'RUNNING')")
     suspend fun countOpenItems(): Int
 
-    @Query("SELECT * FROM sync_queue WHERE status IN ('PENDING', 'FAILED') AND next_attempt_at <= :now ORDER BY created_at ASC LIMIT :limit")
+    @Query(
+        "SELECT * FROM sync_queue WHERE status IN ('PENDING', 'FAILED') AND next_attempt_at <= :now " +
+            "ORDER BY CASE kind WHEN 'NOTIFICATION_RECEIPT' THEN 0 ELSE 1 END, created_at ASC LIMIT :limit"
+    )
     suspend fun getReadyItems(now: Long, limit: Int): List<SyncQueueEntity>
 
     @Query("SELECT * FROM sync_queue WHERE kind = :kind AND status IN ('PENDING', 'FAILED', 'RUNNING') ORDER BY created_at ASC")

@@ -19,6 +19,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.time.Instant
 import javax.inject.Inject
 
 data class LogsUiState(
@@ -170,9 +171,25 @@ class LogsViewModel @Inject constructor(
         }
     }
 
-    fun markNotificationRead(id: String) {
+    fun recordNotificationOpened(notification: SollNotification) {
         viewModelScope.launch {
-            notificationCenter.markRead(id)
+            runCatching {
+                notification.authoritativeEventId()?.let { eventId ->
+                    syncQueueRepository.enqueueNotificationReceipt(
+                        eventId = eventId,
+                        state = "opened",
+                        occurredAt = Instant.now().toString(),
+                    )
+                }
+                notificationCenter.markRead(notification.id)
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        notificationsError = error.message
+                            ?: "Не удалось сохранить открытие уведомления",
+                    )
+                }
+            }
         }
     }
 
@@ -318,9 +335,12 @@ class LogsViewModel @Inject constructor(
 }
 
 internal fun SollNotification.feedbackEntityId(): String =
+    authoritativeEventId()
+        ?: dedupeKey?.trim()?.takeIf { it.isNotBlank() }
+        ?: id
+
+internal fun SollNotification.authoritativeEventId(): String? =
     payloadJson
         ?.let { payload -> runCatching { JSONObject(payload).optString("event_id") }.getOrNull() }
         ?.trim()
         ?.takeIf { it.isNotBlank() }
-        ?: dedupeKey?.trim()?.takeIf { it.isNotBlank() }
-        ?: id

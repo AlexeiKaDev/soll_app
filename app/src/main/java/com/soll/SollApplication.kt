@@ -6,6 +6,7 @@ import com.soll.data.notification.SollNotificationChannels
 import com.soll.data.repository.GadgetServerSyncScheduler
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollServerSyncScheduler
+import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.data.service.SollServerSyncAlarmScheduler
 import dagger.hilt.android.HiltAndroidApp
@@ -15,6 +16,7 @@ import timber.log.Timber
 @HiltAndroidApp
 class SollApplication : Application() {
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var syncQueueRepository: SollSyncQueueRepository
 
     override fun onCreate() {
         super.onCreate()
@@ -38,6 +40,7 @@ class SollApplication : Application() {
         GadgetServerSyncScheduler.schedule(this, settingsRepository)
         GadgetServerSyncScheduler.runNow(this, settingsRepository)
         SollServerSyncScheduler.schedule(this, settingsRepository)
+        syncQueueRepository.enqueueRetryWorker(replaceExisting = true)
         AndroidPushTokenRegistrar.registerCurrentToken(
             this,
             reason = "startup",

@@ -93,7 +93,7 @@ class SollSyncQueueRepository @Inject constructor(
                     )
                 )
             }
-            if (existing.status != SyncQueueEntity.STATUS_DONE) enqueueRetryWorker()
+            if (existing.status != SyncQueueEntity.STATUS_DONE) enqueueRetryWorker(replaceExisting = true)
             return queueId
         }
 
@@ -111,7 +111,7 @@ class SollSyncQueueRepository @Inject constructor(
                 nextAttemptAt = 0L,
             )
         )
-        enqueueRetryWorker()
+        enqueueRetryWorker(replaceExisting = true)
         return queueId
     }
 
@@ -210,7 +210,7 @@ class SollSyncQueueRepository @Inject constructor(
                 )
             }
             if (existing.status !in setOf(SyncQueueEntity.STATUS_DONE, SyncQueueEntity.STATUS_REJECTED)) {
-                enqueueRetryWorker()
+                enqueueRetryWorker(replaceExisting = true)
             }
             return queueId
         }
@@ -229,7 +229,7 @@ class SollSyncQueueRepository @Inject constructor(
                 nextAttemptAt = 0L,
             )
         )
-        enqueueRetryWorker()
+        enqueueRetryWorker(replaceExisting = true)
         return queueId
     }
 
@@ -365,7 +365,10 @@ class SollSyncQueueRepository @Inject constructor(
             .mapNotNull { it.taskActionStatusOrNull() }
             .toMap()
 
-    fun enqueueRetryWorker(initialDelayMs: Long = 0L) {
+    fun enqueueRetryWorker(
+        initialDelayMs: Long = 0L,
+        replaceExisting: Boolean = false,
+    ) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -378,7 +381,7 @@ class SollSyncQueueRepository @Inject constructor(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            syncQueueWorkPolicy(replaceExisting),
             request,
         )
     }
@@ -714,6 +717,9 @@ class SollSyncQueueRepository @Inject constructor(
         private const val WORK_TAG = "soll_sync_queue"
     }
 }
+
+internal fun syncQueueWorkPolicy(replaceExisting: Boolean): ExistingWorkPolicy =
+    if (replaceExisting) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
 
 internal fun notificationReceiptClientId(eventId: String, state: String): String =
     UUID.nameUUIDFromBytes("notification-receipt|${eventId.trim()}|${state.trim().lowercase()}".toByteArray()).toString()

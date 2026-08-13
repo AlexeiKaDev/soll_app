@@ -1,5 +1,6 @@
 package com.soll.data.repository
 
+import androidx.work.ExistingWorkPolicy
 import com.soll.domain.device.DeviceAuthMode
 import com.soll.domain.device.DeviceTransport
 import com.soll.domain.device.GadgetCloudCommand
@@ -14,6 +15,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncReliabilityTest {
+    @Test
+    fun `new durable command replaces stale unique work backoff`() {
+        assertEquals(ExistingWorkPolicy.REPLACE, syncQueueWorkPolicy(replaceExisting = true))
+        assertEquals(ExistingWorkPolicy.KEEP, syncQueueWorkPolicy(replaceExisting = false))
+    }
+
     @Test
     fun `background server sync interval stays inside WorkManager safe bounds`() {
         assertEquals(TimeUnit.MINUTES.toMillis(15), serverSyncDelayMs(1))

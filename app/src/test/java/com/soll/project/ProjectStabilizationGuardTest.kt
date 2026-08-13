@@ -1011,6 +1011,12 @@ class ProjectStabilizationGuardTest {
         val worker = projectFile(
             "app/src/main/java/com/soll/data/repository/SollServerSyncWorker.kt"
         ).readText()
+        val durableQueue = projectFile(
+            "app/src/main/java/com/soll/data/repository/SollSyncQueueRepository.kt"
+        ).readText()
+        val queueDao = projectFile(
+            "app/src/main/java/com/soll/data/local/dao/SyncQueueDao.kt"
+        ).readText()
 
         assertFalse(application.contains("SollServerSyncForegroundService.startIfConfigured"))
         assertFalse(manifest.contains("SollServerSyncForegroundService"))
@@ -1023,6 +1029,10 @@ class ProjectStabilizationGuardTest {
         assertTrue(alarmReceiver.contains("migrate legacy sync alarm to WorkManager"))
         assertTrue(worker.contains("configuredMinutes.coerceIn(15, 60)"))
         assertFalse(worker.contains("SollServerSyncAlarmScheduler"))
+        assertTrue(application.contains("syncQueueRepository.enqueueRetryWorker(replaceExisting = true)"))
+        assertTrue(durableQueue.contains("syncQueueWorkPolicy(replaceExisting)"))
+        assertTrue(durableQueue.contains("if (replaceExisting) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP"))
+        assertTrue(queueDao.contains("WHEN 'NOTIFICATION_RECEIPT' THEN 0"))
     }
 
     @Test

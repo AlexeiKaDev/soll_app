@@ -27,6 +27,25 @@ class SollPairingPayloadParserTest {
     }
 
     @Test
+    fun `parses ordinary remote v1 bearer without new parser semantics`() {
+        val payload = SollPairingPayloadParser.parse(
+            "soll://pair?type=soll_android_pairing&v=1" +
+                "&auth_mode=relay_bearer" +
+                "&server_url=https%3A%2F%2Fsales.monolith-ost.com%2F" +
+                "&api_path_prefix=api%2Fv1%2Fsoll" +
+                "&access_token=ordinary-android-token" +
+                "&client_id=android-main" +
+                "&session_id=soll-main",
+        )
+
+        assertNotNull(payload)
+        assertEquals("ordinary-android-token", payload?.accessToken)
+        assertEquals("android-main", payload?.clientId)
+        assertEquals("soll-main", payload?.sessionId)
+        assertEquals(true, payload?.usesRelayBearerAuth)
+    }
+
+    @Test
     fun `parses json pairing payload with device auth material`() {
         val payload = SollPairingPayloadParser.parse(
             """

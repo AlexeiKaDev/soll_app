@@ -41,6 +41,7 @@ import com.soll.data.api.ChatSessionCreateRequest
 import com.soll.data.api.ChatSessionCreateResponse
 import com.soll.data.api.ChatSessionSummaryResponse
 import com.soll.data.api.ChatTurnRequest
+import com.soll.data.api.stableChatClientTurnId
 import com.soll.data.api.CreateRawFileRequest
 import com.soll.data.api.DailyTaskAttachmentResponse
 import com.soll.data.api.DailyTaskCreateRequest
@@ -570,6 +571,7 @@ class SollRepository @Inject constructor(
             authorization = readAuthorizationHeader(),
             request = ChatTurnRequest(
                 sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
+                clientTurnId = stableChatClientTurnId(metadata),
                 content = if (encrypted == null) cleanContent else null,
                 metadata = if (encrypted == null) requestMetadata else null,
                 encrypted = encrypted,

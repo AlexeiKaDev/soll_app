@@ -776,6 +776,8 @@ data class ChatMessageCreateResponse(
 data class ChatTurnRequest(
     @Json(name = "session_id")
     val sessionId: String? = null,
+    @Json(name = "client_turn_id")
+    val clientTurnId: String? = null,
     val content: String? = null,
     val metadata: Map<String, Any?>? = null,
     val encrypted: SecurePayloadEnvelopeRequest? = null,
@@ -786,6 +788,23 @@ data class ChatTurnRequest(
     @Json(name = "allow_actions")
     val allowActions: Boolean = false,
 )
+
+internal fun stableChatClientTurnId(metadata: Map<String, Any?>): String? =
+    sequenceOf("client_turn_id", "request_id")
+        .mapNotNull { key -> metadata[key] as? String }
+        .map(String::trim)
+        .firstOrNull { value ->
+            value.isNotBlank() &&
+                value.length <= MAX_CLIENT_TURN_ID_LENGTH &&
+                value.all { character ->
+                    character in 'A'..'Z' ||
+                        character in 'a'..'z' ||
+                        character in '0'..'9' ||
+                        character in setOf('_', '.', ':', '-')
+                }
+        }
+
+private const val MAX_CLIENT_TURN_ID_LENGTH = 128
 
 data class ChatTurnResponse(
     @Json(name = "session_id")

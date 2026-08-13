@@ -278,7 +278,7 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
-    fun `android system notifications use default color and source specific small icons`() {
+    fun `android system notifications use one Soll small icon`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml").readText()
         val colors = projectFile("app/src/main/res/values/colors.xml").readText()
         val ttsService = projectFile("app/src/main/java/com/soll/data/service/TtsService.kt").readText()
@@ -288,7 +288,7 @@ class ProjectStabilizationGuardTest {
         val sollIcon = projectFile("app/src/main/res/drawable/ic_soll_notification.xml").readText()
 
         assertTrue(manifest.contains("com.google.firebase.messaging.default_notification_icon"))
-        assertTrue(manifest.contains("@drawable/ic_ai_robot_notification"))
+        assertTrue(manifest.contains("@drawable/ic_soll_notification"))
         assertFalse(manifest.contains("com.google.firebase.messaging.default_notification_color"))
         assertFalse(colors.contains("notification_icon_tint"))
         listOf(ttsService, musicService, activityService).forEach { source ->
@@ -297,9 +297,7 @@ class ProjectStabilizationGuardTest {
             assertFalse(source.contains("R.drawable.ic_notification"))
             assertFalse(source.contains(".setColor("))
         }
-        assertTrue(notificationRepository.contains("private fun notificationSmallIcon(request: SollNotificationRequest): Int"))
-        assertTrue(notificationRepository.contains("request.source.equals(\"fcm\", ignoreCase = true)"))
-        assertTrue(notificationRepository.contains("R.drawable.ic_ai_robot_notification"))
+        assertTrue(notificationRepository.contains("private fun notificationSmallIcon(): Int"))
         assertTrue(notificationRepository.contains("R.drawable.ic_soll_notification"))
         assertFalse(notificationRepository.contains(".setColor("))
         assertTrue(sollIcon.contains("android:viewportWidth=\"24\""))
@@ -351,6 +349,7 @@ class ProjectStabilizationGuardTest {
         val fcmReceiveBlock = fcmService.substringAfter("runBlocking(Dispatchers.IO)").substringBefore("}.onFailure")
         assertTrue(fcmReceiveBlock.indexOf("notificationCenter().post") < fcmReceiveBlock.indexOf("advanceSollChatLastSeenMessageId"))
         assertTrue(fcmReceiveBlock.indexOf("notificationCenter().post") < fcmReceiveBlock.indexOf("SollServerSyncScheduler.schedule"))
+        assertTrue(fcmReceiveBlock.contains("replaceExisting = false"))
         assertTrue(application.contains("AndroidPushTokenRegistrar.registerCurrentToken("))
         assertTrue(application.contains("reason = \"startup\""))
         assertTrue(application.contains("force = true"))

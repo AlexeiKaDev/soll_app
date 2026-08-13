@@ -29,11 +29,38 @@ class SystemNotificationDisplayPolicyTest {
     }
 
     @Test
-    fun `foreground fcm chat notification can still alert`() {
-        assertTrue(
+    fun `foreground fcm chat notification stays in app journal`() {
+        assertFalse(
             SystemNotificationDisplayPolicy.shouldShowSystemNotification(
                 request = request(showSystem = true, source = "fcm"),
                 appInForeground = true,
+            )
+        )
+    }
+
+    @Test
+    fun `foreground high priority fcm alert can still alert`() {
+        assertTrue(
+            SystemNotificationDisplayPolicy.shouldShowSystemNotification(
+                request = request(
+                    showSystem = true,
+                    channel = SollNotificationChannel.ALERTS,
+                    priority = SollNotificationPriority.HIGH,
+                    source = "fcm",
+                ),
+                appInForeground = true,
+            )
+        )
+    }
+
+    @Test
+    fun `chat burst allows first notification and throttles cooldown`() {
+        assertTrue(SystemNotificationDisplayPolicy.allowsChatBurst(lastShownAt = 0L, nowMillis = 1_000L))
+        assertFalse(SystemNotificationDisplayPolicy.allowsChatBurst(lastShownAt = 1_000L, nowMillis = 1_001L))
+        assertTrue(
+            SystemNotificationDisplayPolicy.allowsChatBurst(
+                lastShownAt = 1_000L,
+                nowMillis = 1_000L + SystemNotificationDisplayPolicy.CHAT_BURST_COOLDOWN_MS,
             )
         )
     }

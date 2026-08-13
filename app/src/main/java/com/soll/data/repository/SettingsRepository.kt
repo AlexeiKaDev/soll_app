@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.entity.BotConfigEntity
 import com.soll.data.notification.SystemNotificationImportanceMode
+import com.soll.data.notification.SystemNotificationDisplayPolicy
 import com.soll.data.notification.SystemNotificationPreferences
 import com.soll.domain.assistant.Capability
 import com.soll.domain.assistant.CapabilitySettings
@@ -82,6 +83,7 @@ class SettingsRepository @Inject constructor(
         private const val KEY_SOLL_PUSH_TOKEN_LAST_ERROR = "soll_push_token_last_error"
         private const val KEY_SYSTEM_NOTIFICATION_IMPORTANCE_MODE = "system_notification_importance_mode"
         private const val KEY_SYSTEM_NOTIFICATION_CHANNEL_PREFIX = "system_notification_channel_"
+        private const val KEY_SYSTEM_NOTIFICATION_LAST_CHAT_SHOWN_AT = "system_notification_last_chat_shown_at"
         private const val KEY_PORTABLE_SSD_TREE_URI = "portable_ssd_tree_uri"
         private const val KEY_PORTABLE_SSD_LAST_ATTACH_NOTICE_AT = "portable_ssd_last_attach_notice_at"
         private const val KEY_VOICE_REQUIRES_UNLOCKED_DEVICE = "voice_requires_unlocked_device"
@@ -472,6 +474,15 @@ class SettingsRepository @Inject constructor(
                 .filter { isSystemNotificationChannelEnabled(it) }
                 .toSet(),
         )
+
+    @Synchronized
+    fun claimChatSystemNotificationWindow(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val lastShownAt = sharedPreferences.getLong(KEY_SYSTEM_NOTIFICATION_LAST_CHAT_SHOWN_AT, 0L)
+        if (!SystemNotificationDisplayPolicy.allowsChatBurst(lastShownAt, nowMillis)) return false
+        return sharedPreferences.edit()
+            .putLong(KEY_SYSTEM_NOTIFICATION_LAST_CHAT_SHOWN_AT, nowMillis.coerceAtLeast(1L))
+            .commit()
+    }
 
     private fun systemNotificationChannelKey(channel: SollNotificationChannel): String =
         KEY_SYSTEM_NOTIFICATION_CHANNEL_PREFIX + channel.name.lowercase()

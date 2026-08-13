@@ -106,7 +106,7 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
                     applicationContext,
                     settingsRepository,
                     initialDelayMs = 0L,
-                    replaceExisting = true,
+                    replaceExisting = false,
                 )
             }.onFailure { error ->
                 Timber.w(error, "Could not record FCM notification")

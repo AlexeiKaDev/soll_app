@@ -83,7 +83,7 @@
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_ai_robot_notification" />
+            android:resource="@drawable/ic_soll_notification" />
 
         <activity
             android:name=".presentation.screens.todo.DailyTodoActivity"

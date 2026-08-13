@@ -5,6 +5,8 @@ import com.soll.domain.notification.SollNotificationPriority
 import com.soll.domain.notification.SollNotificationRequest
 
 object SystemNotificationDisplayPolicy {
+    const val CHAT_BURST_COOLDOWN_MS = 5 * 60_000L
+
     fun shouldShowSystemNotification(
         request: SollNotificationRequest,
         appInForeground: Boolean,
@@ -14,6 +16,15 @@ object SystemNotificationDisplayPolicy {
         if (!appInForeground) return true
         return request.source == "fcm" &&
             request.priority != SollNotificationPriority.LOW &&
-            request.channel in setOf(SollNotificationChannel.CHAT, SollNotificationChannel.ALERTS)
+            request.channel == SollNotificationChannel.ALERTS
     }
+
+    fun allowsChatBurst(
+        lastShownAt: Long,
+        nowMillis: Long,
+        cooldownMillis: Long = CHAT_BURST_COOLDOWN_MS,
+    ): Boolean =
+        lastShownAt <= 0L ||
+            nowMillis < lastShownAt ||
+            nowMillis - lastShownAt >= cooldownMillis.coerceAtLeast(1L)
 }

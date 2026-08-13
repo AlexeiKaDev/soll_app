@@ -95,6 +95,10 @@ class SollNotificationRepository @Inject constructor(
             appInForeground = appInForeground,
             preferences = settingsRepository.systemNotificationPreferences(),
         )
+        val burstAllowed = request.channel != SollNotificationChannel.CHAT ||
+            !shouldShowSystem ||
+            !canPostSystem ||
+            settingsRepository.claimChatSystemNotificationWindow(now)
         val unreadInChannel = if (shouldShowSystem) {
             notificationDao.getUnreadCountForChannel(request.channel.name).coerceAtLeast(1)
         } else {
@@ -105,18 +109,19 @@ class SollNotificationRepository @Inject constructor(
         } else {
             unreadInChannel
         }
-        val shown = if (shouldShowSystem && canPostSystem) {
+        val shown = if (shouldShowSystem && canPostSystem && burstAllowed) {
             showSystemNotification(request, systemNotificationId, summaryUnreadInChannel)
         } else {
             false
         }
         logNotificationDiagnostic(
-            "post type=%s channel=%s foreground=%s shouldSystem=%s canPost=%s shown=%s systemId=%d",
+            "post type=%s channel=%s foreground=%s shouldSystem=%s canPost=%s burstAllowed=%s shown=%s systemId=%d",
             request.type,
             request.channel.channelId,
             appInForeground,
             shouldShowSystem,
             canPostSystem,
+            burstAllowed,
             shown,
             systemNotificationId,
         )
@@ -168,7 +173,7 @@ class SollNotificationRepository @Inject constructor(
         val summaryId = systemNotificationSummaryId(request.channel, groupKey)
         cleanupLegacySystemNotifications(request.channel, systemNotificationId, summaryId)
         val notification = NotificationCompat.Builder(context, request.channel.channelId)
-            .setSmallIcon(notificationSmallIcon(request))
+            .setSmallIcon(notificationSmallIcon())
             .setContentTitle(request.title)
             .setContentText(request.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(request.message))
@@ -224,7 +229,7 @@ class SollNotificationRepository @Inject constructor(
             ?: systemNotificationSummaryTitle(request.channel)
         val summaryText = systemNotificationSummaryText(request.channel, unreadInChannel)
         return NotificationCompat.Builder(context, request.channel.channelId)
-            .setSmallIcon(notificationSmallIcon(request))
+            .setSmallIcon(notificationSmallIcon())
             .setContentTitle(summaryTitle)
             .setContentText(summaryText)
             .setStyle(
@@ -255,12 +260,8 @@ class SollNotificationRepository @Inject constructor(
             .build()
     }
 
-    private fun notificationSmallIcon(request: SollNotificationRequest): Int =
-        if (request.source.equals("fcm", ignoreCase = true)) {
-            R.drawable.ic_ai_robot_notification
-        } else {
-            R.drawable.ic_soll_notification
-        }
+    private fun notificationSmallIcon(): Int =
+        R.drawable.ic_soll_notification
 
     private fun groupAlertBehavior(channel: SollNotificationChannel): Int =
         when (channel) {

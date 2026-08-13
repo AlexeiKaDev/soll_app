@@ -246,6 +246,13 @@ class HomeViewModel @Inject constructor(
         feedback: ProactiveSuggestionFeedback,
     ) {
         viewModelScope.launch {
+            runCatching {
+                syncQueueRepository.enqueueAssistantFeedback(
+                    entityType = "initiative",
+                    entityId = suggestion.id,
+                    decision = feedback.name.lowercase(),
+                )
+            }
             assistantEventRepository.logEvent(
                 AssistantEvent(
                     type = "proactive_suggestion_${feedback.name.lowercase()}",

@@ -62,6 +62,7 @@ data class SollNotificationRequest(
     val systemGroupKey: String? = null,
     val systemGroupTitle: String? = null,
     val dedupeKey: String? = null,
+    val eventId: String? = null,
 )
 
 interface SollNotificationCenter {

@@ -8,6 +8,7 @@ import com.soll.data.local.entity.CommandLogEntity
 import com.soll.data.local.entity.MessageLogEntity
 import com.soll.data.repository.AssistantEventRepository
 import com.soll.data.repository.AssistantMemoryRepository
+import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.domain.notification.SollNotification
 import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.assistant.memory.AssistantMemory
@@ -17,6 +18,7 @@ import com.soll.domain.tool.ToolJobStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import javax.inject.Inject
 
 data class LogsUiState(
@@ -39,6 +41,8 @@ data class LogsUiState(
     val memorySyncMessage: String? = null,
     val isSendingAssistantEventsToSoll: Boolean = false,
     val assistantEventSyncMessage: String? = null,
+    val notificationFeedbackBusy: Set<String> = emptySet(),
+    val notificationFeedbackQueued: Set<String> = emptySet(),
 )
 
 @HiltViewModel
@@ -50,6 +54,7 @@ class LogsViewModel @Inject constructor(
     private val notificationCenter: SollNotificationCenter,
     private val assistantMemoryRepository: AssistantMemoryRepository,
     private val assistantEventRepository: AssistantEventRepository,
+    private val syncQueueRepository: SollSyncQueueRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LogsUiState())
@@ -177,6 +182,44 @@ class LogsViewModel @Inject constructor(
         }
     }
 
+    fun sendNotificationFeedback(notification: SollNotification, decision: String) {
+        if (notification.id in _uiState.value.notificationFeedbackBusy ||
+            notification.id in _uiState.value.notificationFeedbackQueued
+        ) return
+        _uiState.update {
+            it.copy(
+                notificationFeedbackBusy = it.notificationFeedbackBusy + notification.id,
+                notificationsError = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching {
+                syncQueueRepository.enqueueAssistantFeedback(
+                    entityType = "notification",
+                    entityId = notification.feedbackEntityId(),
+                    decision = decision,
+                )
+            }.fold(
+                onSuccess = {
+                    _uiState.update {
+                        it.copy(
+                            notificationFeedbackBusy = it.notificationFeedbackBusy - notification.id,
+                            notificationFeedbackQueued = it.notificationFeedbackQueued + notification.id,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            notificationFeedbackBusy = it.notificationFeedbackBusy - notification.id,
+                            notificationsError = error.message ?: "Не удалось сохранить отзыв",
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     fun exportMemory() {
         viewModelScope.launch {
             runCatching { assistantMemoryRepository.exportAsMarkdown() }
@@ -273,3 +316,11 @@ class LogsViewModel @Inject constructor(
         }
     }
 }
+
+internal fun SollNotification.feedbackEntityId(): String =
+    payloadJson
+        ?.let { payload -> runCatching { JSONObject(payload).optString("event_id") }.getOrNull() }
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: dedupeKey?.trim()?.takeIf { it.isNotBlank() }
+        ?: id

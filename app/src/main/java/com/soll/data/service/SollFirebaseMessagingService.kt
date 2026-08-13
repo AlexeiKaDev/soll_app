@@ -4,6 +4,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollServerSyncScheduler
+import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.data.repository.chatNotificationDedupeKey
 import com.soll.data.repository.stableChatNotificationId
 import com.soll.domain.notification.SollNotificationChannel
@@ -19,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import timber.log.Timber
+import java.time.Instant
 
 class SollFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
@@ -38,14 +40,20 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
         )
         if (body.isBlank()) return
 
-        val messageKey = data["message_id"]
+        val eventId = fcmEventId(data)
+        val messageKey = eventId
+            ?: data["message_id"]
             ?: message.messageId
             ?: "${title}:${body}:${message.sentTime}"
         val sessionId = data["session_id"]?.takeIf { it.isNotBlank() } ?: "soll-main"
         val chatMessageId = fcmChatMessageIdForWatermark(route, data)
         val chatDedupeKey = chatMessageId?.let { chatNotificationDedupeKey(sessionId, it) }
+        val notificationDedupeKey = eventId?.let { fcmNotificationDedupeKey(it, messageKey) }
+            ?: chatDedupeKey
+            ?: fcmNotificationDedupeKey(null, messageKey)
         val payload = JSONObject().apply {
             put("provider", "fcm")
+            put("event_id", eventId ?: "")
             put("message_id", data["message_id"] ?: "")
             put("session_id", sessionId)
             put("route", data["route"] ?: "chat")
@@ -53,7 +61,7 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
             put("type", route.type)
             put("priority", route.priority.name.lowercase())
             put("source", data["source"] ?: "server")
-            put("dedupe_key", chatDedupeKey ?: "fcm:$messageKey")
+            put("dedupe_key", notificationDedupeKey)
         }.toString()
 
         runBlocking(Dispatchers.IO) {
@@ -74,15 +82,23 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
                         systemNotificationId = if (route.channel == SollNotificationChannel.CHAT) {
                             stableChatNotificationId(sessionId)
                         } else {
-                            stablePushNotificationId(chatDedupeKey ?: "fcm:$messageKey")
+                            stablePushNotificationId(notificationDedupeKey)
                         },
                         launchSection = route.launchSection,
                         launchLogsTab = data[AppLaunchTargets.EXTRA_OPEN_LOGS_TAB],
                         systemGroupKey = fcmNotificationGroupKey(data),
                         systemGroupTitle = fcmNotificationGroupTitle(data),
-                        dedupeKey = chatDedupeKey ?: "fcm:$messageKey",
+                        dedupeKey = notificationDedupeKey,
+                        eventId = eventId,
                     )
                 )
+                eventId?.let { serverEventId ->
+                    dependencies.syncQueueRepository().enqueueNotificationReceipt(
+                        eventId = serverEventId,
+                        state = "received",
+                        occurredAt = Instant.now().toString(),
+                    )
+                }
                 chatMessageId?.let { messageId ->
                     settingsRepository.advanceSollChatLastSeenMessageId(messageId)
                 }
@@ -110,10 +126,17 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
 interface SollFirebaseMessagingEntryPoint {
     fun notificationCenter(): SollNotificationCenter
     fun settingsRepository(): SettingsRepository
+    fun syncQueueRepository(): SollSyncQueueRepository
 }
 
 private fun stablePushNotificationId(messageKey: String): Int =
     messageKey.hashCode() and Int.MAX_VALUE
+
+internal fun fcmEventId(data: Map<String, String>): String? =
+    data["event_id"]?.trim()?.take(200)?.takeIf { it.isNotBlank() }
+
+internal fun fcmNotificationDedupeKey(eventId: String?, fallbackMessageKey: String): String =
+    eventId?.let { "fcm:event:$it" } ?: "fcm:$fallbackMessageKey"
 
 internal data class FcmNotificationRoute(
     val channel: SollNotificationChannel,

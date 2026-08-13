@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.calendar.AndroidCalendarReader
 import com.soll.data.repository.DailyIntelligenceRepository
+import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.domain.soll.SollFeedItem
 import com.soll.domain.soll.SollTodaySnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -39,6 +40,7 @@ enum class TodayTab { TODAY, FEED }
 class TodayViewModel @Inject constructor(
     private val repository: DailyIntelligenceRepository,
     private val calendarReader: AndroidCalendarReader,
+    private val syncQueueRepository: SollSyncQueueRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         TodayUiState(calendarPermissionGranted = calendarReader.hasPermission())
@@ -106,17 +108,23 @@ class TodayViewModel @Inject constructor(
         if (_uiState.value.feedbackItemId != null) return
         viewModelScope.launch {
             _uiState.update { it.copy(feedbackItemId = item.id, message = null, error = null) }
-            repository.feedback(
-                entityId = item.feedback.entityId.ifBlank { item.id },
-                decision = decision,
-                topic = item.feedback.topic,
-                source = item.feedback.source.ifBlank { item.sourceId },
-            ).fold(
+            runCatching {
+                syncQueueRepository.enqueueFeedFeedback(
+                    entityId = item.feedback.entityId.ifBlank { item.id },
+                    decision = decision,
+                    topic = item.feedback.topic,
+                    source = item.feedback.source.ifBlank { item.sourceId },
+                )
+            }.fold(
                 onSuccess = {
                     _uiState.update { state ->
                         state.copy(
                             feedbackItemId = null,
-                            message = if (decision == "useful") "Учту: материал полезен" else "Учту и скорректирую ленту",
+                            message = if (decision == "useful") {
+                                "Отзыв сохранён и будет отправлен Soll"
+                            } else {
+                                "Отзыв сохранён: скорректирую ленту после синхронизации"
+                            },
                         )
                     }
                 },

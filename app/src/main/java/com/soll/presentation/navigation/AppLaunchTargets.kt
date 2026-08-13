@@ -10,6 +10,7 @@ data class AppLaunchCommand(
 object AppLaunchTargets {
     const val EXTRA_OPEN_SECTION = "soll_open_section"
     const val EXTRA_OPEN_LOGS_TAB = "soll_open_logs_tab"
+    const val EXTRA_NOTIFICATION_EVENT_ID = "soll_notification_event_id"
     const val SECTION_LOGS = "logs"
     const val SECTION_TODAY = "today"
     const val SECTION_CHAT = "chat"

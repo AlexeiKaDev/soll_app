@@ -188,6 +188,18 @@ interface SollApiService {
         @Body request: FeedFeedbackRequest,
     ): FeedFeedbackResponse
 
+    @POST("api/v1/assistant/feedback")
+    suspend fun sendAssistantFeedback(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: AssistantFeedbackRequest,
+    ): DurableCommandResponse
+
+    @POST("api/v1/android/notification-receipts")
+    suspend fun sendNotificationReceipt(
+        @Header("Authorization") authorization: String? = null,
+        @Body request: NotificationReceiptRequest,
+    ): DurableCommandResponse
+
     @POST("api/v1/assistant/calendar-snapshot")
     suspend fun syncCalendarSnapshot(
         @Header("Authorization") authorization: String? = null,

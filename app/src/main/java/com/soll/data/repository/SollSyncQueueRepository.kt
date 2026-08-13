@@ -15,6 +15,8 @@ import androidx.work.WorkerParameters
 import com.soll.data.local.dao.SyncQueueDao
 import com.soll.data.local.entity.SyncQueueEntity
 import com.soll.domain.soll.SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH
+import com.soll.domain.soll.SOLL_DURABLE_CLIENT_ID_MAX_LENGTH
+import com.soll.domain.soll.SollFeedbackCommandResult
 import com.soll.domain.soll.SollFeedImportResult
 import com.soll.domain.soll.SollGateway
 import dagger.hilt.EntryPoint
@@ -100,6 +102,124 @@ class SollSyncQueueRepository @Inject constructor(
             SyncQueueEntity(
                 id = queueId,
                 kind = SyncQueueEntity.KIND_FEED_IMPORT,
+                status = SyncQueueEntity.STATUS_PENDING,
+                payloadJson = payload.toString(),
+                attempts = 0,
+                lastError = null,
+                createdAt = now,
+                updatedAt = now,
+                nextAttemptAt = 0L,
+            )
+        )
+        enqueueRetryWorker()
+        return queueId
+    }
+
+    suspend fun enqueueFeedFeedback(
+        entityId: String,
+        decision: String,
+        topic: String,
+        source: String,
+        note: String = "",
+        clientId: String = UUID.randomUUID().toString(),
+    ): String {
+        val cleanEntityId = entityId.trim()
+        require(cleanEntityId.isNotBlank()) { "ID материала не задан" }
+        val cleanDecision = decision.trim().lowercase()
+        require(cleanDecision.isNotBlank()) { "Решение обратной связи не задано" }
+        val cleanClientId = durableClientId(clientId)
+        return enqueueDurableCommand(
+            queueId = "feed-feedback:$cleanClientId",
+            kind = SyncQueueEntity.KIND_FEED_FEEDBACK,
+            payload = JSONObject()
+                .put("entity_id", cleanEntityId)
+                .put("decision", cleanDecision)
+                .put("topic", topic.trim())
+                .put("source", source.trim())
+                .put("note", note.trim().take(2_000))
+                .put("client_id", cleanClientId),
+        )
+    }
+
+    suspend fun enqueueAssistantFeedback(
+        entityType: String,
+        entityId: String,
+        decision: String,
+        note: String = "",
+        clientId: String = UUID.randomUUID().toString(),
+    ): String {
+        val cleanEntityType = entityType.trim().lowercase()
+        require(cleanEntityType in setOf("initiative", "notification")) { "Неизвестный тип обратной связи" }
+        val cleanEntityId = entityId.trim()
+        require(cleanEntityId.isNotBlank()) { "ID объекта обратной связи не задан" }
+        val cleanDecision = decision.trim().lowercase()
+        require(cleanDecision.isNotBlank()) { "Решение обратной связи не задано" }
+        val cleanClientId = durableClientId(clientId)
+        return enqueueDurableCommand(
+            queueId = "assistant-feedback:$cleanClientId",
+            kind = SyncQueueEntity.KIND_ASSISTANT_FEEDBACK,
+            payload = JSONObject()
+                .put("entity_type", cleanEntityType)
+                .put("entity_id", cleanEntityId)
+                .put("decision", cleanDecision)
+                .put("note", note.trim().take(2_000))
+                .put("client_id", cleanClientId),
+        )
+    }
+
+    suspend fun enqueueNotificationReceipt(
+        eventId: String,
+        state: String,
+        occurredAt: String,
+    ): String {
+        val cleanEventId = eventId.trim().take(200)
+        require(cleanEventId.isNotBlank()) { "event_id уведомления не задан" }
+        val cleanState = state.trim().lowercase()
+        require(cleanState in setOf("received", "opened")) { "Неизвестное состояние уведомления" }
+        val clientId = notificationReceiptClientId(cleanEventId, cleanState)
+        return enqueueDurableCommand(
+            queueId = "notification-receipt:$clientId",
+            kind = SyncQueueEntity.KIND_NOTIFICATION_RECEIPT,
+            payload = JSONObject()
+                .put("event_id", cleanEventId)
+                .put("state", cleanState)
+                .put("occurred_at", occurredAt.trim())
+                .put("client_id", clientId),
+        )
+    }
+
+    private suspend fun enqueueDurableCommand(
+        queueId: String,
+        kind: String,
+        payload: JSONObject,
+    ): String {
+        val existing = syncQueueDao.getById(queueId)
+        if (existing != null) {
+            require(existing.kind == kind) { "Идентификатор очереди уже используется другим действием" }
+            require(sameDurableCommand(JSONObject(existing.payloadJson), payload, kind)) {
+                "Идентификатор отправки уже используется для другого действия"
+            }
+            if (existing.status == SyncQueueEntity.STATUS_FAILED) {
+                syncQueueDao.update(
+                    existing.copy(
+                        status = SyncQueueEntity.STATUS_PENDING,
+                        lastError = null,
+                        updatedAt = System.currentTimeMillis(),
+                        nextAttemptAt = 0L,
+                    )
+                )
+            }
+            if (existing.status !in setOf(SyncQueueEntity.STATUS_DONE, SyncQueueEntity.STATUS_REJECTED)) {
+                enqueueRetryWorker()
+            }
+            return queueId
+        }
+
+        val now = System.currentTimeMillis()
+        syncQueueDao.insert(
+            SyncQueueEntity(
+                id = queueId,
+                kind = kind,
                 status = SyncQueueEntity.STATUS_PENDING,
                 payloadJson = payload.toString(),
                 attempts = 0,
@@ -265,8 +385,8 @@ class SollSyncQueueRepository @Inject constructor(
 
     suspend fun retryReady(limit: Int = 10): SyncRetrySummary {
         val now = System.currentTimeMillis()
-        syncQueueDao.getStaleRunningFeedImports(now - STALE_RUNNING_TIMEOUT_MS).forEach { stale ->
-            interruptedFeedImportRecovery(stale, now)?.let { recovered ->
+        syncQueueDao.getStaleRunningDurableDeliveries(now - STALE_RUNNING_TIMEOUT_MS).forEach { stale ->
+            interruptedDurableDeliveryRecovery(stale, now)?.let { recovered ->
                 syncQueueDao.update(recovered)
             }
         }
@@ -286,7 +406,7 @@ class SollSyncQueueRepository @Inject constructor(
             val result = try {
                 retryItem(running)
             } catch (error: CancellationException) {
-                interruptedFeedImportRecovery(running, System.currentTimeMillis())?.let { recovered ->
+                interruptedDurableDeliveryRecovery(running, System.currentTimeMillis())?.let { recovered ->
                     withContext(NonCancellable) {
                         syncQueueDao.update(recovered)
                     }
@@ -301,8 +421,8 @@ class SollSyncQueueRepository @Inject constructor(
                 succeeded++
             } else {
                 val error = result.exceptionOrNull()
-                if (error is TerminalFeedImportException) {
-                    markRejected(running, error.message ?: "Soll отклонил ссылку")
+                if (error is TerminalDurableCommandException) {
+                    markRejected(running, error.message ?: "Soll отклонил действие")
                     terminal++
                 } else {
                     markFailed(running, error?.message ?: "Ошибка синхронизации")
@@ -346,6 +466,36 @@ class SollSyncQueueRepository @Inject constructor(
 
             SyncQueueEntity.KIND_FEED_IMPORT -> retryFeedImport(item, payload)
 
+            SyncQueueEntity.KIND_FEED_FEEDBACK -> retryFeedback(item) {
+                sollGateway.sendFeedFeedback(
+                    entityId = payload.getString("entity_id"),
+                    decision = payload.getString("decision"),
+                    topic = payload.optString("topic"),
+                    source = payload.optString("source"),
+                    note = payload.optString("note"),
+                    clientId = payload.getString("client_id"),
+                )
+            }
+
+            SyncQueueEntity.KIND_ASSISTANT_FEEDBACK -> retryFeedback(item) {
+                sollGateway.sendAssistantFeedback(
+                    entityType = payload.getString("entity_type"),
+                    entityId = payload.getString("entity_id"),
+                    decision = payload.getString("decision"),
+                    note = payload.optString("note"),
+                    clientId = payload.getString("client_id"),
+                )
+            }
+
+            SyncQueueEntity.KIND_NOTIFICATION_RECEIPT -> retryFeedback(item) {
+                sollGateway.sendNotificationReceipt(
+                    eventId = payload.getString("event_id"),
+                    state = payload.getString("state"),
+                    occurredAt = payload.getString("occurred_at"),
+                    clientId = payload.getString("client_id"),
+                )
+            }
+
             else -> Result.failure(IllegalStateException("Неизвестный тип очереди: ${item.kind}"))
         }
     }
@@ -360,7 +510,7 @@ class SollSyncQueueRepository @Inject constructor(
             onSuccess = { result ->
                 if (!result.success) {
                     Result.failure(
-                        TerminalFeedImportException(
+                        TerminalDurableCommandException(
                             result.message.ifBlank { "Soll не принял ссылку" }
                         )
                     )
@@ -386,12 +536,43 @@ class SollSyncQueueRepository @Inject constructor(
             },
             onFailure = { error ->
                 if (feedImportFailureDisposition(error) == FeedImportFailureDisposition.TERMINAL) {
-                    Result.failure(TerminalFeedImportException(error.message ?: "Soll отклонил ссылку", error))
+                    Result.failure(TerminalDurableCommandException(error.message ?: "Soll отклонил ссылку", error))
                 } else {
                     Result.failure(error)
                 }
             },
         )
+
+    private suspend fun retryFeedback(
+        item: SyncQueueEntity,
+        request: suspend () -> Result<SollFeedbackCommandResult>,
+    ): Result<Unit> = request().fold(
+        onSuccess = { result ->
+            if (!result.accepted && !result.duplicate) {
+                Result.failure(TerminalDurableCommandException("Soll не принял действие"))
+            } else {
+                val resultJson = JSONObject()
+                    .put("accepted", result.accepted)
+                    .put("duplicate", result.duplicate)
+                    .put("action_id", result.actionId)
+                    .put("status", result.status)
+                syncQueueDao.update(
+                    item.copy(
+                        payloadJson = JSONObject(item.payloadJson).put("result", resultJson).toString(),
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                )
+                Result.success(Unit)
+            }
+        },
+        onFailure = { error ->
+            if (durableCommandFailureDisposition(error) == FeedImportFailureDisposition.TERMINAL) {
+                Result.failure(TerminalDurableCommandException(error.message ?: "Soll отклонил действие", error))
+            } else {
+                Result.failure(error)
+            }
+        },
+    )
 
     private suspend fun retryTaskAction(payload: JSONObject): Result<Unit> {
         val taskId = payload.getString("task_id")
@@ -534,6 +715,29 @@ class SollSyncQueueRepository @Inject constructor(
     }
 }
 
+internal fun notificationReceiptClientId(eventId: String, state: String): String =
+    UUID.nameUUIDFromBytes("notification-receipt|${eventId.trim()}|${state.trim().lowercase()}".toByteArray()).toString()
+
+private fun durableClientId(value: String): String =
+    value.trim().take(SOLL_DURABLE_CLIENT_ID_MAX_LENGTH).ifBlank { UUID.randomUUID().toString() }
+
+private fun sameDurableCommand(existing: JSONObject, proposed: JSONObject, kind: String): Boolean {
+    if (existing.optString("client_id") != proposed.optString("client_id")) return false
+    return when (kind) {
+        SyncQueueEntity.KIND_FEED_FEEDBACK ->
+            existing.optString("entity_id") == proposed.optString("entity_id") &&
+                existing.optString("decision") == proposed.optString("decision")
+        SyncQueueEntity.KIND_ASSISTANT_FEEDBACK ->
+            existing.optString("entity_type") == proposed.optString("entity_type") &&
+                existing.optString("entity_id") == proposed.optString("entity_id") &&
+                existing.optString("decision") == proposed.optString("decision")
+        SyncQueueEntity.KIND_NOTIFICATION_RECEIPT ->
+            existing.optString("event_id") == proposed.optString("event_id") &&
+                existing.optString("state") == proposed.optString("state")
+        else -> false
+    }
+}
+
 internal enum class FeedImportFailureDisposition {
     RETRYABLE,
     TERMINAL,
@@ -553,16 +757,36 @@ internal fun feedImportHttpFailureDisposition(statusCode: Int): FeedImportFailur
         FeedImportFailureDisposition.RETRYABLE
     }
 
-private class TerminalFeedImportException(
+internal fun durableCommandFailureDisposition(error: Throwable): FeedImportFailureDisposition =
+    when (error) {
+        is HttpException -> durableCommandHttpFailureDisposition(error.code())
+        is IllegalArgumentException, is SecurityException -> FeedImportFailureDisposition.TERMINAL
+        else -> FeedImportFailureDisposition.RETRYABLE
+    }
+
+internal fun durableCommandHttpFailureDisposition(statusCode: Int): FeedImportFailureDisposition =
+    if (statusCode in setOf(401, 408, 425, 429) || statusCode >= 500) {
+        FeedImportFailureDisposition.RETRYABLE
+    } else {
+        FeedImportFailureDisposition.TERMINAL
+    }
+
+private class TerminalDurableCommandException(
     message: String,
     cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
-internal fun interruptedFeedImportRecovery(
+internal fun interruptedDurableDeliveryRecovery(
     item: SyncQueueEntity,
     recoveredAt: Long,
 ): SyncQueueEntity? {
-    if (item.kind != SyncQueueEntity.KIND_FEED_IMPORT || item.status != SyncQueueEntity.STATUS_RUNNING) {
+    if (item.kind !in setOf(
+            SyncQueueEntity.KIND_FEED_IMPORT,
+            SyncQueueEntity.KIND_FEED_FEEDBACK,
+            SyncQueueEntity.KIND_ASSISTANT_FEEDBACK,
+            SyncQueueEntity.KIND_NOTIFICATION_RECEIPT,
+        ) || item.status != SyncQueueEntity.STATUS_RUNNING
+    ) {
         return null
     }
     return item.copy(

@@ -16,6 +16,7 @@ import com.soll.data.api.AndroidPushTokenResponse
 import com.soll.data.api.AndroidSyncStatusResponse
 import com.soll.data.api.AssistantAskRequest
 import com.soll.data.api.AssistantAskResponse
+import com.soll.data.api.AssistantFeedbackRequest
 import com.soll.data.api.BookActionResponse
 import com.soll.data.api.BookAlternativeResponse
 import com.soll.data.api.BookBatchDownloadItemResponse
@@ -84,6 +85,7 @@ import com.soll.data.api.CalendarEventRequest
 import com.soll.data.api.CalendarSnapshotRequest
 import com.soll.data.api.FeedFeedbackRequest
 import com.soll.data.api.FeedImportLinkRequest
+import com.soll.data.api.NotificationReceiptRequest
 import com.soll.data.api.toDomain
 import com.soll.data.api.SollBookStatusResponse
 import com.soll.data.api.SollBriefingResponse
@@ -120,6 +122,7 @@ import com.soll.domain.device.GadgetCloudHistoryPoint
 import com.soll.domain.device.GadgetCloudSnapshot
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH
+import com.soll.domain.soll.SOLL_DURABLE_CLIENT_ID_MAX_LENGTH
 import com.soll.domain.soll.SollAndroidSyncStatus
 import com.soll.domain.soll.SollAndroidChatSync
 import com.soll.domain.soll.SollAndroidLocationStatus
@@ -157,6 +160,7 @@ import com.soll.domain.soll.SollDeviceToken
 import com.soll.domain.soll.SollHealth
 import com.soll.domain.soll.SollFeedPage
 import com.soll.domain.soll.SollFeedImportResult
+import com.soll.domain.soll.SollFeedbackCommandResult
 import com.soll.domain.soll.SollLearningItem
 import com.soll.domain.soll.SollMonitoredSource
 import com.soll.domain.soll.SollNodeIdentity
@@ -295,9 +299,11 @@ class SollRepository @Inject constructor(
         topic: String,
         source: String,
         note: String,
-    ): Result<Boolean> = runSuspendCatching {
+        clientId: String,
+    ): Result<SollFeedbackCommandResult> = runSuspendCatching {
         require(entityId.isNotBlank()) { "ID материала не задан" }
-        val feedbackEventId = UUID.randomUUID().toString()
+        val feedbackEventId = clientId.trim().take(SOLL_DURABLE_CLIENT_ID_MAX_LENGTH)
+        require(feedbackEventId.isNotBlank()) { "ID события обратной связи не задан" }
         service().sendFeedFeedback(
             authorization = writeAuthorizationHeader(),
             entityId = entityId,
@@ -309,7 +315,57 @@ class SollRepository @Inject constructor(
                 clientId = feedbackEventId,
                 idempotencyKey = feedbackEventId,
             ),
-        ).success
+        ).toDomain()
+    }
+
+    override suspend fun sendAssistantFeedback(
+        entityType: String,
+        entityId: String,
+        decision: String,
+        note: String,
+        clientId: String,
+    ): Result<SollFeedbackCommandResult> = runSuspendCatching {
+        val cleanEntityType = entityType.trim().lowercase()
+        require(cleanEntityType in setOf("initiative", "notification")) { "Неизвестный тип обратной связи" }
+        val cleanEntityId = entityId.trim()
+        require(cleanEntityId.isNotBlank()) { "ID объекта обратной связи не задан" }
+        val cleanClientId = clientId.trim().take(SOLL_DURABLE_CLIENT_ID_MAX_LENGTH)
+        require(cleanClientId.isNotBlank()) { "ID события обратной связи не задан" }
+        service().sendAssistantFeedback(
+            authorization = writeAuthorizationHeader(),
+            request = AssistantFeedbackRequest(
+                entityType = cleanEntityType,
+                entityId = cleanEntityId,
+                decision = decision.trim(),
+                note = note.trim().take(2_000),
+                clientId = cleanClientId,
+                idempotencyKey = cleanClientId,
+            ),
+        ).toDomain()
+    }
+
+    override suspend fun sendNotificationReceipt(
+        eventId: String,
+        state: String,
+        occurredAt: String,
+        clientId: String,
+    ): Result<SollFeedbackCommandResult> = runSuspendCatching {
+        val cleanState = state.trim().lowercase()
+        require(cleanState in setOf("received", "opened")) { "Неизвестное состояние уведомления" }
+        val cleanEventId = eventId.trim().take(200)
+        require(cleanEventId.isNotBlank()) { "event_id уведомления не задан" }
+        val cleanClientId = clientId.trim().take(SOLL_DURABLE_CLIENT_ID_MAX_LENGTH)
+        require(cleanClientId.isNotBlank()) { "ID квитанции уведомления не задан" }
+        service().sendNotificationReceipt(
+            authorization = writeAuthorizationHeader(),
+            request = NotificationReceiptRequest(
+                eventId = cleanEventId,
+                state = cleanState,
+                occurredAt = occurredAt.trim(),
+                clientId = cleanClientId,
+                idempotencyKey = cleanClientId,
+            ),
+        ).toDomain()
     }
 
     override suspend fun syncCalendarSnapshot(

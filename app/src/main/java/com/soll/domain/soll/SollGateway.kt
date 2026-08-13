@@ -663,7 +663,21 @@ interface SollGateway {
         topic: String,
         source: String,
         note: String = "",
-    ): Result<Boolean>
+        clientId: String,
+    ): Result<SollFeedbackCommandResult>
+    suspend fun sendAssistantFeedback(
+        entityType: String,
+        entityId: String,
+        decision: String,
+        note: String = "",
+        clientId: String,
+    ): Result<SollFeedbackCommandResult>
+    suspend fun sendNotificationReceipt(
+        eventId: String,
+        state: String,
+        occurredAt: String,
+        clientId: String,
+    ): Result<SollFeedbackCommandResult>
     suspend fun syncCalendarSnapshot(
         timezone: String,
         events: List<SollCalendarEvent>,

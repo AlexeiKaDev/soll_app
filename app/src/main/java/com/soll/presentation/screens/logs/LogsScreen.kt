@@ -122,6 +122,7 @@ fun LogsScreen(
                     uiState = uiState,
                     onMarkRead = viewModel::markNotificationRead,
                     onMarkAllRead = viewModel::markAllNotificationsRead,
+                    onFeedback = viewModel::sendNotificationFeedback,
                 )
                 4 -> MemoriesList(
                     uiState = uiState,
@@ -211,6 +212,7 @@ private fun NotificationsList(
     uiState: LogsUiState,
     onMarkRead: (String) -> Unit,
     onMarkAllRead: () -> Unit,
+    onFeedback: (SollNotification, String) -> Unit,
 ) {
     var expandedId by remember { mutableStateOf<String?>(null) }
 
@@ -271,6 +273,9 @@ private fun NotificationsList(
                                 onMarkRead(notification.id)
                             }
                         },
+                        feedbackBusy = notification.id in uiState.notificationFeedbackBusy,
+                        feedbackQueued = notification.id in uiState.notificationFeedbackQueued,
+                        onFeedback = { decision -> onFeedback(notification, decision) },
                     )
                 }
             }
@@ -544,6 +549,9 @@ private fun NotificationLogItem(
     notification: SollNotification,
     expanded: Boolean,
     onToggle: () -> Unit,
+    feedbackBusy: Boolean,
+    feedbackQueued: Boolean,
+    onFeedback: (String) -> Unit,
 ) {
     val isUnread = notification.status == SollNotificationStatus.UNREAD
     Card(
@@ -629,6 +637,31 @@ private fun NotificationLogItem(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextButton(
+                            onClick = { onFeedback("useful") },
+                            enabled = !feedbackBusy && !feedbackQueued,
+                        ) {
+                            Text("Полезно")
+                        }
+                        TextButton(
+                            onClick = { onFeedback("not_useful") },
+                            enabled = !feedbackBusy && !feedbackQueued,
+                        ) {
+                            Text("Не нужно")
+                        }
+                        if (feedbackQueued) {
+                            Text(
+                                text = "Отзыв сохранён",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                            )
+                        }
                     }
                 }
             }

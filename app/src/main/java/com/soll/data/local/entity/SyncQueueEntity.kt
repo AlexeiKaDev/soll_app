@@ -49,6 +49,9 @@ data class SyncQueueEntity(
         const val KIND_RAW_FILE = "RAW_FILE"
         const val KIND_TASK_ACTION = "TASK_ACTION"
         const val KIND_FEED_IMPORT = "FEED_IMPORT"
+        const val KIND_FEED_FEEDBACK = "FEED_FEEDBACK"
+        const val KIND_ASSISTANT_FEEDBACK = "ASSISTANT_FEEDBACK"
+        const val KIND_NOTIFICATION_RECEIPT = "NOTIFICATION_RECEIPT"
 
         const val STATUS_PENDING = "PENDING"
         const val STATUS_RUNNING = "RUNNING"

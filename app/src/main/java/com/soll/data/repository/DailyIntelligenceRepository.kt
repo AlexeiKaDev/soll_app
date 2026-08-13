@@ -62,13 +62,6 @@ class DailyIntelligenceRepository @Inject constructor(
         )
     }
 
-    suspend fun feedback(
-        entityId: String,
-        decision: String,
-        topic: String,
-        source: String,
-    ): Result<Boolean> = gateway.sendFeedFeedback(entityId, decision, topic, source)
-
     suspend fun syncCalendar(
         timezone: String,
         events: List<SollCalendarEvent>,

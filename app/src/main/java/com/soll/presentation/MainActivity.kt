@@ -16,9 +16,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.soll.data.repository.GadgetServerSyncScheduler
 import com.soll.data.repository.SettingsRepository
 import com.soll.data.repository.SollServerSyncScheduler
+import com.soll.data.repository.SollSyncQueueRepository
 import com.soll.data.service.AndroidPushTokenRegistrar
 import com.soll.domain.soll.SollPairingPayload
 import com.soll.domain.soll.SollPairingPayloadParser
@@ -31,11 +33,17 @@ import com.soll.ui.theme.SollThemeVariant
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import java.util.UUID
+import java.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
+    @Inject
+    lateinit var syncQueueRepository: SollSyncQueueRepository
 
     private var launchCommand by mutableStateOf<AppLaunchCommand?>(null)
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -53,6 +61,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        recordNotificationOpened(intent)
         launchCommand = intent?.toLaunchCommand()
         requestNotificationPermissionIfNeeded()
 
@@ -73,7 +82,30 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        recordNotificationOpened(intent)
         launchCommand = intent.toLaunchCommand()
+    }
+
+    private fun recordNotificationOpened(intent: Intent?) {
+        val eventId = intent
+            ?.getStringExtra(AppLaunchTargets.EXTRA_NOTIFICATION_EVENT_ID)
+            ?.trim()
+            ?.take(200)
+            ?.takeIf { it.isNotBlank() }
+            ?: return
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                syncQueueRepository.enqueueNotificationReceipt(
+                    eventId = eventId,
+                    state = "opened",
+                    occurredAt = Instant.now().toString(),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Opening the requested destination must not be blocked by receipt persistence failure.
+            }
+        }
     }
 
     private fun Intent.toLaunchCommand(): AppLaunchCommand? {

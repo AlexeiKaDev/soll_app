@@ -50,6 +50,18 @@ class SyncReliabilityTest {
     }
 
     @Test
+    fun `durable feedback retries unauthorized until device auth can refresh`() {
+        assertEquals(
+            FeedImportFailureDisposition.RETRYABLE,
+            durableCommandHttpFailureDisposition(401),
+        )
+        assertEquals(
+            FeedImportFailureDisposition.TERMINAL,
+            durableCommandHttpFailureDisposition(403),
+        )
+    }
+
+    @Test
     fun `terminal feed import does not keep worker retrying`() {
         val summary = SyncRetrySummary(
             retried = 1,
@@ -76,7 +88,7 @@ class SyncReliabilityTest {
             nextAttemptAt = 3L,
         )
 
-        val recovered = requireNotNull(interruptedFeedImportRecovery(running, recoveredAt = 10L))
+        val recovered = requireNotNull(interruptedDurableDeliveryRecovery(running, recoveredAt = 10L))
 
         assertEquals(SyncQueueEntity.STATUS_PENDING, recovered.status)
         assertEquals(running.payloadJson, recovered.payloadJson)
@@ -99,7 +111,36 @@ class SyncReliabilityTest {
             nextAttemptAt = 0L,
         )
 
-        assertNull(interruptedFeedImportRecovery(running, recoveredAt = 10L))
+        assertNull(interruptedDurableDeliveryRecovery(running, recoveredAt = 10L))
+    }
+
+    @Test
+    fun `interrupted durable feedback preserves stable client id for retry`() {
+        val running = SyncQueueEntity(
+            id = "assistant-feedback:feedback-1",
+            kind = SyncQueueEntity.KIND_ASSISTANT_FEEDBACK,
+            status = SyncQueueEntity.STATUS_RUNNING,
+            payloadJson = """{"entity_type":"initiative","entity_id":"initiative-1","decision":"accepted","client_id":"feedback-1"}""",
+            attempts = 2,
+            lastError = null,
+            createdAt = 1L,
+            updatedAt = 2L,
+            nextAttemptAt = 3L,
+        )
+
+        val recovered = requireNotNull(interruptedDurableDeliveryRecovery(running, recoveredAt = 20L))
+
+        assertEquals(SyncQueueEntity.STATUS_PENDING, recovered.status)
+        assertEquals(running.payloadJson, recovered.payloadJson)
+        assertTrue(recovered.payloadJson.contains("\"client_id\":\"feedback-1\""))
+    }
+
+    @Test
+    fun `notification receipt id is stable per event and receipt state`() {
+        val first = notificationReceiptClientId("event-42", "received")
+
+        assertEquals(first, notificationReceiptClientId("event-42", "received"))
+        assertTrue(first != notificationReceiptClientId("event-42", "opened"))
     }
 
     @Test

@@ -239,6 +239,7 @@ class SollNotificationRepository @Inject constructor(
                         message = summaryText,
                         onlyAlertOnce = true,
                         systemNotificationId = summaryId,
+                        eventId = null,
                     ),
                     summaryId,
                 )
@@ -287,6 +288,12 @@ class SollNotificationRepository @Inject constructor(
                         request.launchLogsTab ?: AppLaunchTargets.LOGS_TAB_NOTIFICATIONS,
                     )
                 }
+                request.eventId
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { eventId ->
+                        putExtra(AppLaunchTargets.EXTRA_NOTIFICATION_EVENT_ID, eventId)
+                    }
             },
             flags,
         )

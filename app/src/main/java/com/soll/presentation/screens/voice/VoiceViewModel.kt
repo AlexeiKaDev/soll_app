@@ -13,6 +13,7 @@ import com.soll.data.voice.AndroidSpeechRecognizerAdapter
 import com.soll.domain.assistant.AssistantEvent
 import com.soll.domain.assistant.AssistantEventLogger
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.tts.TextToSpeechManager
 import com.soll.domain.voice.MAX_PTT_DURATION_MS
 import com.soll.domain.voice.SttRecognitionMode
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -66,6 +69,7 @@ class VoiceViewModel @Inject constructor(
     val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
     private var submittedSessionId: String? = null
     private var isScreenForeground: Boolean = false
+    private var replyWaitJob: Job? = null
 
     init {
         observeStt()
@@ -238,7 +242,8 @@ class VoiceViewModel @Inject constructor(
         if (submittedSessionId == session.id) return
         submittedSessionId = session.id
 
-        viewModelScope.launch {
+        replyWaitJob?.cancel()
+        replyWaitJob = viewModelScope.launch {
             val activationDecision = activationPolicy.prepare(
                 text = text,
                 requireWakePhrase = settingsRepository.voiceWakePhraseRequired,
@@ -285,49 +290,105 @@ class VoiceViewModel @Inject constructor(
                 )
             }
 
-            sollGateway.sendChatTurn(
+            val turnResult = sollGateway.sendChatTurn(
                 content = turn.content,
                 sessionId = turn.sessionId,
                 runAssistant = turn.runAssistant,
                 taskIntake = turn.taskIntake,
                 allowActions = turn.allowActions,
                 metadata = turn.metadata,
-            ).fold(
-                onSuccess = { (_, assistant) ->
-                    val response = assistant?.content?.trim().orEmpty().ifBlank {
-                        "Soll принял запрос. Ответ появится в чате."
-                    }
-                    logVoiceEvent(
-                        type = "voice_assistant_turn",
-                        summary = "Безопасный голосовой запрос обработан",
-                        payload = JSONObject()
-                            .put("session_id", session.id)
-                            .put("request_id", turn.requestId)
-                            .put("allow_actions", turn.allowActions)
-                            .put("task_intake", turn.taskIntake)
-                            .put("stt_mode", _uiState.value.activeSttMode.name),
-                    )
-                    _uiState.update {
-                        it.copy(
-                            isProcessing = false,
-                            responseText = response,
-                            session = session.processing(turn.content).completed(response),
-                            errorMessage = null,
-                        )
-                    }
-                    if (isScreenForeground && !_uiState.value.isMuted && assistant != null) {
-                        speak(response)
-                    }
-                },
-                onFailure = { error ->
-                    failSession(
-                        session = session,
-                        recognizedText = text,
-                        message = error.message ?: "Не удалось получить ответ Soll",
-                    )
-                },
+            )
+            val (userMessage, immediateAssistant) = turnResult.getOrElse { error ->
+                failSession(
+                    session = session,
+                    recognizedText = text,
+                    message = error.message ?: "Не удалось получить ответ Soll",
+                )
+                return@launch
+            }
+            logVoiceEvent(
+                type = "voice_assistant_turn",
+                summary = "Безопасный голосовой запрос принят",
+                payload = JSONObject()
+                    .put("session_id", session.id)
+                    .put("request_id", turn.requestId)
+                    .put("user_message_id", userMessage.id)
+                    .put("allow_actions", turn.allowActions)
+                    .put("task_intake", turn.taskIntake)
+                    .put("stt_mode", _uiState.value.activeSttMode.name),
+            )
+
+            val immediateFinal = immediateAssistant
+                ?.takeIf { it.isFinalLocalAgentVoiceReply() }
+            if (immediateFinal != null) {
+                completeWithFinalReply(session, turn.content, immediateFinal.content)
+                return@launch
+            }
+
+            _uiState.update {
+                it.copy(
+                    isProcessing = true,
+                    responseText = "",
+                    activationHint = "Запрос принят. Жду ответ локального ядра…",
+                    errorMessage = null,
+                )
+            }
+            val finalReply = awaitFinalLocalAgentReply(
+                sessionId = turn.sessionId,
+                userMessageId = userMessage.id,
+                requestId = turn.requestId,
+            )
+            if (finalReply != null) {
+                completeWithFinalReply(session, turn.content, finalReply.content)
+            } else {
+                failSession(
+                    session = session,
+                    recognizedText = text,
+                    message = "Ответ локального ядра пока не получен. Он появится в чате.",
+                )
+            }
+        }
+    }
+
+    private suspend fun awaitFinalLocalAgentReply(
+        sessionId: String,
+        userMessageId: Long,
+        requestId: String,
+    ): SollChatMessage? {
+        repeat(VOICE_REPLY_POLL_ATTEMPTS) {
+            delay(VOICE_REPLY_POLL_INTERVAL_MS)
+            val messages = sollGateway.getChatSession(
+                sessionId = sessionId,
+                afterId = userMessageId,
+            ).getOrNull().orEmpty()
+            messages.firstOrNull { message ->
+                message.isFinalLocalAgentVoiceReply() &&
+                    message.matchesVoiceRequest(userMessageId, requestId)
+            }?.let { return it }
+        }
+        return null
+    }
+
+    private fun completeWithFinalReply(
+        session: VoiceCommandSession,
+        commandText: String,
+        rawResponse: String,
+    ) {
+        val response = rawResponse.trim()
+        if (response.isBlank()) {
+            failSession(session, commandText, "Локальное ядро вернуло пустой ответ")
+            return
+        }
+        _uiState.update {
+            it.copy(
+                isProcessing = false,
+                responseText = response,
+                activationHint = null,
+                session = session.processing(commandText).completed(response),
+                errorMessage = null,
             )
         }
+        if (isScreenForeground && !_uiState.value.isMuted) speak(response)
     }
 
     private fun failSession(
@@ -405,6 +466,7 @@ class VoiceViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        replyWaitJob?.cancel()
         sttAdapter.cancelListening()
         sttAdapter.destroy()
         ttsManager.stop()
@@ -413,6 +475,8 @@ class VoiceViewModel @Inject constructor(
 
     private companion object {
         private const val MAX_SPOKEN_RESPONSE_CHARS = 1_200
+        private const val VOICE_REPLY_POLL_INTERVAL_MS = 2_000L
+        private const val VOICE_REPLY_POLL_ATTEMPTS = 23
 
         @SuppressLint("InlinedApi")
         fun headsetOutputTypes(): Set<Int> = buildSet {
@@ -426,4 +490,20 @@ class VoiceViewModel @Inject constructor(
             }
         }
     }
+}
+
+internal fun SollChatMessage.isFinalLocalAgentVoiceReply(): Boolean {
+    if (role.trim().lowercase() != "assistant" || content.isBlank()) return false
+    if (content.trim().lowercase().contains("сервер soll сохранил сообщение")) return false
+    val source = metadata["source"]?.toString()?.trim()?.lowercase()
+    val assistant = metadata["assistant"]?.toString()?.trim()?.lowercase()
+    if (source == "yii2_soll_api" || assistant == "stub") return false
+    return source == "local_agent_chat_bridge" || assistant == "local_agent"
+}
+
+internal fun SollChatMessage.matchesVoiceRequest(userMessageId: Long, requestId: String): Boolean {
+    val replyTo = (metadata["reply_to_message_id"] as? Number)?.toLong()
+        ?: metadata["reply_to_message_id"]?.toString()?.trim()?.toLongOrNull()
+    val metadataRequestId = metadata["request_id"]?.toString()?.trim()
+    return replyTo == userMessageId || metadataRequestId == requestId
 }

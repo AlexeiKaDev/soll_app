@@ -6,6 +6,7 @@ import com.soll.domain.soll.SollCalendarSnapshot
 import com.soll.domain.soll.SollFeedFeedbackContract
 import com.soll.domain.soll.SollFeedItem
 import com.soll.domain.soll.SollFeedImportResult
+import com.soll.domain.soll.SollFeedbackCommandResult
 import com.soll.domain.soll.SollFeedPage
 import com.soll.domain.soll.SollTechnologyAssessment
 import com.soll.domain.soll.SollTodayCard
@@ -107,7 +108,36 @@ data class FeedFeedbackRequest(
 )
 
 data class FeedFeedbackResponse(
-    val success: Boolean = false,
+    val success: Boolean? = null,
+    val accepted: Boolean? = null,
+    val duplicate: Boolean = false,
+    @Json(name = "action_id") val actionId: String = "",
+    val status: String = "",
+)
+
+data class AssistantFeedbackRequest(
+    @Json(name = "entity_type") val entityType: String,
+    @Json(name = "entity_id") val entityId: String,
+    val decision: String,
+    val note: String = "",
+    @Json(name = "client_id") val clientId: String,
+    @Json(name = "idempotency_key") val idempotencyKey: String = clientId,
+)
+
+data class NotificationReceiptRequest(
+    @Json(name = "event_id") val eventId: String,
+    val state: String,
+    @Json(name = "occurred_at") val occurredAt: String,
+    @Json(name = "client_id") val clientId: String,
+    @Json(name = "idempotency_key") val idempotencyKey: String = clientId,
+)
+
+data class DurableCommandResponse(
+    val success: Boolean? = null,
+    val accepted: Boolean? = null,
+    val duplicate: Boolean = false,
+    @Json(name = "action_id") val actionId: String = "",
+    val status: String = "",
 )
 
 data class FeedImportLinkRequest(
@@ -208,6 +238,20 @@ fun FeedImportLinkResponse.toDomain(): SollFeedImportResult {
         clusterId = clusterId,
     )
 }
+
+fun FeedFeedbackResponse.toDomain(): SollFeedbackCommandResult = SollFeedbackCommandResult(
+    accepted = accepted ?: success ?: false,
+    duplicate = duplicate,
+    actionId = actionId,
+    status = status,
+)
+
+fun DurableCommandResponse.toDomain(): SollFeedbackCommandResult = SollFeedbackCommandResult(
+    accepted = accepted ?: success ?: false,
+    duplicate = duplicate,
+    actionId = actionId,
+    status = status,
+)
 
 fun CalendarSnapshotResponse.toDomain(): SollCalendarSnapshot = SollCalendarSnapshot(
     available = available,

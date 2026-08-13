@@ -20,6 +20,35 @@ class DailyIntelligenceApiModelsTest {
     }
 
     @Test
+    fun durableAssistantContractsCarryStableIdsAndPreserveServerOutcome() {
+        val request = AssistantFeedbackRequest(
+            entityType = "initiative",
+            entityId = "initiative-1",
+            decision = "accepted",
+            clientId = "feedback-1",
+        )
+        val receipt = NotificationReceiptRequest(
+            eventId = "event-1",
+            state = "opened",
+            occurredAt = "2026-08-13T08:00:00Z",
+            clientId = "receipt-1",
+        )
+        val result = DurableCommandResponse(
+            accepted = true,
+            duplicate = true,
+            actionId = "action-1",
+            status = "duplicate",
+        ).toDomain()
+
+        assertEquals(request.clientId, request.idempotencyKey)
+        assertEquals(receipt.clientId, receipt.idempotencyKey)
+        assertTrue(result.accepted)
+        assertTrue(result.duplicate)
+        assertEquals("action-1", result.actionId)
+        assertEquals("duplicate", result.status)
+    }
+
+    @Test
     fun todayResponsePreservesBriefingFeedAndApplicability() {
         val feed = FeedItemResponse(
             id = "feed:source:item",

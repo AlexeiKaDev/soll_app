@@ -1,6 +1,7 @@
 package com.soll.domain.soll
 
 const val SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH = 80
+const val SOLL_DURABLE_CLIENT_ID_MAX_LENGTH = 80
 
 data class SollTodaySnapshot(
     val date: String = "",
@@ -60,6 +61,13 @@ data class SollFeedImportResult(
     val title: String = "",
     val sourceId: String = "",
     val clusterId: String = "",
+)
+
+data class SollFeedbackCommandResult(
+    val accepted: Boolean = false,
+    val duplicate: Boolean = false,
+    val actionId: String = "",
+    val status: String = "",
 )
 
 data class SollFeedItem(

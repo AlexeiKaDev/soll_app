@@ -10,6 +10,19 @@ import org.junit.Test
 
 class SollFirebaseMessagingServiceTest {
     @Test
+    fun `event id is the primary FCM dedupe identity`() {
+        val data = mapOf(
+            "event_id" to "event-42",
+            "message_id" to "message-7",
+        )
+        val eventId = fcmEventId(data)
+
+        assertEquals("event-42", eventId)
+        assertEquals("fcm:event:event-42", fcmNotificationDedupeKey(eventId, "message-7"))
+        assertEquals("fcm:message-7", fcmNotificationDedupeKey(null, "message-7"))
+    }
+
+    @Test
     fun `chat push stays in chat channel by default`() {
         val route = classifyFcmNotification(emptyMap())
 

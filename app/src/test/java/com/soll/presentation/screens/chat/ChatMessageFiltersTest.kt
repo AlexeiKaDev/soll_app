@@ -9,6 +9,21 @@ import org.junit.Test
 
 class ChatMessageFiltersTest {
     @Test
+    fun `queued approval is accepted but not completed before core receipt`() {
+        val queued = com.soll.domain.soll.SollChatActionResult(
+            actionId = "approval:approval-1:approve",
+            action = "approval.approve",
+            taskId = null,
+            status = "pending",
+            task = null,
+        )
+        val terminal = queued.copy(status = "approved")
+
+        assertTrue(queued.isAcceptedPendingAction())
+        assertFalse(terminal.isAcceptedPendingAction())
+    }
+
+    @Test
     fun `hides long repeated placeholder messages`() {
         val message = chatMessage("x".repeat(8200), source = "telegram_mirror")
 

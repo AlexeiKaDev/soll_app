@@ -408,10 +408,15 @@ class ChatViewModel @Inject constructor(
                         requestedActionId = action.id,
                         requestedTaskId = action.taskId,
                     )
+                    val actionAccepted = result.isAcceptedPendingAction()
                     _uiState.update {
                         it.copy(
                             isSending = false,
-                            actionFeedback = "Готово: ${action.label}",
+                            actionFeedback = if (actionAccepted) {
+                                "Принято, ожидает Soll Core: ${action.label}"
+                            } else {
+                                "Готово: ${action.label}"
+                            },
                             actionInFlightId = null,
                             completedActionIds = it.completedActionIds + completedIds,
                         )
@@ -707,7 +712,7 @@ private fun com.soll.domain.soll.SollChatActionResult.completedActionIds(
     requestedActionId: String,
     requestedTaskId: String?,
 ): Set<String> {
-    if (status.trim().lowercase() in FAILED_ACTION_STATUSES) return emptySet()
+    if (status.trim().lowercase() !in COMPLETED_ACTION_STATUSES) return emptySet()
     return listOfNotNull(
         requestedActionId.takeIf { it.isNotBlank() },
         actionId.takeIf { it.isNotBlank() },
@@ -715,6 +720,9 @@ private fun com.soll.domain.soll.SollChatActionResult.completedActionIds(
         approvalActionGroupKey(actionId.approvalIdFromActionId() ?: requestedActionId.approvalIdFromActionId()),
     ).toSet()
 }
+
+internal fun com.soll.domain.soll.SollChatActionResult.isAcceptedPendingAction(): Boolean =
+    status.trim().lowercase() in PENDING_ACTION_STATUSES
 
 private fun taskActionGroupKey(taskId: String?): String? =
     taskId?.takeIf { it.isNotBlank() }?.let { "task:$it:*" }
@@ -735,7 +743,7 @@ private fun String.approvalIdFromActionId(): String? {
 }
 
 private val COMPLETED_ACTION_STATUSES = setOf("ack", "acked", "done", "completed", "executed", "success", "approved", "rejected")
-private val FAILED_ACTION_STATUSES = setOf("failed", "error")
+private val PENDING_ACTION_STATUSES = setOf("accepted", "pending", "queued")
 
 private fun String.defaultActionLabel(): String =
     when (this) {

@@ -20,7 +20,20 @@ class ChatMessageFiltersTest {
         val terminal = queued.copy(status = "approved")
 
         assertTrue(queued.isAcceptedPendingAction())
+        assertTrue(
+            queued.completedActionIds(
+                requestedActionId = "approval:approval-1:approve",
+                requestedTaskId = null,
+            ).isEmpty(),
+        )
         assertFalse(terminal.isAcceptedPendingAction())
+        assertEquals(
+            setOf("approval:approval-1:approve", "approval:approval-1:*"),
+            terminal.completedActionIds(
+                requestedActionId = "approval:approval-1:approve",
+                requestedTaskId = null,
+            ),
+        )
     }
 
     @Test

@@ -708,7 +708,7 @@ private fun Map<*, *>.isCompletedActionMap(): Boolean {
     return status in COMPLETED_ACTION_STATUSES
 }
 
-private fun com.soll.domain.soll.SollChatActionResult.completedActionIds(
+internal fun com.soll.domain.soll.SollChatActionResult.completedActionIds(
     requestedActionId: String,
     requestedTaskId: String?,
 ): Set<String> {

@@ -94,9 +94,8 @@ class DeviceRepository @Inject constructor(
     }
 
     suspend fun persistServerSnapshots(snapshots: List<GadgetCloudSnapshot>) {
-        if (snapshots.isEmpty()) return
         val now = System.currentTimeMillis()
-        deviceDao.insertEvents(
+        deviceDao.replaceServerSnapshotEvents(
             snapshots.map { snapshot ->
                 DeviceEventEntity.fromDomain(
                     DeviceEvent(
@@ -109,6 +108,30 @@ class DeviceRepository @Inject constructor(
                     )
                 )
             }
+        )
+    }
+
+    suspend fun hasGadgetCommandExecutionMarker(commandId: String): Boolean =
+        deviceDao.hasEvent(gadgetCommandExecutionMarkerId(commandId))
+
+    suspend fun markGadgetCommandExecutionStarted(
+        commandId: String,
+        gadgetId: String,
+        command: String,
+    ) {
+        deviceDao.insertEvent(
+            DeviceEventEntity.fromDomain(
+                DeviceEvent(
+                    id = gadgetCommandExecutionMarkerId(commandId),
+                    deviceId = gadgetId,
+                    type = "gadget_command_execution_started",
+                    summary = "Локальное выполнение read-only команды $command начато",
+                    payloadJson = JSONObject()
+                        .put("command_id", commandId)
+                        .put("command", command)
+                        .toString(),
+                )
+            )
         )
     }
 
@@ -130,6 +153,9 @@ class DeviceRepository @Inject constructor(
         )
     }
 }
+
+internal fun gadgetCommandExecutionMarkerId(commandId: String): String =
+    "gadget_command_execution:${commandId.trim()}"
 
 private fun GadgetCloudSnapshot.serverSummary(): String =
     when {

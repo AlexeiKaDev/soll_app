@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.soll.data.local.entity.DeviceEventEntity
 import com.soll.data.local.entity.DeviceProfileEntity
 import com.soll.data.local.entity.KnownDeviceEntity
@@ -53,6 +54,20 @@ interface DeviceDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvents(events: List<DeviceEventEntity>)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM device_events WHERE id = :eventId)")
+    suspend fun hasEvent(eventId: String): Boolean
+
+    @Query("DELETE FROM device_events WHERE type = 'server_snapshot'")
+    suspend fun deleteServerSnapshotEvents()
+
+    @Transaction
+    suspend fun replaceServerSnapshotEvents(events: List<DeviceEventEntity>) {
+        deleteServerSnapshotEvents()
+        if (events.isNotEmpty()) {
+            insertEvents(events)
+        }
+    }
 
     @Query("SELECT * FROM device_events WHERE device_id = :deviceId ORDER BY created_at DESC LIMIT :limit")
     fun observeEvents(deviceId: String, limit: Int = 50): Flow<List<DeviceEventEntity>>

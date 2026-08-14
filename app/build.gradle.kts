@@ -261,6 +261,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    testImplementation(libs.okhttp.mockwebserver)
 
     // Permissions
     implementation(libs.accompanist.permissions)

@@ -1317,14 +1317,18 @@ class SollRepository @Inject constructor(
     ): Result<GadgetCloudCommand?> = runSuspendCatching {
         val cleanId = gadgetId.trim()
         require(cleanId.isNotBlank()) { "ID гаджета не задан" }
-        service().claimGadgetCommand(
+        val response = service().claimGadgetCommand(
             authorization = readAuthorizationHeader(),
             gadgetId = cleanId,
             request = GadgetCommandClaimRequest(
                 workerId = workerId.trim(),
                 leaseSeconds = leaseSeconds.coerceIn(5, 3600),
             ),
-        )?.toDomain()
+        )
+        if (!response.isSuccessful) {
+            throw HttpException(response)
+        }
+        response.body()?.toDomain()
     }
 
     override suspend fun ackGadgetCommand(

@@ -32,7 +32,10 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 import org.json.JSONObject
+import retrofit2.HttpException
+import timber.log.Timber
 
 class GadgetServerSyncWorker(
     appContext: Context,
@@ -65,24 +68,35 @@ class GadgetServerSyncWorker(
         } else {
             MeshOutboxWorkerSummary()
         }
-        val commandSummary = if (settings.sollDeviceAccessToken.isNotBlank()) {
+        val commandSummary = if (
+            gadgetCommandAuthAvailable(
+                deviceAccessToken = settings.sollDeviceAccessToken,
+                userAccessToken = settings.sollAccessToken,
+            )
+        ) {
             syncGadgetCommandOnce(
                 gateway = gateway,
                 deviceRepository = deviceRepository,
                 commandExecutor = commandExecutor,
-                workerId = settings.sollDeviceId.ifBlank { "soll-app-android" },
+                workerId = resolveGadgetWorkerId(
+                    deviceId = settings.sollDeviceId,
+                    remoteClientId = settings.sollRemoteClientId,
+                ),
                 enabledSnapshots = snapshotSync.enabledSnapshots,
             )
         } else {
             GadgetCommandWorkerSummary()
         }
-        return gadgetServerSyncWorkDecision(
-            GadgetServerSyncSummary(
-                snapshotsSynced = snapshotSync.success,
-                meshSummary = meshSummary,
-                commandSummary = commandSummary,
-            )
-        ).toWorkerResult()
+        val summary = GadgetServerSyncSummary(
+            snapshotsSynced = snapshotSync.success,
+            snapshotError = snapshotSync.lastError,
+            meshSummary = meshSummary,
+            commandSummary = commandSummary,
+        )
+        summary.lastError()?.let { error ->
+            Timber.w("Gadget server sync will retry: %s", error)
+        }
+        return gadgetServerSyncWorkDecision(summary).toWorkerResult()
     }
 
     private suspend fun refreshDeviceBearerIfConfigured(
@@ -103,7 +117,7 @@ class GadgetServerSyncWorker(
         gateway.getGadgetSnapshots().fold(
             onSuccess = { snapshots ->
                 deviceRepository.persistServerSnapshots(snapshots)
-                snapshots.filter { it.enabled }.forEach { snapshot ->
+                snapshots.filter { it.enabled }.take(MAX_GADGET_EVENT_SYNC_CANDIDATES).forEach { snapshot ->
                     gateway.getGadgetEvents(snapshot.id, limit = 50).onSuccess { events ->
                         deviceRepository.persistServerEvents(events)
                     }
@@ -113,7 +127,12 @@ class GadgetServerSyncWorker(
                     enabledSnapshots = snapshots.filter { it.enabled },
                 )
             },
-            onFailure = { ServerSnapshotSyncResult(success = false) },
+            onFailure = { error ->
+                ServerSnapshotSyncResult(
+                    success = false,
+                    lastError = safeGadgetSyncError("snapshot", error),
+                )
+            },
         )
 
     private suspend fun syncMeshOutboxOnce(
@@ -166,10 +185,10 @@ class GadgetServerSyncWorker(
         enabledSnapshots: List<GadgetCloudSnapshot>,
     ): GadgetCommandWorkerSummary {
         val localDevices = deviceRepository.getKnownDevices()
-        val snapshotsById = enabledSnapshots.associateBy { it.id }
-        val candidates = (enabledSnapshots.map { it.id }.ifEmpty { localDevices.map { it.id } })
-            .filter { it.isNotBlank() }
-            .distinct()
+        val snapshotsById = enabledSnapshots.associateBy { it.id.trim() }
+        val candidates = gadgetCommandCandidateIds(enabledSnapshots)
+        var transportFailures = 0
+        var lastError = ""
 
         for (gadgetId in candidates) {
             val claimResult = gateway.claimGadgetCommand(
@@ -178,9 +197,23 @@ class GadgetServerSyncWorker(
                 leaseSeconds = GADGET_COMMAND_LEASE_SECONDS,
             )
             if (claimResult.isFailure) {
+                transportFailures += 1
+                lastError = safeGadgetSyncError("claim:$gadgetId", claimResult.exceptionOrNull())
                 continue
             }
             val command = claimResult.getOrNull() ?: continue
+
+            val validation = validateClaimedGadgetCommand(
+                requestedGadgetId = gadgetId,
+                command = command,
+            )
+            if (!validation.valid) {
+                return GadgetCommandWorkerSummary(
+                    transportFailed = transportFailures,
+                    protocolFailed = 1,
+                    lastError = validation.error,
+                )
+            }
 
             return handleClaimedGadgetCommand(
                 gateway = gateway,
@@ -193,9 +226,12 @@ class GadgetServerSyncWorker(
                 ),
                 command = command,
                 workerId = workerId,
-            )
+            ).withPriorTransportFailures(transportFailures, lastError)
         }
-        return GadgetCommandWorkerSummary()
+        return GadgetCommandWorkerSummary(
+            transportFailed = transportFailures,
+            lastError = lastError,
+        )
     }
 
     private suspend fun handleClaimedGadgetCommand(
@@ -206,8 +242,11 @@ class GadgetServerSyncWorker(
         command: GadgetCloudCommand,
         workerId: String,
     ): GadgetCommandWorkerSummary {
+        // Gadget ACK/result are lease transport state only. They must not be projected as
+        // canonical assistant ActionReceipt/outcome or used to bypass approval policy.
         val decision = gadgetCommandExecutionDecision(
             command = command.command,
+            serverRiskLevel = command.riskLevel,
             hasLocalDevice = localTarget.device != null,
             missingLocalDeviceError = localTarget.error,
         )
@@ -221,13 +260,65 @@ class GadgetServerSyncWorker(
             )
         }
 
-        val acked = gateway.ackGadgetCommand(
+        val alreadyStarted = try {
+            deviceRepository.hasGadgetCommandExecutionMarker(command.id)
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            return GadgetCommandWorkerSummary(
+                claimed = 1,
+                transportFailed = 1,
+                lastError = safeGadgetSyncError("execution-marker-read", error),
+            )
+        }
+        if (shouldRefuseGadgetCommandReplay(alreadyStarted)) {
+            return postTerminalCommandFailure(
+                gateway = gateway,
+                deviceRepository = deviceRepository,
+                command = command,
+                workerId = workerId,
+                error = "Local execution was already started; refusing an uncertain replay",
+            )
+        }
+
+        val ackResult = gateway.ackGadgetCommand(
             gadgetId = command.gadgetId,
             commandId = command.id,
             workerId = workerId,
-        ).isSuccess
-        if (!acked) {
-            return GadgetCommandWorkerSummary(claimed = 1, transportFailed = 1)
+        )
+        if (ackResult.isFailure) {
+            return GadgetCommandWorkerSummary(
+                claimed = 1,
+                transportFailed = 1,
+                lastError = safeGadgetSyncError("ack:${command.id}", ackResult.exceptionOrNull()),
+            )
+        }
+        val ackValidation = validateGadgetCommandResponse(
+            requestedGadgetId = command.gadgetId,
+            requestedCommandId = command.id,
+            response = requireNotNull(ackResult.getOrNull()),
+            expectedStatuses = setOf("acked"),
+        )
+        if (!ackValidation.valid) {
+            return GadgetCommandWorkerSummary(
+                claimed = 1,
+                protocolFailed = 1,
+                lastError = ackValidation.error,
+            )
+        }
+
+        try {
+            deviceRepository.markGadgetCommandExecutionStarted(
+                commandId = command.id,
+                gadgetId = command.gadgetId,
+                command = command.command,
+            )
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            return GadgetCommandWorkerSummary(
+                claimed = 1,
+                transportFailed = 1,
+                lastError = safeGadgetSyncError("execution-marker-write", error),
+            )
         }
 
         val result = commandExecutor.execute(
@@ -244,11 +335,32 @@ class GadgetServerSyncWorker(
                     payload = execution.payload,
                     workerId = workerId,
                 ).fold(
-                    onSuccess = {
-                        deviceRepository.logEvent(command.toGadgetCommandEvent(success = true))
-                        GadgetCommandWorkerSummary(claimed = 1, executed = 1)
+                    onSuccess = { response ->
+                        val validation = validateGadgetCommandResponse(
+                            requestedGadgetId = command.gadgetId,
+                            requestedCommandId = command.id,
+                            response = response,
+                            expectedStatuses = setOf("done"),
+                        )
+                        if (!validation.valid) {
+                            GadgetCommandWorkerSummary(
+                                claimed = 1,
+                                executed = 1,
+                                protocolFailed = 1,
+                                lastError = validation.error,
+                            )
+                        } else {
+                            deviceRepository.logEvent(command.toGadgetCommandEvent(success = true))
+                            GadgetCommandWorkerSummary(claimed = 1, executed = 1)
+                        }
                     },
-                    onFailure = { GadgetCommandWorkerSummary(claimed = 1, transportFailed = 1) },
+                    onFailure = { error ->
+                        GadgetCommandWorkerSummary(
+                            claimed = 1,
+                            transportFailed = 1,
+                            lastError = safeGadgetSyncError("result:${command.id}", error),
+                        )
+                    },
                 )
             },
             onFailure = { error ->
@@ -278,29 +390,54 @@ class GadgetServerSyncWorker(
             error = error,
             workerId = workerId,
         ).fold(
-            onSuccess = {
-                deviceRepository.logEvent(command.toGadgetCommandEvent(success = false, error = error))
-                GadgetCommandWorkerSummary(claimed = 1, terminalFailed = 1)
+            onSuccess = { response ->
+                val validation = validateGadgetCommandResponse(
+                    requestedGadgetId = command.gadgetId,
+                    requestedCommandId = command.id,
+                    response = response,
+                    expectedStatuses = setOf("failed"),
+                )
+                if (!validation.valid) {
+                    GadgetCommandWorkerSummary(
+                        claimed = 1,
+                        protocolFailed = 1,
+                        lastError = validation.error,
+                    )
+                } else {
+                    deviceRepository.logEvent(command.toGadgetCommandEvent(success = false, error = error))
+                    GadgetCommandWorkerSummary(claimed = 1, terminalFailed = 1)
+                }
             },
-            onFailure = { GadgetCommandWorkerSummary(claimed = 1, transportFailed = 1) },
+            onFailure = { failure ->
+                GadgetCommandWorkerSummary(
+                    claimed = 1,
+                    transportFailed = 1,
+                    lastError = safeGadgetSyncError("failure-result:${command.id}", failure),
+                )
+            },
         )
 
     companion object {
         const val UNIQUE_WORK_NAME = "gadget_server_sync"
         private const val GADGET_COMMAND_LEASE_SECONDS = 60
+        private const val MAX_GADGET_EVENT_SYNC_CANDIDATES = 20
     }
 }
 
 internal data class ServerSnapshotSyncResult(
     val success: Boolean,
     val enabledSnapshots: List<GadgetCloudSnapshot> = emptyList(),
+    val lastError: String = "",
 )
 
 internal data class GadgetServerSyncSummary(
     val snapshotsSynced: Boolean,
+    val snapshotError: String = "",
     val meshSummary: MeshOutboxWorkerSummary = MeshOutboxWorkerSummary(),
     val commandSummary: GadgetCommandWorkerSummary = GadgetCommandWorkerSummary(),
-)
+) {
+    fun lastError(): String? = commandSummary.lastError.ifBlank { snapshotError }.ifBlank { null }
+}
 
 internal data class MeshOutboxWorkerSummary(
     val claimed: Int = 0,
@@ -314,6 +451,8 @@ internal data class GadgetCommandWorkerSummary(
     val executed: Int = 0,
     val terminalFailed: Int = 0,
     val transportFailed: Int = 0,
+    val protocolFailed: Int = 0,
+    val lastError: String = "",
 )
 
 internal enum class MeshOutboxDeliveryAction {
@@ -348,11 +487,87 @@ internal data class GadgetCommandLocalTarget(
     val error: String? = null,
 )
 
+internal data class GadgetClaimValidation(
+    val valid: Boolean,
+    val error: String = "",
+)
+
+internal fun gadgetCommandAuthAvailable(
+    deviceAccessToken: String,
+    userAccessToken: String,
+): Boolean = deviceAccessToken.isNotBlank() || userAccessToken.isNotBlank()
+
+internal fun resolveGadgetWorkerId(
+    deviceId: String,
+    remoteClientId: String,
+): String = deviceId.trim().ifBlank {
+    normalizeSollRemoteClientId(remoteClientId).ifBlank { DEFAULT_SOLL_REMOTE_CLIENT_ID }
+}
+
+internal fun gadgetCommandCandidateIds(
+    enabledSnapshots: List<GadgetCloudSnapshot>,
+    maxCandidates: Int = 20,
+): List<String> = enabledSnapshots
+    .asSequence()
+    .filter { it.enabled }
+    .map { it.id.trim() }
+    .filter { it.isNotBlank() }
+    .distinct()
+    .take(maxCandidates.coerceAtLeast(0))
+    .toList()
+
+internal fun shouldRefuseGadgetCommandReplay(hasExecutionMarker: Boolean): Boolean =
+    hasExecutionMarker
+
+internal fun validateClaimedGadgetCommand(
+    requestedGadgetId: String,
+    command: GadgetCloudCommand,
+): GadgetClaimValidation = validateGadgetCommandResponse(
+    requestedGadgetId = requestedGadgetId,
+    requestedCommandId = null,
+    response = command,
+    expectedStatuses = setOf("claimed"),
+)
+
+internal fun validateGadgetCommandResponse(
+    requestedGadgetId: String,
+    requestedCommandId: String?,
+    response: GadgetCloudCommand,
+    expectedStatuses: Set<String>,
+): GadgetClaimValidation = when {
+    response.id.isBlank() -> GadgetClaimValidation(false, "Gadget command response has no id")
+    response.command.isBlank() -> GadgetClaimValidation(false, "Gadget command response has no command")
+    response.gadgetId != requestedGadgetId -> GadgetClaimValidation(false, "Gadget command target mismatch")
+    requestedCommandId != null && response.id != requestedCommandId ->
+        GadgetClaimValidation(false, "Gadget command id mismatch")
+    response.status.trim() !in expectedStatuses ->
+        GadgetClaimValidation(false, "Gadget command response has invalid status")
+    else -> GadgetClaimValidation(true)
+}
+
+private fun GadgetCommandWorkerSummary.withPriorTransportFailures(
+    failures: Int,
+    priorError: String,
+): GadgetCommandWorkerSummary = copy(
+    transportFailed = transportFailed + failures,
+    lastError = lastError.ifBlank { priorError },
+)
+
+private fun safeGadgetSyncError(operation: String, error: Throwable?): String {
+    val reason = when (error) {
+        is HttpException -> "HTTP ${error.code()}"
+        null -> "unknown transport failure"
+        else -> error::class.java.simpleName.ifBlank { "transport failure" }
+    }
+    return "$operation failed: $reason"
+}
+
 internal fun gadgetServerSyncWorkDecision(summary: GadgetServerSyncSummary): SyncWorkDecision =
     if (
         !summary.snapshotsSynced ||
         summary.meshSummary.failed > summary.meshSummary.unsupported ||
-        summary.commandSummary.transportFailed > 0
+        summary.commandSummary.transportFailed > 0 ||
+        summary.commandSummary.protocolFailed > 0
     ) {
         SyncWorkDecision.RETRY
     } else {
@@ -534,6 +749,7 @@ private fun SollMeshOutboxItem.toMeshDeliveryEvent(decision: MeshOutboxDeliveryD
 
 internal fun gadgetCommandExecutionDecision(
     command: String,
+    serverRiskLevel: String = "read_only",
     hasLocalDevice: Boolean,
     missingLocalDeviceError: String? = null,
 ): GadgetCommandExecutionDecision {
@@ -541,6 +757,12 @@ internal fun gadgetCommandExecutionDecision(
         return GadgetCommandExecutionDecision(
             action = GadgetCommandExecutionAction.FAIL,
             error = missingLocalDeviceError ?: "Local gadget is not registered on this Android device",
+        )
+    }
+    if (serverRiskLevel.trim() != "read_only") {
+        return GadgetCommandExecutionDecision(
+            action = GadgetCommandExecutionAction.FAIL,
+            error = "Server gadget command risk is not read_only",
         )
     }
     val policy = gadgetCommandPolicy(command)

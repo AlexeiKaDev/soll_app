@@ -28,6 +28,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+internal const val DEFAULT_SOLL_REMOTE_CLIENT_ID = "android-main"
+private val SOLL_REMOTE_CLIENT_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,64}")
+
+internal fun normalizeSollRemoteClientId(value: String?): String =
+    value?.trim()?.takeIf(SOLL_REMOTE_CLIENT_ID_PATTERN::matches).orEmpty()
+
 @Singleton
 class SettingsRepository @Inject constructor(
     private val sharedPreferences: SharedPreferences,
@@ -74,6 +80,7 @@ class SettingsRepository @Inject constructor(
         private const val KEY_SOLL_DEVICE_PAIRING_SECRET = "soll_device_pairing_secret"
         private const val KEY_SOLL_DEVICE_ACCESS_TOKEN = "soll_device_access_token"
         private const val KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT = "soll_device_token_expires_at"
+        private const val KEY_SOLL_REMOTE_CLIENT_ID = "soll_remote_client_id"
         private const val KEY_SOLL_SYNC_INTERVAL_MINUTES = "soll_sync_interval_minutes"
         private const val KEY_SOLL_WIFI_ONLY_UPLOAD = "soll_wifi_only_upload"
         private const val KEY_SOLL_CHAT_LAST_SEEN_MESSAGE_ID = "soll_chat_last_seen_message_id"
@@ -380,11 +387,18 @@ class SettingsRepository @Inject constructor(
         get() = sharedPreferences.getString(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT, "") ?: ""
         set(value) = sharedPreferences.edit().putString(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT, value.trim()).apply()
 
+    var sollRemoteClientId: String
+        get() = sharedPreferences.getString(KEY_SOLL_REMOTE_CLIENT_ID, "") ?: ""
+        set(value) = sharedPreferences.edit()
+            .putString(KEY_SOLL_REMOTE_CLIENT_ID, normalizeSollRemoteClientId(value))
+            .apply()
+
     fun applySollPairingPayload(payload: SollPairingPayload) {
         val cleanDeviceId = payload.deviceId.trim()
         val cleanPairingSecret = payload.pairingSecret.trim()
         val previousDeviceId = sollDeviceId
         val usesRelayBearerAuth = payload.usesRelayBearerAuth
+        val remoteClientId = normalizeSollRemoteClientId(payload.clientId)
         sharedPreferences.edit().apply {
             putString(KEY_SOLL_SERVER_URL, payload.serverUrl.trim())
             putString(KEY_SOLL_API_PATH_PREFIX, payload.apiPathPrefix.trim().trim('/'))
@@ -402,10 +416,13 @@ class SettingsRepository @Inject constructor(
                 putString(KEY_SOLL_DEVICE_PAIRING_SECRET, cleanPairingSecret)
             }
             if (usesRelayBearerAuth) {
+                putString(KEY_SOLL_REMOTE_CLIENT_ID, remoteClientId.ifBlank { DEFAULT_SOLL_REMOTE_CLIENT_ID })
                 remove(KEY_SOLL_DEVICE_ID)
                 remove(KEY_SOLL_DEVICE_PAIRING_SECRET)
                 remove(KEY_SOLL_DEVICE_ACCESS_TOKEN)
                 remove(KEY_SOLL_DEVICE_TOKEN_EXPIRES_AT)
+            } else {
+                remove(KEY_SOLL_REMOTE_CLIENT_ID)
             }
             putString(KEY_SOLL_PUSH_TOKEN_LAST_ERROR, "")
         }.apply()

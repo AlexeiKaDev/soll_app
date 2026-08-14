@@ -14,6 +14,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Query
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
+import retrofit2.Response
 
 interface SollApiService {
     @GET("api/v1/health")
@@ -520,7 +521,7 @@ interface SollApiService {
         @Header("Authorization") authorization: String? = null,
         @Path("gadget_id") gadgetId: String,
         @Body request: GadgetCommandClaimRequest,
-    ): GadgetCommandResponse?
+    ): Response<GadgetCommandResponse?>
 
     @POST("api/v1/gadgets/{gadget_id}/commands/{command_id}/ack")
     suspend fun ackGadgetCommand(

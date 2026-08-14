@@ -340,6 +340,125 @@ class SyncReliabilityTest {
     }
 
     @Test
+    fun `ordinary relay bearer enables gadget command plane without device bearer`() {
+        assertTrue(gadgetCommandAuthAvailable(deviceAccessToken = "", userAccessToken = "relay-bearer"))
+        assertTrue(gadgetCommandAuthAvailable(deviceAccessToken = "device-bearer", userAccessToken = ""))
+        assertEquals(false, gadgetCommandAuthAvailable(deviceAccessToken = "", userAccessToken = ""))
+    }
+
+    @Test
+    fun `remote worker identity uses validated pairing client id`() {
+        assertEquals("android-main", resolveGadgetWorkerId(deviceId = "", remoteClientId = "android-main"))
+        assertEquals("phone-local", resolveGadgetWorkerId(deviceId = "phone-local", remoteClientId = "android-main"))
+        assertEquals("_android", normalizeSollRemoteClientId("_android"))
+        assertEquals("-android", normalizeSollRemoteClientId("-android"))
+        listOf("bad.id", "bad:id", "../android", "a".repeat(65)).forEach { invalid ->
+            assertEquals("", normalizeSollRemoteClientId(invalid))
+        }
+        assertEquals(DEFAULT_SOLL_REMOTE_CLIENT_ID, resolveGadgetWorkerId(deviceId = "", remoteClientId = "bad.id"))
+    }
+
+    @Test
+    fun `authoritative empty snapshot never falls back to local gadget ids`() {
+        assertTrue(gadgetCommandCandidateIds(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `gadget claims are bounded and exclude disabled snapshots`() {
+        val snapshots = (1..25).map { index ->
+            serverSnapshot(id = "gadget-$index", enabled = index != 2)
+        }
+
+        val candidates = gadgetCommandCandidateIds(snapshots)
+
+        assertEquals(20, candidates.size)
+        assertTrue("gadget-2" !in candidates)
+    }
+
+    @Test
+    fun `claimed command target and lifecycle must match request`() {
+        assertTrue(validateClaimedGadgetCommand("aquik-1", gadgetCommand(gadgetId = "aquik-1")).valid)
+        assertEquals(
+            false,
+            validateClaimedGadgetCommand("aquik-1", gadgetCommand(gadgetId = "aquik-2")).valid,
+        )
+        assertEquals(
+            false,
+            validateClaimedGadgetCommand(
+                "aquik-1",
+                gadgetCommand(gadgetId = "aquik-1", status = "approval_required"),
+            ).valid,
+        )
+    }
+
+    @Test
+    fun `ack and result responses remain bound to claimed command`() {
+        val command = gadgetCommand(gadgetId = "aquik-1", status = "acked")
+
+        assertTrue(
+            validateGadgetCommandResponse(
+                requestedGadgetId = "aquik-1",
+                requestedCommandId = "cmd-1",
+                response = command,
+                expectedStatuses = setOf("acked"),
+            ).valid
+        )
+        assertEquals(
+            false,
+            validateGadgetCommandResponse(
+                requestedGadgetId = "aquik-1",
+                requestedCommandId = "other-command",
+                response = command,
+                expectedStatuses = setOf("acked"),
+            ).valid,
+        )
+        assertEquals(
+            false,
+            validateGadgetCommandResponse(
+                requestedGadgetId = "aquik-1",
+                requestedCommandId = "cmd-1",
+                response = command,
+                expectedStatuses = setOf("done"),
+            ).valid,
+        )
+    }
+
+    @Test
+    fun `write risk from server remains non executable even for read command name`() {
+        val decision = gadgetCommandExecutionDecision(
+            command = "getSensors",
+            serverRiskLevel = "write_requires_approval",
+            hasLocalDevice = true,
+        )
+
+        assertEquals(GadgetCommandExecutionAction.FAIL, decision.action)
+    }
+
+    @Test
+    fun `protocol failures keep gadget worker in retry state`() {
+        val summary = GadgetServerSyncSummary(
+            snapshotsSynced = true,
+            commandSummary = GadgetCommandWorkerSummary(
+                protocolFailed = 1,
+                lastError = "Gadget command target mismatch",
+            ),
+        )
+
+        assertEquals(SyncWorkDecision.RETRY, gadgetServerSyncWorkDecision(summary))
+        assertEquals("Gadget command target mismatch", summary.lastError())
+    }
+
+    @Test
+    fun `execution marker refuses replay after ack or result uncertainty`() {
+        assertTrue(shouldRefuseGadgetCommandReplay(hasExecutionMarker = true))
+        assertEquals(false, shouldRefuseGadgetCommandReplay(hasExecutionMarker = false))
+        assertEquals(
+            gadgetCommandExecutionMarkerId("cmd-1"),
+            gadgetCommandExecutionMarkerId(" cmd-1 "),
+        )
+    }
+
+    @Test
     fun `gadget command worker rejects actuator commands`() {
         val decision = gadgetCommandExecutionDecision(command = "setPump", hasLocalDevice = true)
 
@@ -447,6 +566,7 @@ class SyncReliabilityTest {
 
     private fun serverSnapshot(
         id: String,
+        enabled: Boolean = true,
         localIp: String? = null,
         heartbeatPayload: Map<String, Any?> = emptyMap(),
     ): GadgetCloudSnapshot =
@@ -454,7 +574,7 @@ class SyncReliabilityTest {
             id = id,
             name = id,
             profileId = "aquik-v2",
-            enabled = true,
+            enabled = enabled,
             localIp = localIp,
             heartbeatPayload = heartbeatPayload,
             lastHeartbeatAt = "2026-05-15T00:00:00Z",
@@ -466,13 +586,16 @@ class SyncReliabilityTest {
             updatedAt = "2026-05-15T00:00:00Z",
         )
 
-    private fun gadgetCommand(gadgetId: String): GadgetCloudCommand =
+    private fun gadgetCommand(
+        gadgetId: String,
+        status: String = "claimed",
+    ): GadgetCloudCommand =
         GadgetCloudCommand(
             id = "cmd-1",
             gadgetId = gadgetId,
             command = "getSensors",
             params = emptyMap(),
-            status = "claimed",
+            status = status,
             reason = "",
             result = emptyMap(),
             createdAt = "2026-05-15T00:00:00Z",

@@ -67,6 +67,7 @@ data class ChatActionUi(
     val type: String,
     val taskId: String?,
     val label: String,
+    val prompt: String? = null,
     val completionGroupKey: String? = null,
     // task.clarify needs the owner to type an answer before executing.
     val requiresText: Boolean = false,
@@ -847,6 +848,7 @@ private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
         type = type,
         taskId = taskId,
         label = action["label"]?.toString()?.takeIf { it.isNotBlank() } ?: type.defaultActionLabel(),
+        prompt = action["prompt"]?.toString()?.takeIf { it.isNotBlank() },
         completionGroupKey = taskActionGroupKey(taskId) ?: approvalActionGroupKey(approvalId),
         requiresText = type == "task.clarify",
     )

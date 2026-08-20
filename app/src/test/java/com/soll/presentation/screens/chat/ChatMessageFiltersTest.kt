@@ -485,6 +485,28 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `clarification action keeps task bound russian prompt for answer dialog`() {
+        val message = chatMessage(
+            content = "Нужно решение владельца",
+            metadata = mapOf(
+                "action" to mapOf(
+                    "id" to "task:task-1:clarify",
+                    "type" to "task.clarify",
+                    "task_id" to "task-1",
+                    "label" to "Ответить по задаче",
+                    "prompt" to "1. Нужно ли выполнять изменение в Soll?",
+                ),
+            ),
+        )
+
+        val action = message.actionUiOrNull()
+
+        assertEquals("task-1", action?.taskId)
+        assertEquals("1. Нужно ли выполнять изменение в Soll?", action?.prompt)
+        assertTrue(action?.requiresText == true)
+    }
+
+    @Test
     fun `chat action parser rejects unknown action types`() {
         val message = chatMessage(
             content = "Untrusted action",

@@ -127,6 +127,7 @@ fun ChatScreen(
     uiState.pendingTextAction?.let { action ->
         ClarifyAnswerDialog(
             label = action.label,
+            prompt = action.prompt,
             onSubmit = viewModel::submitPendingTextAction,
             onDismiss = viewModel::dismissPendingTextAction,
         )
@@ -386,6 +387,7 @@ private val ChatActionGreen = Color(0xFF247A52)
 @Composable
 private fun ClarifyAnswerDialog(
     label: String,
+    prompt: String?,
     onSubmit: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -394,13 +396,21 @@ private fun ClarifyAnswerDialog(
         onDismissRequest = onDismiss,
         title = { Text(label.ifBlank { "Ответить на вопросы" }) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("Файлы, критерий готовности, как проверить…") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                prompt?.takeIf { it.isNotBlank() }?.let { questionText ->
+                    Text(
+                        text = questionText,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Напишите решение или недостающие детали…") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                )
+            }
         },
         confirmButton = {
             TextButton(

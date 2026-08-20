@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -122,6 +123,15 @@ fun ChatScreen(
     onOpenSettings: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    uiState.pendingTextAction?.let { action ->
+        ClarifyAnswerDialog(
+            label = action.label,
+            onSubmit = viewModel::submitPendingTextAction,
+            onDismiss = viewModel::dismissPendingTextAction,
+        )
+    }
+
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -372,6 +382,37 @@ internal fun shouldAutoScrollChatList(
 
 private const val CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD = 3
 private val ChatActionGreen = Color(0xFF247A52)
+
+@Composable
+private fun ClarifyAnswerDialog(
+    label: String,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(label.ifBlank { "Ответить на вопросы" }) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("Файлы, критерий готовности, как проверить…") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSubmit(text) },
+                enabled = text.isNotBlank(),
+            ) { Text("Отправить") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        },
+    )
+}
 
 @Composable
 private fun HistoryLoader(

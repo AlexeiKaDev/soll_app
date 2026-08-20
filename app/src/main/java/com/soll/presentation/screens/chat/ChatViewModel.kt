@@ -50,6 +50,8 @@ data class ChatUiState(
     val completedActionIds: Set<String> = emptySet(),
     val pendingActionsCount: Int = 0,
     val encrypted: Boolean = false,
+    // When set, the UI shows a text-answer dialog (e.g. task.clarify).
+    val pendingTextAction: ChatActionUi? = null,
 )
 
 enum class ChatScrollReason {
@@ -66,6 +68,8 @@ data class ChatActionUi(
     val taskId: String?,
     val label: String,
     val completionGroupKey: String? = null,
+    // task.clarify needs the owner to type an answer before executing.
+    val requiresText: Boolean = false,
 )
 
 @HiltViewModel
@@ -465,6 +469,31 @@ class ChatViewModel @Inject constructor(
     }
 
     fun executeAction(action: ChatActionUi) {
+        // Actions that need a typed answer (task.clarify) open a dialog first.
+        if (action.requiresText) {
+            _uiState.update { it.copy(pendingTextAction = action, error = null) }
+            return
+        }
+        runChatAction(action, note = "")
+    }
+
+    /** Submit the typed answer for a pending text action (e.g. task.clarify). */
+    fun submitPendingTextAction(text: String) {
+        val action = _uiState.value.pendingTextAction ?: return
+        val answer = text.trim()
+        if (answer.isBlank()) {
+            _uiState.update { it.copy(error = "Введите ответ на вопросы.") }
+            return
+        }
+        _uiState.update { it.copy(pendingTextAction = null) }
+        runChatAction(action, note = answer)
+    }
+
+    fun dismissPendingTextAction() {
+        _uiState.update { it.copy(pendingTextAction = null) }
+    }
+
+    private fun runChatAction(action: ChatActionUi, note: String) {
         val policy = SollChatActionPolicyRegistry.resolve(action.type)
         val capabilityDecision = policy?.let { capabilityRegistry.checkCommand(it.capabilityId) }
         if (policy == null || capabilityDecision?.allowed != true) {
@@ -495,6 +524,7 @@ class ChatViewModel @Inject constructor(
                 action = policy.type,
                 taskId = action.taskId,
                 sessionId = _uiState.value.sessionId,
+                note = note,
             ).fold(
                 onSuccess = { result ->
                     val completedIds = result.completedActionIds(
@@ -818,6 +848,7 @@ private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
         taskId = taskId,
         label = action["label"]?.toString()?.takeIf { it.isNotBlank() } ?: type.defaultActionLabel(),
         completionGroupKey = taskActionGroupKey(taskId) ?: approvalActionGroupKey(approvalId),
+        requiresText = type == "task.clarify",
     )
 }
 

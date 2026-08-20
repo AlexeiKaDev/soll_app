@@ -18,6 +18,7 @@ object SollChatActionPolicyRegistry {
         policy("task.stale", "tasks"),
         policy("task.inbox", "tasks"),
         policy("task.update", "tasks"),
+        policy("task.clarify", "tasks"),
         policy("notice.ack", "chat"),
         policy("approval.approve", "server_action"),
         policy("approval.reject", "server_action"),

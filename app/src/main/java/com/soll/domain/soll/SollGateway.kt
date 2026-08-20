@@ -746,6 +746,7 @@ interface SollGateway {
         action: String,
         taskId: String? = null,
         sessionId: String? = null,
+        note: String = "",
     ): Result<SollChatActionResult>
 
     suspend fun issueDeviceToken(deviceId: String, pairingSecret: String): Result<SollDeviceToken>

@@ -548,18 +548,80 @@ class ChatViewModel @Inject constructor(
                     refresh(showLoading = false)
                 },
                 onFailure = { error ->
-                    val message = error.message ?: "Не удалось выполнить действие"
-                    _uiState.update {
-                        it.copy(
-                            isSending = false,
-                            actionFeedback = "Ошибка: ${action.label}",
-                            actionInFlightId = null,
-                            error = message,
-                        )
+                    if (shouldUseClarificationChatFallback(action, note, error)) {
+                        submitClarificationChatFallback(action, note)
+                    } else {
+                        val message = error.message ?: "Не удалось выполнить действие"
+                        _uiState.update {
+                            it.copy(
+                                isSending = false,
+                                actionFeedback = "Ошибка: ${action.label}",
+                                actionInFlightId = null,
+                                error = message,
+                            )
+                        }
                     }
                 },
             )
         }
+    }
+
+    private suspend fun submitClarificationChatFallback(action: ChatActionUi, note: String) {
+        val taskId = action.taskId.orEmpty().trim()
+        val fallbackTurnId = "clarify-fallback:${action.id}".take(128)
+        sollGateway.sendChatTurn(
+            content = clarificationFallbackMessage(taskId, note),
+            sessionId = _uiState.value.sessionId,
+            runAssistant = true,
+            taskIntake = false,
+            allowActions = false,
+            metadata = mapOf(
+                "client_turn_id" to fallbackTurnId,
+                "request_id" to fallbackTurnId,
+                "task_id" to taskId,
+                "clarification_action_id" to action.id,
+            ),
+        ).fold(
+            onSuccess = { result ->
+                val failure = result.failureMessageForChat()
+                val accepted = !result.isFailed
+                val completedIds = if (accepted) {
+                    listOfNotNull(
+                        action.id.takeIf { it.isNotBlank() },
+                        action.completionGroupKey?.takeIf { it.isNotBlank() },
+                    ).toSet()
+                } else {
+                    emptySet()
+                }
+                _uiState.update {
+                    it.copy(
+                        isSending = false,
+                        actionFeedback = when {
+                            !accepted -> "Ошибка Soll Core: $failure"
+                            result.isQueued -> "Ответ принят. Жду Soll Core…"
+                            else -> "Готово: ${action.label}"
+                        },
+                        actionInFlightId = null,
+                        completedActionIds = it.completedActionIds + completedIds,
+                        error = failure.takeIf { !accepted },
+                    )
+                }
+                if (accepted) {
+                    refresh(showLoading = false)
+                }
+            },
+            onFailure = { fallbackError ->
+                val message = fallbackError.message ?: "Не удалось отправить ответ через чат Soll"
+                _uiState.update {
+                    it.copy(
+                        isSending = false,
+                        actionFeedback = "Ошибка: ${action.label}",
+                        actionInFlightId = null,
+                        error = message,
+                    )
+                }
+            },
+        )
     }
 
     private fun observeVoiceInput() {
@@ -674,6 +736,25 @@ internal const val CHAT_TURN_STATUS_POLL_ATTEMPTS = 90
 
 internal fun chatTurnTimeoutMessage(): String =
     "Ответ всё ещё обрабатывается и появится в чате позже."
+
+internal fun clarificationFallbackMessage(taskId: String, note: String): String {
+    val cleanTaskId = taskId.trim()
+    val cleanNote = note.trim()
+    require(cleanTaskId.isNotBlank()) { "ID задачи не задан" }
+    require(cleanNote.isNotBlank()) { "Ответ на уточнение пуст" }
+    return "#${cleanTaskId.take(6)} $cleanNote"
+}
+
+private fun shouldUseClarificationChatFallback(
+    action: ChatActionUi,
+    note: String,
+    error: Throwable,
+): Boolean =
+    action.type == "task.clarify" &&
+        !action.taskId.isNullOrBlank() &&
+        note.isNotBlank() &&
+        error is HttpException &&
+        error.code() == 400
 
 internal fun shouldAutomaticallySpeakChatMessage(
     enabled: Boolean,
@@ -912,7 +993,10 @@ private fun String.approvalIdFromActionId(): String? {
     return approvalId.takeIf { it.isNotBlank() }
 }
 
-private val COMPLETED_ACTION_STATUSES = setOf("ack", "acked", "done", "completed", "executed", "success", "approved", "rejected")
+private val COMPLETED_ACTION_STATUSES = setOf(
+    "ack", "acked", "done", "completed", "executed", "success",
+    "approved", "rejected", "answered",
+)
 private val PENDING_ACTION_STATUSES = setOf("accepted", "pending", "queued")
 
 private fun String.defaultActionLabel(): String =

@@ -276,6 +276,9 @@ class ProjectStabilizationGuardTest {
 
         assertTrue(chatScreen.contains("R.drawable.ic_ai_robot_notification"))
         assertTrue(chatScreen.contains("painterResource(R.drawable.ic_ai_robot_notification)"))
+        assertTrue(chatScreen.contains("private fun SollAvatar()"))
+        assertTrue(chatScreen.contains("color = Color.White"))
+        assertFalse(chatScreen.contains("text = \"S\""))
     }
 
     @Test
@@ -302,8 +305,9 @@ class ProjectStabilizationGuardTest {
         assertTrue(notificationRepository.contains("R.drawable.ic_soll_notification"))
         assertFalse(notificationRepository.contains(".setColor("))
         assertTrue(sollIcon.contains("android:viewportWidth=\"24\""))
-        assertTrue(sollIcon.contains("Carlsberg Sans Bold"))
-        assertTrue(sollIcon.contains("M2.161,22.057V22.086"))
+        assertTrue(sollIcon.contains("canonical Soll robot silhouette"))
+        assertTrue(sollIcon.contains("M11,5h2v3h-2z"))
+        assertFalse(sollIcon.contains("Carlsberg Sans Bold"))
         assertFalse(sollIcon.contains("android:scaleX=\"0.75\""))
     }
 
@@ -813,13 +817,15 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
-    fun `launcher icon uses soll green background`() {
+    fun `launcher icon uses the canonical green robot on white`() {
         val colors = projectFile("app/src/main/res/values/colors.xml").readText()
         val foreground = projectFile("app/src/main/res/drawable/ic_launcher_foreground.xml").readText()
 
-        assertTrue(colors.contains("<color name=\"ic_launcher_background\">#247A52</color>"))
+        assertTrue(colors.contains("<color name=\"ic_launcher_background\">#FFFFFF</color>"))
         assertFalse(colors.contains("#FF000000"))
-        assertTrue(foreground.contains("android:fillColor=\"#FFFFFF\""))
+        assertTrue(foreground.contains("android:fillColor=\"#247A52\""))
+        assertTrue(foreground.contains("M11,5h2v3h-2z"))
+        assertFalse(foreground.contains("Letter S"))
     }
 
     @Test

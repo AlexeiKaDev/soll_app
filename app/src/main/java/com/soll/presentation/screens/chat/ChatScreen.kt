@@ -1421,14 +1421,17 @@ private fun SollAvatar() {
     Surface(
         modifier = Modifier.size(30.dp),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = Color.White,
+        contentColor = MaterialTheme.colorScheme.primary,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = "S",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
+            Icon(
+                painter = painterResource(R.drawable.ic_ai_robot_notification),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
             )
         }
     }

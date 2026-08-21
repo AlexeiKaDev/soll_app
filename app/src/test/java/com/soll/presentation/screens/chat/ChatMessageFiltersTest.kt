@@ -24,6 +24,17 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `clarification fallback targets the task code and keeps free text`() {
+        assertEquals(
+            "#a2da45 Close the test task. Free-text answer is enough.",
+            clarificationFallbackMessage(
+                taskId = "a2da451839a04d9089507ec351496c99",
+                note = "  Close the test task. Free-text answer is enough.  ",
+            ),
+        )
+    }
+
+    @Test
     fun `queued assistant payload cannot be displayed spoken or actioned`() {
         val user = chatMessage(content = "Запрос", id = 41).copy(role = "user")
         val unsafeAssistant = chatMessage(
@@ -83,6 +94,12 @@ class ChatMessageFiltersTest {
             task = null,
         )
         val terminal = queued.copy(status = "approved")
+        val clarificationAnswered = queued.copy(
+            actionId = "task:task-1:clarify",
+            action = "task.clarify",
+            taskId = "task-1",
+            status = "answered",
+        )
 
         assertTrue(queued.isAcceptedPendingAction())
         assertTrue(
@@ -92,6 +109,13 @@ class ChatMessageFiltersTest {
             ).isEmpty(),
         )
         assertFalse(terminal.isAcceptedPendingAction())
+        assertEquals(
+            setOf("task:task-1:clarify", "task:task-1:*"),
+            clarificationAnswered.completedActionIds(
+                requestedActionId = "task:task-1:clarify",
+                requestedTaskId = "task-1",
+            ),
+        )
         assertEquals(
             setOf("approval:approval-1:approve", "approval:approval-1:*"),
             terminal.completedActionIds(

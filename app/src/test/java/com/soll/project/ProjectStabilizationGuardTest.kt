@@ -817,15 +817,15 @@ class ProjectStabilizationGuardTest {
     }
 
     @Test
-    fun `launcher icon uses the canonical green robot on white`() {
+    fun `launcher icon keeps the white S on Soll green`() {
         val colors = projectFile("app/src/main/res/values/colors.xml").readText()
         val foreground = projectFile("app/src/main/res/drawable/ic_launcher_foreground.xml").readText()
 
-        assertTrue(colors.contains("<color name=\"ic_launcher_background\">#FFFFFF</color>"))
+        assertTrue(colors.contains("<color name=\"ic_launcher_background\">#247A52</color>"))
         assertFalse(colors.contains("#FF000000"))
-        assertTrue(foreground.contains("android:fillColor=\"#247A52\""))
-        assertTrue(foreground.contains("M11,5h2v3h-2z"))
-        assertFalse(foreground.contains("Letter S"))
+        assertTrue(foreground.contains("android:fillColor=\"#FFFFFF\""))
+        assertTrue(foreground.contains("Letter S"))
+        assertFalse(foreground.contains("M11,5h2v3h-2z"))
     }
 
     @Test

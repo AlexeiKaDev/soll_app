@@ -28,6 +28,15 @@ class SollChatActionPolicyTest {
     }
 
     @Test
+    fun `review actions render approve reject and recheck buttons`() {
+        listOf("review.approve", "review.reject", "review.recheck").forEach { type ->
+            val policy = SollChatActionPolicyRegistry.resolve(type)
+            assertEquals("server_action", policy?.capabilityId)
+            assertTrue("Review action must require an explicit tap: $type", policy?.requiresExplicitUserTap == true)
+        }
+    }
+
+    @Test
     fun `action types are normalized and unknown actions fail closed`() {
         assertEquals("task.done", SollChatActionPolicyRegistry.resolve(" TASK.DONE ")?.type)
         assertEquals("server_action", SollChatActionPolicyRegistry.resolve("approval.approve")?.capabilityId)

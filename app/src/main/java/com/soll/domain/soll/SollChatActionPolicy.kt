@@ -22,6 +22,9 @@ object SollChatActionPolicyRegistry {
         policy("notice.ack", "chat"),
         policy("approval.approve", "server_action"),
         policy("approval.reject", "server_action"),
+        policy("review.approve", "server_action"),
+        policy("review.reject", "server_action"),
+        policy("review.recheck", "server_action"),
         policy("web_ingest.approve", "server_action"),
         policy("web_ingest.reject", "server_action"),
     )

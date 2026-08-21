@@ -96,9 +96,13 @@ fun TaskBoardScreen(
         TaskWorkspaceMode.SOURCES,
     ),
     onBack: (() -> Unit)? = null,
+    focusTaskId: String? = null,
     viewModel: TaskBoardViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    LaunchedEffect(focusTaskId) {
+        focusTaskId?.takeIf { it.isNotBlank() }?.let(viewModel::focusTask)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var evidenceTask by remember { mutableStateOf<SollTask?>(null) }

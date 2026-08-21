@@ -37,6 +37,13 @@ class SollChatActionPolicyTest {
     }
 
     @Test
+    fun `task_open is supported so the open-task button renders`() {
+        val policy = SollChatActionPolicyRegistry.resolve("task.open")
+        assertEquals("tasks", policy?.capabilityId)
+        assertTrue(policy?.requiresExplicitUserTap == true)
+    }
+
+    @Test
     fun `action types are normalized and unknown actions fail closed`() {
         assertEquals("task.done", SollChatActionPolicyRegistry.resolve(" TASK.DONE ")?.type)
         assertEquals("server_action", SollChatActionPolicyRegistry.resolve("approval.approve")?.capabilityId)

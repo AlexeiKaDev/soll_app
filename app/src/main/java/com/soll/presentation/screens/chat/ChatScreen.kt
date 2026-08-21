@@ -121,8 +121,13 @@ import java.net.URL
 fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     onOpenSettings: () -> Unit = {},
+    onOpenTask: (String) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.openTaskId.collect { taskId -> onOpenTask(taskId) }
+    }
 
     uiState.pendingTextAction?.let { action ->
         ClarifyAnswerDialog(
@@ -148,6 +153,7 @@ fun ChatScreen(
     val visibleMessages = remember(uiState.messages, uiState.searchQuery) {
         visibleChatMessages(uiState.messages, uiState.searchQuery)
     }
+    val messagesById = remember(uiState.messages) { uiState.messages.associateBy { it.id } }
     val completedActionIds = remember(uiState.messages, uiState.completedActionIds) {
         completedChatActionIds(uiState.messages) + uiState.completedActionIds
     }
@@ -316,6 +322,7 @@ fun ChatScreen(
                         ) { message ->
                             ChatMessageBubble(
                                 message = message,
+                                replyToMessage = message.replyToMessageId()?.let(messagesById::get),
                                 isBusy = uiState.isSending,
                                 busyActionId = uiState.actionInFlightId,
                                 completedActionIds = completedActionIds,
@@ -357,9 +364,38 @@ fun ChatScreen(
 internal fun visibleChatMessages(
     messages: List<SollChatMessage>,
     searchQuery: String,
+): List<SollChatMessage> = attachChatReplies(filterChatMessages(messages, searchQuery))
+
+private fun filterChatMessages(
+    messages: List<SollChatMessage>,
+    searchQuery: String,
 ): List<SollChatMessage> {
     if (searchQuery.isBlank()) return messages
     return messages.filter { message -> message.matchesChatQuery(searchQuery) }
+}
+
+internal fun attachChatReplies(messages: List<SollChatMessage>): List<SollChatMessage> {
+    if (messages.size < 2) return messages
+    val byId = messages.associateBy { it.id }
+    val children = messages
+        .mapNotNull { message ->
+            message.replyToMessageId()
+                ?.takeIf(byId::containsKey)
+                ?.let { parentId -> parentId to message }
+        }
+        .groupBy({ it.first }, { it.second })
+    if (children.isEmpty()) return messages
+    val attachedIds = children.values.flatten().mapTo(mutableSetOf()) { it.id }
+    val result = mutableListOf<SollChatMessage>()
+    val visited = mutableSetOf<Long>()
+    fun append(message: SollChatMessage) {
+        if (!visited.add(message.id)) return
+        result += message
+        children[message.id].orEmpty().forEach(::append)
+    }
+    messages.filterNot { it.id in attachedIds }.forEach(::append)
+    messages.forEach(::append)
+    return result
 }
 
 internal fun chatLastMessageListIndex(messageCount: Int, hasHistoryLoader: Boolean): Int =
@@ -695,6 +731,7 @@ private fun ChatDatePill(text: String) {
 @Composable
 private fun ChatMessageBubble(
     message: SollChatMessage,
+    replyToMessage: SollChatMessage?,
     isBusy: Boolean,
     busyActionId: String?,
     completedActionIds: Set<String>,
@@ -745,6 +782,9 @@ private fun ChatMessageBubble(
                 verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 if (message.isFromUser) {
+                    replyToMessage?.let { parent ->
+                        ChatReplyQuote(parent = parent, foreground = foreground)
+                    }
                     LinkifiedChatText(
                         text = message.content,
                         color = foreground,
@@ -1432,6 +1472,42 @@ private fun SollAvatar() {
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChatReplyQuote(
+    parent: SollChatMessage,
+    foreground: Color,
+) {
+    Surface(
+        color = foreground.copy(alpha = 0.12f),
+        contentColor = foreground,
+        shape = RoundedCornerShape(8.dp),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = messageTitle(parent) ?: "Soll",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = foreground.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = parent.content.replace(Regex("\\s+"), " ").trim(),
+                style = MaterialTheme.typography.bodySmall,
+                color = foreground.copy(alpha = 0.76f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

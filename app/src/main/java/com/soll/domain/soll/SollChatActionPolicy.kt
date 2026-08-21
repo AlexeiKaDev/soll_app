@@ -25,6 +25,7 @@ object SollChatActionPolicyRegistry {
         policy("review.approve", "server_action"),
         policy("review.reject", "server_action"),
         policy("review.recheck", "server_action"),
+        policy("task.open", "tasks"),
         policy("web_ingest.approve", "server_action"),
         policy("web_ingest.reject", "server_action"),
     )

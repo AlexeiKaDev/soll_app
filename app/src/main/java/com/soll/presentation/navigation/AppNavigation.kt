@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -168,10 +170,26 @@ fun AppNavigation(
                             launchSingleTop = true
                         }
                     },
+                    onOpenTask = { taskId ->
+                        navController.navigate("${AppDestinations.Tasks.route}?focus=$taskId") {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
-            composable(AppDestinations.Tasks.route) {
-                TaskBoardScreen()
+            composable(
+                route = "${AppDestinations.Tasks.route}?focus={focus}",
+                arguments = listOf(
+                    navArgument("focus") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { backStackEntry ->
+                TaskBoardScreen(
+                    focusTaskId = backStackEntry.arguments?.getString("focus"),
+                )
             }
             composable(AppDestinations.Devices.route) {
                 DevicesScreen()

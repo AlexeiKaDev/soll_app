@@ -15,8 +15,11 @@ import com.soll.domain.tts.AssistantVoicePlaybackState
 import com.soll.domain.tts.AssistantVoicePlayer
 import com.soll.domain.tts.TextToSpeechManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
@@ -48,6 +51,8 @@ data class ChatUiState(
     val actionFeedback: String? = null,
     val actionInFlightId: String? = null,
     val completedActionIds: Set<String> = emptySet(),
+    val supersededMessageIds: Set<Long> = emptySet(),
+    val supersededTaskIds: Set<String> = emptySet(),
     val pendingActionsCount: Int = 0,
     val encrypted: Boolean = false,
     // When set, the UI shows a text-answer dialog (e.g. task.clarify).
@@ -69,6 +74,7 @@ data class ChatActionUi(
     val label: String,
     val prompt: String? = null,
     val completionGroupKey: String? = null,
+    val sourceMessageId: Long? = null,
     // task.clarify needs the owner to type an answer before executing.
     val requiresText: Boolean = false,
 )
@@ -92,6 +98,12 @@ class ChatViewModel @Inject constructor(
         )
     )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    // One-shot navigation: "Открыть задачу" jumps to the Tasks tab focused on the
+    // task, so the owner never has to hunt for it in the list.
+    private val _openTaskId = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val openTaskId: SharedFlow<String> = _openTaskId.asSharedFlow()
+
     private var refreshInFlight = false
     private var lastSpokenMessageId = 0L
     private var voiceRequestJob: Job? = null
@@ -189,12 +201,23 @@ class ChatViewModel @Inject constructor(
                         }
                     },
                 )
-                val displayable = messages.filter { message -> message.isDisplayableChatMessage() }
+                val fetchedSupersededIds = supersededChatMessageIds(messages)
+                val fetchedSupersededTaskIds = supersededChatTaskIds(messages)
+                val displayable = messages.filter { message ->
+                    message.id !in fetchedSupersededIds &&
+                        message.taskIdForChatMessage() !in fetchedSupersededTaskIds &&
+                        message.isDisplayableChatMessage()
+                }
                 _uiState.update {
+                    val allSupersededIds = it.supersededMessageIds + fetchedSupersededIds
+                    val allSupersededTaskIds = it.supersededTaskIds + fetchedSupersededTaskIds
                     val merged = if (afterId == null) {
                         displayable
                     } else {
                         mergeChatMessages(it.messages, displayable)
+                    }.filterNot { message ->
+                        message.id in allSupersededIds ||
+                            message.taskIdForChatMessage() in allSupersededTaskIds
                     }
                     val scrollReason = chatScrollReasonForRefresh(
                         previousMessages = it.messages,
@@ -208,6 +231,8 @@ class ChatViewModel @Inject constructor(
                         isLoading = false,
                         sessionId = sessionId,
                         messages = merged,
+                        supersededMessageIds = allSupersededIds,
+                        supersededTaskIds = allSupersededTaskIds,
                         hasMoreHistory = if (afterId == null) displayable.size >= CHAT_PAGE_SIZE else it.hasMoreHistory,
                         pendingActionsCount = sync.chat.pendingActionsCount,
                         encrypted = sync.chat.encryptionRequired,
@@ -239,11 +264,25 @@ class ChatViewModel @Inject constructor(
                 beforeId = oldestId,
             ).fold(
                 onSuccess = { messages ->
-                    val displayable = messages.filter { message -> message.isDisplayableChatMessage() }
+                    val fetchedSupersededIds = supersededChatMessageIds(messages)
+                    val fetchedSupersededTaskIds = supersededChatTaskIds(messages)
+                    val allSupersededIds = state.supersededMessageIds + fetchedSupersededIds
+                    val allSupersededTaskIds = state.supersededTaskIds + fetchedSupersededTaskIds
+                    val displayable = messages.filter { message ->
+                        message.id !in allSupersededIds &&
+                            message.taskIdForChatMessage() !in allSupersededTaskIds &&
+                            message.isDisplayableChatMessage()
+                    }
                     _uiState.update {
                         it.copy(
                             isLoadingOlder = false,
-                            messages = mergeChatMessages(displayable, it.messages),
+                            messages = mergeChatMessages(displayable, it.messages)
+                                .filterNot { message ->
+                                    message.id in allSupersededIds ||
+                                        message.taskIdForChatMessage() in allSupersededTaskIds
+                                },
+                            supersededMessageIds = allSupersededIds,
+                            supersededTaskIds = allSupersededTaskIds,
                             hasMoreHistory = displayable.size >= CHAT_PAGE_SIZE,
                         )
                     }
@@ -470,6 +509,13 @@ class ChatViewModel @Inject constructor(
     }
 
     fun executeAction(action: ChatActionUi) {
+        // "Открыть задачу" is pure client-side navigation, not a server action.
+        if (action.type == "task.open") {
+            action.taskId?.takeIf { it.isNotBlank() }?.let { taskId ->
+                viewModelScope.launch { _openTaskId.emit(taskId) }
+            }
+            return
+        }
         // Actions that need a typed answer (task.clarify) open a dialog first.
         if (action.requiresText) {
             _uiState.update { it.copy(pendingTextAction = action, error = null) }
@@ -525,6 +571,7 @@ class ChatViewModel @Inject constructor(
                 action = policy.type,
                 taskId = action.taskId,
                 sessionId = _uiState.value.sessionId,
+                replyToMessageId = action.sourceMessageId,
                 note = note,
             ).fold(
                 onSuccess = { result ->
@@ -580,6 +627,7 @@ class ChatViewModel @Inject constructor(
                 "request_id" to fallbackTurnId,
                 "task_id" to taskId,
                 "clarification_action_id" to action.id,
+                "reply_to_message_id" to action.sourceMessageId,
             ),
         ).fold(
             onSuccess = { result ->
@@ -891,7 +939,7 @@ fun SollChatMessage.actionUis(): List<ChatActionUi> =
         taskIntake?.get("action").asActionMapOrNull()?.let(::add)
         taskIntake?.get("actions").asActionMaps().forEach(::add)
     }
-        .mapNotNull { action -> action.toChatActionUiOrNull() }
+        .mapNotNull { action -> action.toChatActionUiOrNull(sourceMessageId = id) }
         .distinctBy { it.id }
 
 fun SollChatMessage.actionUiOrNull(): ChatActionUi? = actionUis().firstOrNull()
@@ -909,7 +957,7 @@ private fun Any?.asActionMaps(): List<Map<*, *>> =
         ?.mapNotNull { item -> item as? Map<*, *> }
         .orEmpty()
 
-private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
+private fun Map<*, *>.toChatActionUiOrNull(sourceMessageId: Long?): ChatActionUi? {
     val action = this
     if (action.isCompletedActionMap()) return null
     val rawType = action["type"]?.toString().orEmpty().ifBlank {
@@ -931,6 +979,7 @@ private fun Map<*, *>.toChatActionUiOrNull(): ChatActionUi? {
         label = action["label"]?.toString()?.takeIf { it.isNotBlank() } ?: type.defaultActionLabel(),
         prompt = action["prompt"]?.toString()?.takeIf { it.isNotBlank() },
         completionGroupKey = taskActionGroupKey(taskId) ?: approvalActionGroupKey(approvalId),
+        sourceMessageId = sourceMessageId,
         requiresText = type == "task.clarify",
     )
 }
@@ -1022,7 +1071,56 @@ internal fun SollChatMessage.matchesChatQuery(query: String): Boolean {
 }
 
 internal fun SollChatMessage.isDisplayableChatMessage(): Boolean =
-    !content.looksLikePlaceholderNoise() && !isServerStubMessage()
+    !content.looksLikePlaceholderNoise() && !isServerStubMessage() && !isSupersededMessage()
+
+internal fun SollChatMessage.replyToMessageId(): Long? =
+    when (val value = metadata["reply_to_message_id"]) {
+        is Number -> value.toLong().takeIf { it > 0L }
+        is String -> value.toLongOrNull()?.takeIf { it > 0L }
+        else -> null
+    }
+
+internal fun supersededChatMessageIds(messages: List<SollChatMessage>): Set<Long> =
+    messages.flatMap { message ->
+        (message.metadata["superseded_message_ids"] as? Iterable<*>)
+            ?.mapNotNull { value ->
+                when (value) {
+                    is Number -> value.toLong().takeIf { it > 0L }
+                    is String -> value.toLongOrNull()?.takeIf { it > 0L }
+                    else -> null
+                }
+            }
+            .orEmpty()
+    }.toSet()
+
+internal fun supersededChatTaskIds(messages: List<SollChatMessage>): Set<String> =
+    messages.flatMap { message ->
+        (message.metadata["superseded_task_ids"] as? Iterable<*>)
+            ?.mapNotNull { value -> value?.toString()?.trim()?.takeIf { it.isNotBlank() } }
+            .orEmpty()
+    }.toSet()
+
+internal fun SollChatMessage.taskIdForChatMessage(): String? {
+    metadata["task_id"]?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+    (metadata["action"] as? Map<*, *>)
+        ?.get("task_id")
+        ?.toString()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { return it }
+    return (metadata["extra"] as? Map<*, *>)
+        ?.get("task_id")
+        ?.toString()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+}
+
+private fun SollChatMessage.isSupersededMessage(): Boolean =
+    metadata["superseded"].asBooleanFlag() ||
+        metadata["visibility"]?.toString()?.let { visibility ->
+            visibility.equals("superseded", ignoreCase = true) ||
+                visibility.equals("superseded_control", ignoreCase = true)
+        } == true
 
 private fun SollChatMessage.isServerStubMessage(): Boolean =
     metadata["source"]?.toString() == "yii2_soll_api" &&

@@ -546,6 +546,16 @@ class TaskBoardViewModel @Inject constructor(
         _uiState.update { it.copy(searchQuery = query).deriveTaskList() }
     }
 
+    /** Focus a single task (from a chat "Открыть задачу"): show all statuses and
+     *  filter to the task id so the owner never has to hunt for it. */
+    fun focusTask(taskId: String) {
+        val id = taskId.trim()
+        if (id.isEmpty()) return
+        _uiState.update {
+            it.copy(selectedTab = TaskTab.ALL, searchQuery = id).deriveTaskList()
+        }
+    }
+
     fun loadMoreTasks() {
         val nextLimit = (_uiState.value.requestedTaskBoardLimitPerSection * 2)
             .coerceAtMost(MAX_TASK_BOARD_SECTION_LIMIT)
@@ -1425,7 +1435,8 @@ private fun List<SollTask>.filterByQuery(query: String): List<SollTask> {
 internal fun SollTask.matchesTaskQuery(query: String): Boolean {
     val needle = query.trim()
     if (needle.isBlank()) return true
-    return title.contains(needle, ignoreCase = true) ||
+    return id.contains(needle, ignoreCase = true) ||
+        title.contains(needle, ignoreCase = true) ||
         description.contains(needle, ignoreCase = true) ||
         projectName.orEmpty().contains(needle, ignoreCase = true) ||
         sourceRef.contains(needle, ignoreCase = true) ||

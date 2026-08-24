@@ -619,6 +619,7 @@ class SollRepository @Inject constructor(
         action: String,
         taskId: String?,
         sessionId: String?,
+        replyToMessageId: Long?,
         note: String,
     ): Result<SollChatActionResult> = runSuspendCatching {
         val cleanActionId = actionId.trim()
@@ -635,6 +636,8 @@ class SollRepository @Inject constructor(
                 action = policy.type,
                 taskId = taskId?.trim()?.takeIf { it.isNotBlank() },
                 sessionId = sessionId?.trim()?.takeIf { it.isNotBlank() },
+                replyToMessageId = replyToMessageId,
+                metadata = replyToMessageId?.let { mapOf("reply_to_message_id" to it) },
                 note = note.trim(),
             ),
         ).toDomain()

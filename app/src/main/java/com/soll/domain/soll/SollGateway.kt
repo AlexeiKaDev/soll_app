@@ -746,6 +746,7 @@ interface SollGateway {
         action: String,
         taskId: String? = null,
         sessionId: String? = null,
+        replyToMessageId: Long? = null,
         note: String = "",
     ): Result<SollChatActionResult>
 

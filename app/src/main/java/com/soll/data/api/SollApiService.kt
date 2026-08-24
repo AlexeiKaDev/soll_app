@@ -855,6 +855,8 @@ data class ChatActionExecuteRequest(
     val taskId: String? = null,
     @Json(name = "session_id")
     val sessionId: String? = null,
+    @Json(name = "reply_to_message_id")
+    val replyToMessageId: Long? = null,
     val note: String = "",
     val metadata: Map<String, Any?>? = null,
     val encrypted: SecurePayloadEnvelopeRequest? = null,

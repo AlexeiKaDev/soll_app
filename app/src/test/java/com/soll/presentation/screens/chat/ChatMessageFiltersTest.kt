@@ -151,6 +151,48 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `hides non destructively superseded legacy cards`() {
+        val message = chatMessage(
+            content = "Старая ошибочная карточка",
+            metadata = mapOf("superseded" to true),
+        )
+
+        assertFalse(message.isDisplayableChatMessage())
+    }
+
+    @Test
+    fun `reads synchronized tombstone ids and hides its control message`() {
+        val tombstone = chatMessage(
+            content = "Обновление истории чата",
+            id = 99,
+            metadata = mapOf(
+                "visibility" to "superseded_control",
+                "superseded_message_ids" to listOf(10, "11", 0),
+                "superseded_task_ids" to listOf("task-1", "task-2"),
+            ),
+        )
+
+        assertEquals(setOf(10L, 11L), supersededChatMessageIds(listOf(tombstone)))
+        assertEquals(setOf("task-1", "task-2"), supersededChatTaskIds(listOf(tombstone)))
+        assertFalse(tombstone.isDisplayableChatMessage())
+    }
+
+    @Test
+    fun `resolves task id from action and nested extra metadata`() {
+        val actionCard = chatMessage(
+            content = "Карточка",
+            metadata = mapOf("action" to mapOf("task_id" to "task-action")),
+        )
+        val relayCard = chatMessage(
+            content = "Relay карточка",
+            metadata = mapOf("extra" to mapOf("task_id" to "task-extra")),
+        )
+
+        assertEquals("task-action", actionCard.taskIdForChatMessage())
+        assertEquals("task-extra", relayCard.taskIdForChatMessage())
+    }
+
+    @Test
     fun `matches content and metadata source`() {
         val message = chatMessage("Сделал задачу: Sync cached task.", source = "android_action")
 
@@ -527,7 +569,33 @@ class ChatMessageFiltersTest {
 
         assertEquals("task-1", action?.taskId)
         assertEquals("1. Нужно ли выполнять изменение в Soll?", action?.prompt)
+        assertEquals(message.id, action?.sourceMessageId)
         assertTrue(action?.requiresText == true)
+    }
+
+    @Test
+    fun `clarification reply is attached directly below its source card`() {
+        val source = chatMessage(content = "Уточните вариант", id = 10)
+        val later = chatMessage(content = "Другое сообщение", id = 11)
+        val reply = chatMessage(
+            content = "Показывать одной строкой",
+            id = 12,
+            metadata = mapOf(
+                "reply_to_message_id" to 10L,
+                "action_result" to mapOf(
+                    "action_id" to "task:task-1:clarify",
+                    "task_id" to "task-1",
+                    "status" to "answered",
+                ),
+            ),
+        ).copy(role = "user")
+
+        assertEquals(10L, reply.replyToMessageId())
+        assertEquals(listOf(10L, 12L, 11L), attachChatReplies(listOf(source, later, reply)).map { it.id })
+        assertEquals(
+            setOf("task:task-1:clarify", "task:task-1:*"),
+            completedChatActionIds(listOf(source, reply)),
+        )
     }
 
     @Test

@@ -292,6 +292,22 @@ device. Ее минимальный результат: reproducible `arm64-v8a`
 benchmark, frozen prompts, PSS/LMK/thermal/battery report и решение по восьми
 gates. Без этого измеренная Android-ценность равна нулю.
 
+### Named target preflight — 2026-08-25
+
+Physical ADB preflight выбрал точный target: **DOOGEE S200 Plus / Android 15**
+(`M24PST`, SoC `MT6878`, GPU family `mali`, ABI `arm64-v8a`). Устройство
+сообщило `MemTotal=15,889,132 kB`, `MemAvailable=11,215,128 kB` на момент
+замера и `383 GB` свободно в `/data`; battery state был `43%`, USB powered,
+температура `37.0 C`. Это снимает старый blocker отсутствующего named 16-GB
+Android target и подтверждает статическую вместимость download/harness, но не
+доказывает load, peak PSS, LMK safety, скорость или thermal stability.
+
+Модель не скачивалась, NDK/JNI runtime не добавлялся и inference не запускался:
+следующая граница остается отдельным явным opt-in на загрузку примерно
+`3.8 GB` и disposable upstream Android harness. Production Soll по-прежнему
+не меняется до прохождения всех восьми gates. Санитизированный preflight:
+`Soll/outputs/android-smoke/bonsai-s200-plus-preflight-20260825.md`.
+
 ## Первичные источники
 
 - PrismML announcement и category benchmarks:

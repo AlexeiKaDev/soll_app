@@ -1524,7 +1524,7 @@ class SollRepository @Inject constructor(
     ): SecurePayloadEnvelopeRequest? {
         val pairingSecret = settingsRepository.sollDevicePairingSecret.trim()
         if (pairingSecret.isBlank()) return null
-        val key = MessageDigest.getInstance("SHA-256").digest(pairingSecret.toByteArray(Charsets.UTF_8))
+        val key = derivedPairingKey(pairingSecret)
         val nonce = nonceSeed
             ?.trim()
             ?.takeIf { it.isNotBlank() }
@@ -1553,6 +1553,16 @@ class SollRepository @Inject constructor(
             aad = aad,
             keyId = settingsRepository.sollDeviceId.trim(),
         )
+    }
+
+    @Volatile
+    private var cachedPairingKey: Pair<String, ByteArray>? = null
+
+    private fun derivedPairingKey(pairingSecret: String): ByteArray {
+        cachedPairingKey?.let { (secret, key) -> if (secret == pairingSecret) return key }
+        val key = MessageDigest.getInstance("SHA-256").digest(pairingSecret.toByteArray(Charsets.UTF_8))
+        cachedPairingKey = pairingSecret to key
+        return key
     }
 
     private fun cacheAndroidSyncStatus(response: AndroidSyncStatusResponse) {

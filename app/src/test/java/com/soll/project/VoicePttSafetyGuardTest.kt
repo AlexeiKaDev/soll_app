@@ -16,11 +16,32 @@ class VoicePttSafetyGuardTest {
         assertTrue(screen.contains("tryAwaitRelease()"))
         assertTrue(screen.contains("Lifecycle.Event.ON_STOP -> viewModel.onScreenStopped()"))
         assertTrue(screen.contains("Lifecycle.Event.ON_START -> viewModel.onScreenStarted()"))
-        assertTrue(screen.contains("ActivityResultContracts.RequestPermission()"))
+        assertTrue(screen.contains("ActivityResultContracts.RequestMultiplePermissions()"))
         assertTrue(viewModel.contains("maxDurationMillis = MAX_PTT_DURATION_MS"))
         assertTrue(viewModel.contains("sttAdapter.cancelListening()"))
         assertTrue(adapter.contains("handler.postDelayed("))
         assertTrue(contract.contains("const val MAX_PTT_DURATION_MS = 30_000L"))
+    }
+
+    @Test
+    fun `voice routes a connected Bluetooth headset and always releases it`() {
+        val adapter = projectFile("app/src/main/java/com/soll/data/voice/AndroidSpeechRecognizerAdapter.kt")
+        val router = projectFile("app/src/main/java/com/soll/data/voice/BluetoothSpeechAudioRouter.kt")
+        val manifest = projectFile("app/src/main/AndroidManifest.xml")
+        val chat = projectFile("app/src/main/java/com/soll/presentation/screens/chat/ChatScreen.kt")
+        val voice = projectFile("app/src/main/java/com/soll/presentation/screens/voice/VoiceScreen.kt")
+
+        assertTrue(adapter.contains("speechAudioRouter.prepareBluetoothInput()"))
+        assertTrue(adapter.contains("speechAudioRouter.release()"))
+        assertFalse(adapter.contains("SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L"))
+        assertTrue(router.contains("AudioDeviceInfo.TYPE_BLUETOOTH_SCO"))
+        assertTrue(router.contains("AudioDeviceInfo.TYPE_BLE_HEADSET"))
+        assertTrue(router.contains("setCommunicationDevice(headset)"))
+        assertTrue(router.contains("clearCommunicationDevice()"))
+        assertTrue(router.contains("AudioManager.MODE_IN_COMMUNICATION"))
+        assertTrue(manifest.contains("android.permission.MODIFY_AUDIO_SETTINGS"))
+        assertTrue(chat.contains("Manifest.permission.BLUETOOTH_CONNECT"))
+        assertTrue(voice.contains("Manifest.permission.BLUETOOTH_CONNECT"))
     }
 
     @Test

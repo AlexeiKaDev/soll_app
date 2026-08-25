@@ -185,9 +185,10 @@ class ProjectStabilizationGuardTest {
         assertTrue(voiceViewModel.contains("holdUntilStop = true"))
         assertTrue(voiceViewModel.contains("maxDurationMillis = MAX_PTT_DURATION_MS"))
         assertTrue(voiceViewModel.contains("sttAdapter.cancelListening()"))
-        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L"))
-        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L"))
-        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L"))
+        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500"))
+        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500"))
+        assertTrue(sttAdapter.contains("EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000"))
+        assertFalse(sttAdapter.contains("EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L"))
     }
 
     @Test

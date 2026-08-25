@@ -1,9 +1,11 @@
 package com.soll.presentation.screens.chat
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -141,10 +143,12 @@ fun ChatScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val recordAudioLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
+    val voicePermissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val microphoneGranted = grants[Manifest.permission.RECORD_AUDIO] == true ||
+            context.hasPermission(Manifest.permission.RECORD_AUDIO)
+        if (microphoneGranted) {
             viewModel.startVoiceInput()
         } else {
             viewModel.onVoicePermissionDenied()
@@ -239,15 +243,12 @@ fun ChatScreen(
                 onVoiceClick = {
                     if (uiState.isVoiceListening) {
                         viewModel.stopVoiceInput()
-                    } else if (
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.RECORD_AUDIO,
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
+                    } else if (context.missingVoiceInputPermissions().isEmpty()) {
                         viewModel.startVoiceInput()
                     } else {
-                        recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        voicePermissionsLauncher.launch(
+                            context.missingVoiceInputPermissions().toTypedArray(),
+                        )
                     }
                 },
                 onDismissVoiceError = viewModel::dismissVoiceError,
@@ -358,6 +359,21 @@ fun ChatScreen(
                 }
             }
         }
+    }
+}
+
+private fun Context.hasPermission(permission: String): Boolean =
+    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun Context.missingVoiceInputPermissions(): List<String> = buildList {
+    if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
+        add(Manifest.permission.RECORD_AUDIO)
+    }
+    if (
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    ) {
+        add(Manifest.permission.BLUETOOTH_CONNECT)
     }
 }
 

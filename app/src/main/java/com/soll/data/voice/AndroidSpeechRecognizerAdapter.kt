@@ -32,6 +32,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private var lastPreferOffline: Boolean = false
     private var manualFinalEmitted: Boolean = false
     private val manualSegments = mutableListOf<String>()
+    private val speechAudioRouter = BluetoothSpeechAudioRouter(context)
 
     private val _state = MutableStateFlow(currentAvailability())
     override val state: StateFlow<SttAdapterState> = _state.asStateFlow()
@@ -55,6 +56,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         this.lastPreferOffline = preferOffline
         this.manualFinalEmitted = false
         manualSegments.clear()
+        speechAudioRouter.prepareBluetoothInput()
         startRecognizer(preferOffline = preferOffline, resetText = true)
         handler.postDelayed(
             durationLimit,
@@ -65,6 +67,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private fun startRecognizer(preferOffline: Boolean, resetText: Boolean) {
         val availability = currentAvailability(preferOffline = preferOffline)
         if (!availability.isAvailable) {
+            speechAudioRouter.release()
             _state.value = availability.copy(
                 errorMessage = "Распознавание речи недоступно на этом устройстве",
             )
@@ -93,7 +96,15 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             activeMode = desiredMode,
         )
 
-        speechRecognizer.startListening(buildIntent(preferOffline))
+        runCatching {
+            speechRecognizer.startListening(buildIntent(preferOffline))
+        }.onFailure { error ->
+            speechAudioRouter.release()
+            _state.value = _state.value.copy(
+                isListening = false,
+                errorMessage = error.message ?: "Не удалось запустить распознавание речи",
+            )
+        }
     }
 
     override fun stopListening() {
@@ -116,6 +127,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         manualFinalEmitted = true
         manualSegments.clear()
         recognizer?.cancel()
+        speechAudioRouter.release()
         _state.value = _state.value.copy(
             isListening = false,
             partialText = "",
@@ -135,6 +147,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         cancelRequested = true
         recognizer?.destroy()
         recognizer = null
+        speechAudioRouter.release()
     }
 
     private fun buildIntent(preferOffline: Boolean): Intent =
@@ -145,9 +158,9 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000)
         }
 
     private fun recognizerFor(mode: SttRecognitionMode): SpeechRecognizer {
@@ -195,7 +208,10 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() {
             if (!holdUntilStop) {
+                speechAudioRouter.release()
                 _state.value = _state.value.copy(isListening = false)
+            } else if (stopRequested) {
+                speechAudioRouter.release()
             }
         }
 
@@ -206,9 +222,11 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
                 return
             }
             if (holdUntilStop && stopRequested) {
+                speechAudioRouter.release()
                 emitManualFinalIfNeeded(fallbackError = error.toUserMessage())
                 return
             }
+            speechAudioRouter.release()
             _state.value = _state.value.copy(isListening = false, errorMessage = error.toUserMessage())
         }
 
@@ -218,12 +236,14 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             if (holdUntilStop) {
                 rememberManualSegment(text)
                 if (stopRequested) {
+                    speechAudioRouter.release()
                     emitManualFinalIfNeeded(fallbackError = if (text.isNullOrBlank()) "Речь не распознана" else null)
                 } else {
                     restartManualRecognition()
                 }
                 return
             }
+            speechAudioRouter.release()
             _state.value = _state.value.copy(
                 isListening = false,
                 partialText = "",
@@ -270,6 +290,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private fun emitManualFinalIfNeeded(fallbackError: String?) {
         if (!holdUntilStop || manualFinalEmitted) return
         manualFinalEmitted = true
+        speechAudioRouter.release()
         val finalText = manualSegments.joinToString(" ").trim().takeIf { it.isNotBlank() }
         holdUntilStop = false
         stopRequested = false

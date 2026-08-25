@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -89,11 +90,14 @@ fun VoiceScreen(
     var microphoneGranted by remember {
         mutableStateOf(context.hasRecordAudioPermission())
     }
+    var bluetoothPermissionRequested by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        microphoneGranted = granted
-        if (granted) {
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val microphoneNowGranted = grants[Manifest.permission.RECORD_AUDIO] == true ||
+            context.hasRecordAudioPermission()
+        microphoneGranted = microphoneNowGranted
+        if (microphoneNowGranted) {
             viewModel.onMicrophonePermissionGranted()
         } else {
             val permanentlyDenied = permissionRequested &&
@@ -106,6 +110,12 @@ fun VoiceScreen(
             viewModel.onMicrophonePermissionDenied(permanentlyDenied)
         }
     }
+
+    val voiceInputReady = microphoneGranted && (
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            context.hasBluetoothConnectPermission() ||
+            bluetoothPermissionRequested
+        )
 
     DisposableEffect(lifecycleOwner, context) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
@@ -133,9 +143,10 @@ fun VoiceScreen(
         }
     }
 
-    val requestMicrophone = {
+    val requestVoicePermissions = {
         permissionRequested = true
-        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        bluetoothPermissionRequested = true
+        permissionLauncher.launch(context.missingVoiceInputPermissions().toTypedArray())
     }
 
     Scaffold(
@@ -186,8 +197,8 @@ fun VoiceScreen(
                     PushToTalkButton(
                         listening = uiState.isListening,
                         enabled = uiState.isAvailable && !uiState.isProcessing,
-                        microphoneGranted = microphoneGranted,
-                        onPermissionRequired = requestMicrophone,
+                        voiceInputReady = voiceInputReady,
+                        onPermissionRequired = requestVoicePermissions,
                         onPress = viewModel::startListening,
                         onRelease = viewModel::finishListening,
                         onCancel = viewModel::cancelListening,
@@ -232,7 +243,7 @@ fun VoiceScreen(
                         PermissionMessage(
                             message = message,
                             permanentlyDenied = uiState.permissionPermanentlyDenied,
-                            onRequest = requestMicrophone,
+                            onRequest = requestVoicePermissions,
                             onOpenSettings = { context.openAppPermissionSettings() },
                         )
                     }
@@ -281,7 +292,7 @@ fun VoiceScreen(
 private fun PushToTalkButton(
     listening: Boolean,
     enabled: Boolean,
-    microphoneGranted: Boolean,
+    voiceInputReady: Boolean,
     onPermissionRequired: () -> Unit,
     onPress: () -> Unit,
     onRelease: () -> Unit,
@@ -295,11 +306,11 @@ private fun PushToTalkButton(
                 contentDescription = "Удерживайте для разговора с Soll"
                 if (!enabled) disabled()
             }
-            .pointerInput(enabled, microphoneGranted) {
+            .pointerInput(enabled, voiceInputReady) {
                 detectTapGestures(
                     onPress = {
                         if (!enabled) return@detectTapGestures
-                        if (!microphoneGranted) {
+                        if (!voiceInputReady) {
                             onPermissionRequired()
                             return@detectTapGestures
                         }
@@ -472,6 +483,16 @@ private fun VoiceTextBlock(title: String, text: String) {
 private fun Context.hasRecordAudioPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
         PackageManager.PERMISSION_GRANTED
+
+private fun Context.hasBluetoothConnectPermission(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
+        PackageManager.PERMISSION_GRANTED
+
+private fun Context.missingVoiceInputPermissions(): List<String> = buildList {
+    if (!hasRecordAudioPermission()) add(Manifest.permission.RECORD_AUDIO)
+    if (!hasBluetoothConnectPermission()) add(Manifest.permission.BLUETOOTH_CONNECT)
+}
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this

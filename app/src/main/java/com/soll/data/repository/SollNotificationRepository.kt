@@ -186,16 +186,26 @@ class SollNotificationRepository @Inject constructor(
             .setGroupAlertBehavior(groupAlertBehavior(request.channel))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
-        val summaryNotification = buildGroupSummaryNotification(
-            request = request,
-            groupKey = groupKey,
-            unreadInChannel = unreadInChannel,
-        )
+        val summaryNotification = if (shouldPostSystemGroupSummary(request.channel)) {
+            buildGroupSummaryNotification(
+                request = request,
+                groupKey = groupKey,
+                unreadInChannel = unreadInChannel,
+            )
+        } else {
+            null
+        }
 
         return runCatching {
             val manager = NotificationManagerCompat.from(context)
             manager.notify(systemNotificationId, notification)
-            manager.notify(summaryId, summaryNotification)
+            if (summaryNotification != null) {
+                manager.notify(summaryId, summaryNotification)
+            } else {
+                // Chat already replaces one stable child per session. A second
+                // summary card repeats the same text in the Android shade.
+                manager.cancel(summaryId)
+            }
             true
         }.onFailure { error ->
             Timber.w(error, "Failed to show Soll notification")
@@ -329,3 +339,6 @@ private fun String.compactNotificationLine(maxLength: Int = 120): String {
     val normalized = replace(Regex("\\s+"), " ").trim()
     return if (normalized.length <= maxLength) normalized else normalized.take(maxLength - 3).trimEnd() + "..."
 }
+
+internal fun shouldPostSystemGroupSummary(channel: SollNotificationChannel): Boolean =
+    channel != SollNotificationChannel.CHAT

@@ -47,10 +47,12 @@ class SollFirebaseMessagingService : FirebaseMessagingService() {
             ?: "${title}:${body}:${message.sentTime}"
         val sessionId = data["session_id"]?.takeIf { it.isNotBlank() } ?: "soll-main"
         val chatMessageId = fcmChatMessageIdForWatermark(route, data)
-        val chatDedupeKey = chatMessageId?.let { chatNotificationDedupeKey(sessionId, it) }
-        val notificationDedupeKey = eventId?.let { fcmNotificationDedupeKey(it, messageKey) }
-            ?: chatDedupeKey
-            ?: fcmNotificationDedupeKey(null, messageKey)
+        val notificationDedupeKey = resolveFcmNotificationDedupeKey(
+            route = route,
+            data = data,
+            eventId = eventId,
+            fallbackMessageKey = messageKey,
+        )
         val payload = JSONObject().apply {
             put("provider", "fcm")
             put("event_id", eventId ?: "")
@@ -137,6 +139,18 @@ internal fun fcmEventId(data: Map<String, String>): String? =
 
 internal fun fcmNotificationDedupeKey(eventId: String?, fallbackMessageKey: String): String =
     eventId?.let { "fcm:event:$it" } ?: "fcm:$fallbackMessageKey"
+
+internal fun resolveFcmNotificationDedupeKey(
+    route: FcmNotificationRoute,
+    data: Map<String, String>,
+    eventId: String?,
+    fallbackMessageKey: String,
+): String {
+    val sessionId = data["session_id"]?.trim()?.takeIf { it.isNotBlank() } ?: "soll-main"
+    return fcmChatMessageIdForWatermark(route, data)
+        ?.let { messageId -> chatNotificationDedupeKey(sessionId, messageId) }
+        ?: fcmNotificationDedupeKey(eventId, fallbackMessageKey)
+}
 
 internal data class FcmNotificationRoute(
     val channel: SollNotificationChannel,

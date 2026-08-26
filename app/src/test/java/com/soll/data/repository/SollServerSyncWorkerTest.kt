@@ -78,7 +78,7 @@ class SollServerSyncWorkerTest {
     }
 
     @Test
-    fun `background sync skips server messages marked silent or routine source monitor`() {
+    fun `background sync skips silent source items and scheduler telemetry`() {
         val plan = planChatNotificationsForSync(
             messages = listOf(
                 chatMessage(id = 2, role = "assistant", content = "silent", metadata = mapOf("silent" to true)),
@@ -88,15 +88,25 @@ class SollServerSyncWorkerTest {
                     content = "source monitor",
                     metadata = mapOf("extra" to mapOf("entity_type" to "source_monitor")),
                 ),
-                chatMessage(id = 4, role = "assistant", content = "real chat"),
+                chatMessage(
+                    id = 4,
+                    role = "assistant",
+                    content = "routine success",
+                    metadata = mapOf(
+                        "entity_type" to "scheduler_task",
+                        "event_type" to "scheduler_success",
+                        "status" to "success",
+                    ),
+                ),
+                chatMessage(id = 5, role = "assistant", content = "real chat"),
             ),
             lastSeenMessageId = 1,
-            latestMessageId = 4,
+            latestMessageId = 5,
             appInForeground = false,
         )
 
-        assertEquals(listOf(4L), plan.messagesToNotify.map { it.id })
-        assertEquals(4L, plan.nextLastSeenMessageId)
+        assertEquals(listOf(5L), plan.messagesToNotify.map { it.id })
+        assertEquals(5L, plan.nextLastSeenMessageId)
     }
 
     @Test

@@ -161,6 +161,31 @@ class ChatMessageFiltersTest {
     }
 
     @Test
+    fun `hides routine scheduler telemetry but keeps scheduler warnings`() {
+        val success = chatMessage(
+            content = "Векторный индекс: +8, обновлено 1",
+            metadata = mapOf(
+                "entity_type" to "scheduler_task",
+                "event_type" to "scheduler_success",
+                "status" to "success",
+            ),
+        )
+        val warning = chatMessage(
+            content = "Предобработка задач требует уточнения",
+            metadata = mapOf(
+                "extra" to mapOf(
+                    "entity_type" to "scheduler_task",
+                    "event_type" to "scheduler_warning",
+                    "status" to "warning",
+                ),
+            ),
+        )
+
+        assertFalse(success.isDisplayableChatMessage())
+        assertTrue(warning.isDisplayableChatMessage())
+    }
+
+    @Test
     fun `reads synchronized tombstone ids and hides its control message`() {
         val tombstone = chatMessage(
             content = "Обновление истории чата",

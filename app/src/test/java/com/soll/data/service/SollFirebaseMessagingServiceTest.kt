@@ -14,12 +14,34 @@ class SollFirebaseMessagingServiceTest {
         val data = mapOf(
             "event_id" to "event-42",
             "message_id" to "message-7",
+            "route" to "tasks/board",
         )
         val eventId = fcmEventId(data)
 
         assertEquals("event-42", eventId)
         assertEquals("fcm:event:event-42", fcmNotificationDedupeKey(eventId, "message-7"))
         assertEquals("fcm:message-7", fcmNotificationDedupeKey(null, "message-7"))
+    }
+
+    @Test
+    fun `chat push and poll use the same message dedupe identity`() {
+        val data = mapOf(
+            "event_id" to "event-42",
+            "message_id" to "7",
+            "session_id" to "soll-main",
+            "route" to "chat",
+        )
+        val route = classifyFcmNotification(data)
+
+        assertEquals(
+            "chat:soll-main:7",
+            resolveFcmNotificationDedupeKey(
+                route = route,
+                data = data,
+                eventId = fcmEventId(data),
+                fallbackMessageKey = "event-42",
+            ),
+        )
     }
 
     @Test

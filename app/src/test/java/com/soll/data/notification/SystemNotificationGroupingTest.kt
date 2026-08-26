@@ -1,11 +1,21 @@
 package com.soll.data.notification
 
+import com.soll.data.repository.shouldPostSystemGroupSummary
 import com.soll.domain.notification.SollNotificationChannel
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class SystemNotificationGroupingTest {
+    @Test
+    fun `chat uses one system notification while noisy channels keep summaries`() {
+        assertFalse(shouldPostSystemGroupSummary(SollNotificationChannel.CHAT))
+        assertTrue(shouldPostSystemGroupSummary(SollNotificationChannel.ALERTS))
+        assertTrue(shouldPostSystemGroupSummary(SollNotificationChannel.TOOL_JOBS))
+    }
+
     @Test
     fun `notification groups are stable per channel`() {
         assertEquals("soll.group.soll_chat", systemNotificationGroupKey(SollNotificationChannel.CHAT))

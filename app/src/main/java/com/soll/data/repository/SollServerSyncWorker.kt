@@ -27,6 +27,7 @@ import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollGateway
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoard
+import com.soll.domain.soll.isRoutineSchedulerTelemetry
 import com.soll.presentation.navigation.AppLaunchTargets
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -370,6 +371,7 @@ internal fun chatNotificationDedupeKey(sessionId: String, messageId: Long): Stri
     "chat:${sessionId.ifBlank { "soll-main" }}:$messageId"
 
 private fun SollChatMessage.isSilentForSystemNotification(): Boolean {
+    if (isRoutineSchedulerTelemetry()) return true
     if (metadata.booleanValue("silent") || metadata.booleanValue("android_silent")) return true
     val policy = metadata.mapValue("notification_policy")
     if (policy.booleanValue("silent") || policy.stringValue("decision") in setOf("silent", "suppress")) {

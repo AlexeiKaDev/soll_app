@@ -10,6 +10,7 @@ import com.soll.domain.soll.SollChatActionPolicyRegistry
 import com.soll.domain.soll.SollChatMessage
 import com.soll.domain.soll.SollChatTurnResult
 import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.isRoutineSchedulerTelemetry
 import com.soll.domain.tts.AssistantVoicePlaybackPhase
 import com.soll.domain.tts.AssistantVoicePlaybackState
 import com.soll.domain.tts.AssistantVoicePlayer
@@ -1078,7 +1079,10 @@ internal fun SollChatMessage.matchesChatQuery(query: String): Boolean {
 }
 
 internal fun SollChatMessage.isDisplayableChatMessage(): Boolean =
-    !content.looksLikePlaceholderNoise() && !isServerStubMessage() && !isSupersededMessage()
+    !content.looksLikePlaceholderNoise() &&
+        !isServerStubMessage() &&
+        !isSupersededMessage() &&
+        !isRoutineSchedulerTelemetry()
 
 internal fun SollChatMessage.replyToMessageId(): Long? =
     when (val value = metadata["reply_to_message_id"]) {

@@ -259,6 +259,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
             val text = partialResults.bestText().orEmpty()
             if (holdUntilStop) {
                 manualTranscript.updatePartial(text)
+                if (text.isBlank()) return
             }
             _state.value = _state.value.copy(partialText = text)
         }

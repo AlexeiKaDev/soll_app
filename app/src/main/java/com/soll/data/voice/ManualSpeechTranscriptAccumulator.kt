@@ -10,7 +10,10 @@ internal class ManualSpeechTranscriptAccumulator {
     }
 
     fun updatePartial(text: String?) {
-        pendingPartial = text.normalizedSpeechText()
+        val partial = text.normalizedSpeechText()
+        if (partial.isNotBlank()) {
+            pendingPartial = partial
+        }
     }
 
     fun commitResult(text: String?) {

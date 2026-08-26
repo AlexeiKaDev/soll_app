@@ -9,6 +9,7 @@ class ManualSpeechTranscriptAccumulatorTest {
         val transcript = ManualSpeechTranscriptAccumulator()
 
         transcript.updatePartial("  финальный   голосовой тест Soll работает  ")
+        transcript.updatePartial("")
         transcript.commitResult(null)
 
         assertEquals("финальный голосовой тест Soll работает", transcript.text())

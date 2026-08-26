@@ -22,6 +22,7 @@ import com.soll.domain.voice.VoiceActivationPolicy
 import com.soll.domain.voice.VoiceAssistantTurn
 import com.soll.domain.voice.VoiceCommandSession
 import com.soll.domain.voice.VoiceCommandSessionStatus
+import com.soll.domain.voice.resolveSttTerminal
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -193,9 +194,16 @@ class VoiceViewModel @Inject constructor(
     private fun observeStt() {
         viewModelScope.launch {
             sttAdapter.state.collect { stt ->
+                val terminal = resolveSttTerminal(
+                    previousPartial = _uiState.value.partialText,
+                    finalText = stt.finalText,
+                    errorMessage = stt.errorMessage,
+                    isListening = stt.isListening,
+                )
                 _uiState.update {
                     val nextSession = if (
                         stt.errorMessage != null &&
+                        !terminal.suppressError &&
                         it.session?.status == VoiceCommandSessionStatus.LISTENING
                     ) {
                         it.session.failed(stt.errorMessage)
@@ -206,9 +214,9 @@ class VoiceViewModel @Inject constructor(
                     it.copy(
                         isAvailable = stt.isAvailable,
                         isListening = stt.isListening,
-                        partialText = stt.partialText,
+                        partialText = if (terminal.text != null) "" else stt.partialText,
                         session = nextSession,
-                        errorMessage = stt.errorMessage,
+                        errorMessage = if (terminal.suppressError) null else stt.errorMessage,
                         preferOffline = stt.preferOffline,
                         onDeviceSttAvailable = stt.isOnDeviceRecognitionAvailable,
                         activeSttMode = stt.activeMode,
@@ -222,8 +230,8 @@ class VoiceViewModel @Inject constructor(
                     )
                 }
 
-                stt.finalText?.let { text ->
-                    sttAdapter.clearFinalResult()
+                terminal.text?.let { text ->
+                    if (stt.finalText != null) sttAdapter.clearFinalResult()
                     handleRecognizedText(text)
                 }
             }

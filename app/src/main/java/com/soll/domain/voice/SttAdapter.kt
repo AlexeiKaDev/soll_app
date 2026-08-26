@@ -31,4 +31,38 @@ interface SttAdapter {
     fun destroy()
 }
 
+data class ResolvedSttTerminal(
+    val text: String? = null,
+    val suppressError: Boolean = false,
+)
+
+fun resolveSttTerminal(
+    previousPartial: String,
+    finalText: String?,
+    errorMessage: String?,
+    isListening: Boolean,
+): ResolvedSttTerminal {
+    val cleanFinal = finalText.normalizedSttText()
+    if (cleanFinal.isNotBlank()) {
+        return ResolvedSttTerminal(text = cleanFinal, suppressError = true)
+    }
+    if (isListening || errorMessage !in RECOVERABLE_EMPTY_RESULT_MESSAGES) {
+        return ResolvedSttTerminal()
+    }
+    val cleanPartial = previousPartial.normalizedSttText()
+    return if (cleanPartial.isNotBlank()) {
+        ResolvedSttTerminal(text = cleanPartial, suppressError = true)
+    } else {
+        ResolvedSttTerminal()
+    }
+}
+
 const val MAX_PTT_DURATION_MS = 30_000L
+
+private val RECOVERABLE_EMPTY_RESULT_MESSAGES = setOf(
+    "Речь не распознана",
+    "Речь не услышана",
+)
+
+private fun String?.normalizedSttText(): String =
+    this?.trim()?.replace(Regex("\\s+"), " ").orEmpty()

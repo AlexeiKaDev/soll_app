@@ -31,7 +31,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private var cancelRequested: Boolean = false
     private var lastPreferOffline: Boolean = false
     private var manualFinalEmitted: Boolean = false
-    private val manualSegments = mutableListOf<String>()
+    private val manualTranscript = ManualSpeechTranscriptAccumulator()
     private val speechAudioRouter = BluetoothSpeechAudioRouter(context)
 
     private val _state = MutableStateFlow(currentAvailability())
@@ -55,7 +55,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         this.cancelRequested = false
         this.lastPreferOffline = preferOffline
         this.manualFinalEmitted = false
-        manualSegments.clear()
+        manualTranscript.reset()
         speechAudioRouter.prepareBluetoothInput()
         startRecognizer(preferOffline = preferOffline, resetText = true)
         handler.postDelayed(
@@ -125,7 +125,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         stopRequested = false
         holdUntilStop = false
         manualFinalEmitted = true
-        manualSegments.clear()
+        manualTranscript.reset()
         recognizer?.cancel()
         speechAudioRouter.release()
         _state.value = _state.value.copy(
@@ -200,6 +200,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
 
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
+            if (manualFinalEmitted) return
             _state.value = _state.value.copy(isListening = true, errorMessage = null)
         }
 
@@ -216,8 +217,9 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
 
         override fun onError(error: Int) {
-            if (cancelRequested) return
+            if (cancelRequested || manualFinalEmitted) return
             if (holdUntilStop && !stopRequested && error.isManualRetryable()) {
+                manualTranscript.commitPendingPartial()
                 restartManualRecognition()
                 return
             }
@@ -231,10 +233,10 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
 
         override fun onResults(results: Bundle?) {
-            if (cancelRequested) return
+            if (cancelRequested || manualFinalEmitted) return
             val text = results.bestText()
             if (holdUntilStop) {
-                rememberManualSegment(text)
+                manualTranscript.commitResult(text)
                 if (stopRequested) {
                     speechAudioRouter.release()
                     emitManualFinalIfNeeded(fallbackError = if (text.isNullOrBlank()) "Речь не распознана" else null)
@@ -253,8 +255,12 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
-            if (cancelRequested) return
-            _state.value = _state.value.copy(partialText = partialResults.bestText().orEmpty())
+            if (cancelRequested || manualFinalEmitted) return
+            val text = partialResults.bestText().orEmpty()
+            if (holdUntilStop) {
+                manualTranscript.updatePartial(text)
+            }
+            _state.value = _state.value.copy(partialText = text)
         }
 
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
@@ -279,22 +285,15 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         )
     }
 
-    private fun rememberManualSegment(text: String?) {
-        val clean = text?.trim()?.replace(Regex("\\s+"), " ").orEmpty()
-        if (clean.isBlank()) return
-        if (manualSegments.lastOrNull() != clean) {
-            manualSegments += clean
-        }
-    }
-
     private fun emitManualFinalIfNeeded(fallbackError: String?) {
         if (!holdUntilStop || manualFinalEmitted) return
         manualFinalEmitted = true
         speechAudioRouter.release()
-        val finalText = manualSegments.joinToString(" ").trim().takeIf { it.isNotBlank() }
+        manualTranscript.commitPendingPartial()
+        val finalText = manualTranscript.text()
         holdUntilStop = false
         stopRequested = false
-        manualSegments.clear()
+        manualTranscript.reset()
         _state.value = _state.value.copy(
             isListening = false,
             partialText = "",

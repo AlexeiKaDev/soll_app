@@ -1,6 +1,7 @@
 package com.soll.presentation.screens.chat
 
 import com.soll.domain.soll.isSollVoiceWav
+import com.soll.domain.voice.resolveSttTerminal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -29,6 +30,32 @@ class ChatVoiceInputTest {
             "оставить как есть",
             appendDictatedChatText("оставить как есть", "   "),
         )
+    }
+
+    @Test
+    fun `recovers visible partial when recognizer ends with no match`() {
+        val terminal = resolveSttTerminal(
+            previousPartial = "  финальный   голосовой тест  ",
+            finalText = null,
+            errorMessage = "Речь не распознана",
+            isListening = false,
+        )
+
+        assertEquals("финальный голосовой тест", terminal.text)
+        assertTrue(terminal.suppressError)
+    }
+
+    @Test
+    fun `keeps real no speech error when no partial was visible`() {
+        val terminal = resolveSttTerminal(
+            previousPartial = "",
+            finalText = null,
+            errorMessage = "Речь не услышана",
+            isListening = false,
+        )
+
+        assertEquals(null, terminal.text)
+        assertFalse(terminal.suppressError)
     }
 
     @Test

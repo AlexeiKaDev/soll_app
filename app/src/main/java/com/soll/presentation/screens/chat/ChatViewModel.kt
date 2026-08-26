@@ -14,6 +14,7 @@ import com.soll.domain.tts.AssistantVoicePlaybackPhase
 import com.soll.domain.tts.AssistantVoicePlaybackState
 import com.soll.domain.tts.AssistantVoicePlayer
 import com.soll.domain.tts.TextToSpeechManager
+import com.soll.domain.voice.resolveSttTerminal
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -675,17 +676,23 @@ class ChatViewModel @Inject constructor(
     private fun observeVoiceInput() {
         viewModelScope.launch {
             sttAdapter.state.collect { stt ->
+                val terminal = resolveSttTerminal(
+                    previousPartial = _uiState.value.voicePartialText,
+                    finalText = stt.finalText,
+                    errorMessage = stt.errorMessage,
+                    isListening = stt.isListening,
+                )
                 _uiState.update {
                     it.copy(
                         isVoiceAvailable = stt.isAvailable,
                         isVoiceListening = stt.isListening,
-                        voicePartialText = stt.partialText,
-                        voiceError = stt.errorMessage,
+                        voicePartialText = if (terminal.text != null) "" else stt.partialText,
+                        voiceError = if (terminal.suppressError) null else stt.errorMessage,
                     )
                 }
 
-                stt.finalText?.let { text ->
-                    sttAdapter.clearFinalResult()
+                terminal.text?.let { text ->
+                    if (stt.finalText != null) sttAdapter.clearFinalResult()
                     _uiState.update {
                         val updatedInput = appendDictatedChatText(it.input, text)
                         turnIntentStore.invalidateIfContentChanged(updatedInput)

@@ -145,6 +145,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     override fun destroy() {
         handler.removeCallbacksAndMessages(null)
         cancelRequested = true
+        recognizer?.setRecognitionListener(null)
         recognizer?.destroy()
         recognizer = null
         speechAudioRouter.release()
@@ -167,6 +168,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         val current = recognizer
         if (current != null && activeMode == mode) return current
 
+        recognizer?.setRecognitionListener(null)
         recognizer?.destroy()
         activeMode = mode
         return createRecognizer(mode).also {

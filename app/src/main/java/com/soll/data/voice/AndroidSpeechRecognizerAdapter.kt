@@ -15,9 +15,16 @@ import com.soll.domain.voice.SttRecognitionMode
 import com.soll.domain.voice.MAX_PTT_DURATION_MS
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class AndroidSpeechRecognizerAdapter @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -26,6 +33,9 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private var recognizer: SpeechRecognizer? = null
     private var activeMode: SttRecognitionMode = SttRecognitionMode.SYSTEM
     private val handler = Handler(Looper.getMainLooper())
+    private val recognizerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var manualRestartJob: Job? = null
+    private var stopGraceJob: Job? = null
     private var holdUntilStop: Boolean = false
     private var stopRequested: Boolean = false
     private var cancelRequested: Boolean = false
@@ -113,7 +123,11 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
         stopRequested = true
         recognizer?.stopListening()
         if (holdUntilStop) {
-            handler.postDelayed({ emitManualFinalIfNeeded(fallbackError = null) }, STOP_RESULT_GRACE_MS)
+            stopGraceJob?.cancel()
+            stopGraceJob = recognizerScope.launch {
+                delay(STOP_RESULT_GRACE_MS)
+                emitManualFinalIfNeeded(fallbackError = null)
+            }
         } else {
             _state.value = _state.value.copy(isListening = false)
         }
@@ -121,6 +135,8 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
 
     override fun cancelListening() {
         handler.removeCallbacks(durationLimit)
+        manualRestartJob?.cancel()
+        stopGraceJob?.cancel()
         cancelRequested = true
         stopRequested = false
         holdUntilStop = false
@@ -144,6 +160,7 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
 
     override fun destroy() {
         handler.removeCallbacksAndMessages(null)
+        recognizerScope.cancel()
         cancelRequested = true
         recognizer?.setRecognitionListener(null)
         recognizer?.destroy()
@@ -278,14 +295,13 @@ class AndroidSpeechRecognizerAdapter @Inject constructor(
     private fun restartManualRecognition() {
         if (!holdUntilStop || stopRequested) return
         _state.value = _state.value.copy(isListening = true, partialText = "", errorMessage = null)
-        handler.postDelayed(
-            {
-                if (holdUntilStop && !stopRequested) {
-                    startRecognizer(preferOffline = lastPreferOffline, resetText = false)
-                }
-            },
-            MANUAL_RESTART_DELAY_MS,
-        )
+        manualRestartJob?.cancel()
+        manualRestartJob = recognizerScope.launch {
+            delay(MANUAL_RESTART_DELAY_MS)
+            if (holdUntilStop && !stopRequested) {
+                startRecognizer(preferOffline = lastPreferOffline, resetText = false)
+            }
+        }
     }
 
     private fun emitManualFinalIfNeeded(fallbackError: String?) {

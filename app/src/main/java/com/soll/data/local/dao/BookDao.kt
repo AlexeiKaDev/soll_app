@@ -10,6 +10,9 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY lastReadAt DESC")
     fun getAllBooks(): Flow<List<BookEntity>>
 
+    @Query("SELECT * FROM books ORDER BY lastReadAt DESC")
+    suspend fun getAllBooksSnapshot(): List<BookEntity>
+
     @Query("SELECT * FROM books ORDER BY lastReadAt DESC LIMIT 1")
     suspend fun getLastReadBook(): BookEntity?
 
@@ -18,6 +21,9 @@ interface BookDao {
 
     @Query("SELECT * FROM books WHERE filePath = :filePath")
     suspend fun getBookByFilePath(filePath: String): BookEntity?
+
+    @Query("SELECT * FROM books WHERE filePath = :filePath")
+    suspend fun getBooksByFilePath(filePath: String): List<BookEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBook(book: BookEntity): Long

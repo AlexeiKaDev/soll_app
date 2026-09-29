@@ -8,6 +8,7 @@ import java.util.Locale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.soll.data.local.entity.BookEntity
+import com.soll.data.local.entity.BookAnnotationEntity
 import com.soll.data.repository.BookRepository
 import com.soll.data.repository.ReaderWidgetBookState
 import com.soll.data.repository.SettingsRepository
@@ -16,6 +17,10 @@ import com.soll.data.service.MusicPlaybackService
 import com.soll.data.service.TtsService
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.reader.ReaderAppearance
+import com.soll.domain.soll.SollGateway
+import com.soll.domain.soll.SollManagedBookNote
+import com.soll.domain.soll.SollManagedBookSummary
 import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.PiperProsodyPreset
@@ -44,9 +49,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.ArrayDeque
+import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import javax.inject.Inject
@@ -58,13 +66,27 @@ data class BookReaderUiState(
     val currentChapter: EpubChapter? = null,
     val currentChapterIndex: Int = 0,
     val currentChapterPosition: Int = 0,
+    /** One-shot scroll target: set on explicit navigation (open book, chapter jump, bookmark tap), consumed once the reader scrolls there. */
+    val pendingJumpOffset: Int? = null,
     val isLoading: Boolean = false,
+    val isServerSyncing: Boolean = false,
+    val serverBookCount: Int = 0,
+    val managedBookId: String? = null,
+    val serverPositionUpdatedAt: String? = null,
+    val managedBookNotes: List<SollManagedBookNote> = emptyList(),
+    val isNotesLoading: Boolean = false,
+    val managedBookSummary: SollManagedBookSummary? = null,
+    val annotations: List<BookAnnotationEntity> = emptyList(),
+    val selectionAnalysis: String? = null,
+    val isSelectionAnalysisLoading: Boolean = false,
+    val isSummaryLoading: Boolean = false,
     val isTtsPlaying: Boolean = false,
     val ttsState: TtsState = TtsState.Idle,
     val error: String? = null,
     val speechRate: Float = 1.0f,
     val autoAdvanceEnabled: Boolean = true,
     val highlightRange: IntRange? = null,
+    val readerAppearance: ReaderAppearance = ReaderAppearance(),
     // Системные TTS-движки Android
     val availableEngines: List<TextToSpeech.EngineInfo> = emptyList(),
     val selectedEngine: String? = null,
@@ -127,6 +149,7 @@ class BookReaderViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val onnxModelPackManager: OnnxModelPackManager,
     private val ttsPackLibrary: TtsPackLibrary,
+    private val sollGateway: SollGateway,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookReaderUiState())
@@ -143,6 +166,8 @@ class BookReaderViewModel @Inject constructor(
     private var lastProgressChapterIndex: Int = -1
     private var lastProgressPosition: Int = -1
     private var lastProgressSavedAtMs: Long = 0L
+    private val managedPositionMutex = Mutex()
+    private val managedPositionRevisions = mutableMapOf<String, String>()
 
     init {
         loadBooks()
@@ -152,6 +177,7 @@ class BookReaderViewModel @Inject constructor(
         observeServiceActions()
         observePackDownloads()
         observeEngineDiagnostics()
+        syncManagedLibrary(reportErrors = false)
     }
 
     private fun loadBooks() {
@@ -236,6 +262,7 @@ class BookReaderViewModel @Inject constructor(
                     autoAdvanceEnabled = settingsRepository.ttsAutoAdvance,
                     selectedEngine = settingsRepository.ttsEngine,
                     speechRate = settingsRepository.ttsSpeechRate,
+                    readerAppearance = settingsRepository.readerAppearance,
                     engineType = engineType,
                     sileroModelDownloaded = ttsManager.isModelDownloaded(),
                     sileroVoiceId = resolvePiperVoiceId(detectedPacks, piperPackId) ?: sileroVoice,
@@ -272,6 +299,12 @@ class BookReaderViewModel @Inject constructor(
             }
             initTts()
         }
+    }
+
+    fun setReaderAppearance(appearance: ReaderAppearance) {
+        val normalized = appearance.normalized()
+        settingsRepository.readerAppearance = normalized
+        _uiState.update { it.copy(readerAppearance = normalized) }
     }
 
     private fun ensureS200BookReaderBootstrap() {
@@ -497,6 +530,7 @@ class BookReaderViewModel @Inject constructor(
                 onSuccess = { book ->
                     _uiState.update { it.copy(isLoading = false) }
                     _events.emit(BookReaderEvent.BookImported(book.title))
+                    syncManagedLibrary()
                 },
                 onFailure = { error ->
                     _uiState.update { it.copy(isLoading = false, error = error.message) }
@@ -511,9 +545,24 @@ class BookReaderViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             val epubBook = bookRepository.parseBook(bookEntity)
             if (epubBook != null && epubBook.chapters.isNotEmpty()) {
-                val chapterIndex = bookEntity.currentChapter.coerceIn(0, epubBook.chapters.size - 1)
+                val managedId = bookRepository.managedBookId(bookEntity)
+                val serverPosition = managedId?.let {
+                    sollGateway.getManagedBookPosition(it).getOrNull()
+                }
+                val serverNotes = managedId?.let {
+                    sollGateway.getManagedBookNotes(it).getOrNull()
+                }.orEmpty()
+                if (managedId != null && serverPosition?.updatedAt?.isNotBlank() == true) {
+                    managedPositionMutex.withLock {
+                        managedPositionRevisions[managedId] = serverPosition.updatedAt
+                    }
+                }
+                val chapterIndex = (serverPosition?.chapterIndex ?: bookEntity.currentChapter)
+                    .coerceIn(0, epubBook.chapters.size - 1)
                 val chapter = epubBook.chapters.getOrNull(chapterIndex)
-                val savedPosition = bookEntity.currentPosition
+                val savedPosition = if (serverPosition != null) {
+                    ((chapter?.content?.length ?: 0) * serverPosition.fraction).roundToInt()
+                } else bookEntity.currentPosition
                     .coerceIn(0, chapter?.content?.length ?: 0)
                 _uiState.update {
                     it.copy(
@@ -522,13 +571,119 @@ class BookReaderViewModel @Inject constructor(
                         currentBookEntity = bookEntity,
                         currentChapter = chapter,
                         currentChapterIndex = chapterIndex,
-                        currentChapterPosition = savedPosition
+                        currentChapterPosition = savedPosition,
+                        pendingJumpOffset = savedPosition,
+                        managedBookId = managedId,
+                        serverPositionUpdatedAt = serverPosition?.updatedAt,
+                        managedBookNotes = serverNotes,
+                        annotations = bookRepository.getAnnotations(bookEntity.id),
                     )
                 }
                 saveProgress()
             } else {
                 _uiState.update { it.copy(isLoading = false, error = "Не удалось разобрать книгу") }
                 _events.emit(BookReaderEvent.ShowError("Не удалось разобрать книгу"))
+            }
+        }
+    }
+
+    fun syncManagedLibrary() = syncManagedLibrary(reportErrors = true)
+
+    private fun syncManagedLibrary(reportErrors: Boolean) {
+        if (_uiState.value.isServerSyncing) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isServerSyncing = true, error = null) }
+            val syncFailures = mutableListOf<String>()
+            try {
+            bookRepository.reconcileManagedDuplicates()
+            var uploaded = 0
+            val localBooks = bookRepository.getAllBooksSnapshot()
+            for (local in localBooks) {
+                if (bookRepository.managedBookId(local) != null) continue
+                val bytesResult = bookRepository.readBookBytes(local)
+                val bytes = bytesResult.getOrNull()
+                if (bytes == null) {
+                    syncFailures += "${local.title}: ${bytesResult.exceptionOrNull()?.message ?: "ошибка чтения"}"
+                    Timber.w(bytesResult.exceptionOrNull(), "Managed book sync read failed: %s", local.title)
+                    if (reportErrors) _events.emit(BookReaderEvent.ShowError(
+                        syncFailures.last()
+                    ))
+                    continue
+                }
+                val safeTitle = local.title.replace(Regex("[^\\p{L}\\p{N}._ -]+"), "_")
+                    .trim().take(120).ifBlank { "book" }
+                val uploadResult = sollGateway.uploadManagedBook("$safeTitle.epub", bytes)
+                val remote = uploadResult.getOrNull()
+                if (remote == null) {
+                    syncFailures += "${local.title}: ${uploadResult.exceptionOrNull()?.message ?: "ошибка отправки"}"
+                    Timber.w(uploadResult.exceptionOrNull(), "Managed book sync upload failed: %s", local.title)
+                    if (reportErrors) _events.emit(BookReaderEvent.ShowError(
+                        syncFailures.last()
+                    ))
+                    continue
+                }
+                bookRepository.adoptManagedIdentity(local, remote)
+                    .onSuccess { uploaded += 1 }
+                    .onFailure { error ->
+                        syncFailures += "${local.title}: ${error.message ?: "ошибка синхронизации"}"
+                        Timber.w(error, "Managed book sync adoption failed: %s", local.title)
+                        if (reportErrors) _events.emit(BookReaderEvent.ShowError(
+                            syncFailures.last()
+                        ))
+                    }
+            }
+            val catalog = sollGateway.getManagedBookLibrary().getOrElse { error ->
+                Timber.e(error, "Managed book sync catalog request failed")
+                val message = error.message ?: "Не удалось получить библиотеку Soll"
+                _uiState.update { it.copy(error = if (reportErrors) message else it.error) }
+                if (reportErrors) {
+                    _events.emit(BookReaderEvent.ShowError(message))
+                }
+                return@launch
+            }
+            var imported = 0
+            for (remote in catalog) {
+                if (bookRepository.hasManagedBook(remote.id)) continue
+                val downloadResult = sollGateway.downloadManagedBook(remote.id)
+                val download = downloadResult.getOrNull()
+                if (download == null) {
+                    val error = downloadResult.exceptionOrNull()
+                    syncFailures += "${remote.title}: ${error?.message ?: "ошибка скачивания"}"
+                    Timber.w(error, "Managed book sync download failed: %s", remote.title)
+                    if (reportErrors) {
+                        _events.emit(BookReaderEvent.ShowError(syncFailures.last()))
+                    }
+                    continue
+                }
+                bookRepository.importManagedBook(remote, download.bytes).onSuccess { imported += 1 }
+                    .onFailure { error ->
+                        syncFailures += "${remote.title}: ${error.message ?: "ошибка импорта"}"
+                        Timber.w(error, "Managed book sync import failed: %s", remote.title)
+                        if (reportErrors) {
+                            _events.emit(BookReaderEvent.ShowError(syncFailures.last()))
+                        }
+                    }
+            }
+            bookRepository.reconcileManagedDuplicates()
+            _uiState.update {
+                it.copy(
+                    isServerSyncing = false,
+                    serverBookCount = catalog.size,
+                    error = syncFailures.takeIf { failures -> failures.isNotEmpty() }
+                        ?.take(3)?.joinToString(prefix = "Не синхронизированы: ", separator = "; "),
+                )
+            }
+            if (uploaded > 0 || imported > 0) {
+                _events.emit(BookReaderEvent.BookImported("в Soll: $uploaded, из Soll: $imported"))
+            }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                Timber.e(error, "Managed book sync crashed")
+                val message = "Синхронизация книг прервана: ${error.message ?: error.javaClass.simpleName}"
+                _uiState.update { it.copy(error = message) }
+                if (reportErrors) _events.emit(BookReaderEvent.ShowError(message))
+            } finally {
+                _uiState.update { it.copy(isServerSyncing = false) }
             }
         }
     }
@@ -542,7 +697,14 @@ class BookReaderViewModel @Inject constructor(
                 currentBookEntity = null,
                 currentChapter = null,
                 currentChapterIndex = 0,
-                currentChapterPosition = 0
+                currentChapterPosition = 0,
+                managedBookId = null,
+                serverPositionUpdatedAt = null,
+                managedBookNotes = emptyList(),
+                isNotesLoading = false,
+                managedBookSummary = null,
+                isSummaryLoading = false,
+                annotations = emptyList(),
             )
         }
     }
@@ -555,10 +717,238 @@ class BookReaderViewModel @Inject constructor(
             it.copy(
                 currentChapter = book.chapters[index],
                 currentChapterIndex = index,
-                currentChapterPosition = 0
+                currentChapterPosition = 0,
+                pendingJumpOffset = 0,
             )
         }
         saveProgress()
+    }
+
+    fun goToAnnotation(chapterIndex: Int, offset: Int) {
+        val book = _uiState.value.currentBook ?: return
+        val chapter = book.chapters.getOrNull(chapterIndex) ?: return
+        stopTts()
+        val target = offset.coerceIn(0, chapter.content.length)
+        _uiState.update {
+            it.copy(
+                currentChapter = chapter,
+                currentChapterIndex = chapterIndex,
+                currentChapterPosition = target,
+                pendingJumpOffset = target,
+            )
+        }
+    }
+
+    /** Called once the reader has scrolled to [BookReaderUiState.pendingJumpOffset]. */
+    fun consumePendingJump() {
+        _uiState.update { it.copy(pendingJumpOffset = null) }
+    }
+
+    fun saveSelectionAnnotation(
+        kind: String,
+        startOffset: Int,
+        endOffset: Int,
+        selectedText: String,
+        color: String = "yellow",
+        noteText: String = "",
+    ) {
+        val state = _uiState.value
+        val book = state.currentBookEntity ?: return
+        val start = minOf(startOffset, endOffset).coerceAtLeast(0)
+        val end = maxOf(startOffset, endOffset).coerceAtLeast(start)
+        if (kind != "bookmark" && selectedText.isBlank()) return
+        viewModelScope.launch {
+            val annotation = BookAnnotationEntity(
+                id = UUID.randomUUID().toString(),
+                bookId = book.id,
+                kind = kind,
+                chapterIndex = state.currentChapterIndex,
+                startOffset = start,
+                endOffset = end,
+                selectedText = selectedText,
+                noteText = noteText.trim(),
+                color = color,
+            )
+            bookRepository.saveAnnotation(annotation)
+            _uiState.update { it.copy(annotations = bookRepository.getAnnotations(book.id)) }
+            if (kind == "note" && state.managedBookId != null) {
+                sollGateway.createManagedBookNote(
+                    bookId = state.managedBookId,
+                    text = noteText.trim().ifBlank { selectedText.take(500) },
+                    chapterIndex = state.currentChapterIndex,
+                    selectedText = selectedText,
+                    locator = "text-offset:v1:${state.currentChapterIndex}:$start:$end",
+                ).onSuccess { note ->
+                    _uiState.update { current ->
+                        current.copy(managedBookNotes = (current.managedBookNotes + note).distinctBy { it.id })
+                    }
+                }
+            }
+        }
+    }
+
+    fun removeSelectionAnnotations(startOffset: Int, endOffset: Int) {
+        val state = _uiState.value
+        val book = state.currentBookEntity ?: return
+        val start = minOf(startOffset, endOffset)
+        val end = maxOf(startOffset, endOffset)
+        viewModelScope.launch {
+            state.annotations.filter {
+                it.chapterIndex == state.currentChapterIndex &&
+                    it.endOffset > start && it.startOffset < end
+            }.forEach { bookRepository.deleteAnnotation(it) }
+            _uiState.update { it.copy(annotations = bookRepository.getAnnotations(book.id)) }
+        }
+    }
+
+    fun analyzeSelection(mode: String, selectedText: String) {
+        val state = _uiState.value
+        val managedId = state.managedBookId
+        if (managedId == null) {
+            viewModelScope.launch { _events.emit(BookReaderEvent.ShowError("AI доступен после синхронизации книги с Soll")) }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSelectionAnalysisLoading = true, selectionAnalysis = null) }
+            sollGateway.analyzeManagedBookText(
+                managedId, state.currentChapterIndex, mode, selectedText, "Russian",
+            ).fold(
+                onSuccess = { result ->
+                    _uiState.update { it.copy(isSelectionAnalysisLoading = false, selectionAnalysis = result.answer) }
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isSelectionAnalysisLoading = false) }
+                    _events.emit(BookReaderEvent.ShowError(error.message ?: "Не удалось обработать фрагмент"))
+                },
+            )
+        }
+    }
+
+    fun clearSelectionAnalysis() {
+        _uiState.update { it.copy(selectionAnalysis = null) }
+    }
+
+    fun refreshManagedBookNotes() {
+        val bookId = _uiState.value.managedBookId ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isNotesLoading = true) }
+            sollGateway.getManagedBookNotes(bookId).fold(
+                onSuccess = { notes ->
+                    _uiState.update { state ->
+                        if (state.managedBookId == bookId) {
+                            state.copy(managedBookNotes = notes, isNotesLoading = false)
+                        } else state.copy(isNotesLoading = false)
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isNotesLoading = false) }
+                    _events.emit(BookReaderEvent.ShowError(error.message ?: "Не удалось загрузить заметки"))
+                },
+            )
+        }
+    }
+
+    fun createManagedBookNote(text: String) {
+        val state = _uiState.value
+        val bookId = state.managedBookId ?: return
+        val cleanText = text.trim()
+        if (cleanText.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isNotesLoading = true) }
+            sollGateway.createManagedBookNote(
+                bookId = bookId,
+                text = cleanText,
+                chapterIndex = state.currentChapterIndex,
+            ).fold(
+                onSuccess = { note ->
+                    _uiState.update { current ->
+                        if (current.managedBookId != bookId) current.copy(isNotesLoading = false) else current.copy(
+                            managedBookNotes = (current.managedBookNotes + note)
+                                .distinctBy { it.id }.sortedByDescending { it.updatedAt },
+                            isNotesLoading = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isNotesLoading = false) }
+                    _events.emit(BookReaderEvent.ShowError(error.message ?: "Не удалось сохранить заметку"))
+                },
+            )
+        }
+    }
+
+    fun updateManagedBookNote(noteId: String, text: String) {
+        val state = _uiState.value
+        val bookId = state.managedBookId ?: return
+        val old = state.managedBookNotes.firstOrNull { it.id == noteId } ?: return
+        val cleanText = text.trim()
+        if (cleanText.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isNotesLoading = true) }
+            sollGateway.updateManagedBookNote(
+                bookId = bookId,
+                noteId = noteId,
+                text = cleanText,
+                chapterIndex = old.chapterIndex,
+                selectedText = old.selectedText,
+                locator = old.locator,
+            ).fold(
+                onSuccess = { updated ->
+                    _uiState.update { current ->
+                        if (current.managedBookId != bookId) current.copy(isNotesLoading = false)
+                        else current.copy(
+                            managedBookNotes = current.managedBookNotes.map {
+                                if (it.id == updated.id) updated else it
+                            }.sortedByDescending { it.updatedAt },
+                            isNotesLoading = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isNotesLoading = false) }
+                    _events.emit(BookReaderEvent.ShowError(error.message ?: "Не удалось изменить заметку"))
+                },
+            )
+        }
+    }
+
+    fun deleteManagedBookNote(noteId: String) {
+        val bookId = _uiState.value.managedBookId ?: return
+        viewModelScope.launch {
+            sollGateway.deleteManagedBookNote(bookId, noteId).fold(
+                onSuccess = { deleted ->
+                    if (deleted) _uiState.update { state ->
+                        state.copy(managedBookNotes = state.managedBookNotes.filterNot { it.id == noteId })
+                    }
+                },
+                onFailure = { error ->
+                    _events.emit(BookReaderEvent.ShowError(error.message ?: "Не удалось удалить заметку"))
+                },
+            )
+        }
+    }
+
+    fun createManagedBookSummary(force: Boolean = false) {
+        val bookId = _uiState.value.managedBookId ?: return
+        if (_uiState.value.isSummaryLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSummaryLoading = true) }
+            sollGateway.createManagedBookSummary(bookId, force).fold(
+                onSuccess = { summary ->
+                    _uiState.update { state ->
+                        if (state.managedBookId == bookId) {
+                            state.copy(managedBookSummary = summary, isSummaryLoading = false)
+                        } else state.copy(isSummaryLoading = false)
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isSummaryLoading = false) }
+                    _events.emit(BookReaderEvent.ShowError(
+                        error.message ?: "Не удалось составить резюме всей книги"
+                    ))
+                },
+            )
+        }
     }
 
     private fun goToChapterAndPlay(index: Int) {
@@ -569,7 +959,8 @@ class BookReaderViewModel @Inject constructor(
             it.copy(
                 currentChapter = book.chapters[index],
                 currentChapterIndex = index,
-                currentChapterPosition = 0
+                currentChapterPosition = 0,
+                pendingJumpOffset = 0,
             )
         }
         saveProgress()
@@ -1379,6 +1770,30 @@ class BookReaderViewModel @Inject constructor(
             )
             ReaderWidgetStateStore.write(appContext, snapshot.toWidgetState())
             ReaderWidgetProvider.updateAll(appContext)
+            val managedId = snapshot.managedBookId
+            if (managedId != null) managedPositionMutex.withLock {
+                val fraction = if (snapshot.chapterContent.isEmpty()) 0.0
+                    else snapshot.position.toDouble() / snapshot.chapterContent.length.toDouble()
+                val expectedRevision = managedPositionRevisions[managedId]
+                    ?: snapshot.serverPositionUpdatedAt
+                sollGateway.saveManagedBookPosition(
+                    bookId = managedId,
+                    chapterIndex = snapshot.chapterIndex,
+                    fraction = fraction.coerceIn(0.0, 1.0),
+                    expectedUpdatedAt = expectedRevision,
+                ).onSuccess { saved ->
+                    managedPositionRevisions[managedId] = saved.updatedAt
+                    _uiState.update { state ->
+                        if (state.managedBookId == managedId) {
+                            state.copy(serverPositionUpdatedAt = saved.updatedAt)
+                        } else state
+                    }
+                }.onFailure { error ->
+                    _events.emit(BookReaderEvent.ShowError(
+                        error.message ?: "Позиция книги изменилась на другом устройстве"
+                    ))
+                }
+            }
         }
     }
 
@@ -1397,6 +1812,8 @@ class BookReaderViewModel @Inject constructor(
             chapterTitle = chapter.title,
             chapterContent = chapter.content,
             position = position,
+            managedBookId = state.managedBookId,
+            serverPositionUpdatedAt = state.serverPositionUpdatedAt,
         )
     }
 
@@ -1436,6 +1853,7 @@ class BookReaderViewModel @Inject constructor(
                 currentChapterIndex = 0,
                 currentChapter = book.chapters.firstOrNull(),
                 currentChapterPosition = 0,
+                pendingJumpOffset = 0,
                 highlightRange = null
             )
         }
@@ -1614,6 +2032,8 @@ class BookReaderViewModel @Inject constructor(
         val chapterTitle: String,
         val chapterContent: String,
         val position: Int,
+        val managedBookId: String?,
+        val serverPositionUpdatedAt: String?,
     )
 
     private data class TtsCatalogSnapshot(

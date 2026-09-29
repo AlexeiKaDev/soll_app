@@ -551,6 +551,58 @@ data class SollBookStatus(
     val session: SollBookSession,
 )
 
+data class SollManagedBook(
+    val id: String,
+    val title: String,
+    val author: String,
+    val language: String,
+    val sizeBytes: Long,
+    val sha256: String,
+)
+
+data class SollManagedBookDownload(
+    val bookId: String,
+    val bytes: ByteArray,
+)
+
+data class SollManagedBookPosition(
+    val bookId: String,
+    val chapterIndex: Int,
+    val fraction: Double,
+    val locator: String,
+    val updatedAt: String,
+)
+
+data class SollManagedBookNote(
+    val id: String,
+    val bookId: String,
+    val text: String,
+    val chapterIndex: Int?,
+    val selectedText: String,
+    val locator: String,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+data class SollManagedBookSummary(
+    val bookId: String,
+    val bookSha256: String,
+    val summary: String,
+    val answerVerification: String,
+    val chapterCount: Int,
+    val characterCount: Int,
+    val segmentCount: Int,
+    val createdAt: String,
+    val cache: String,
+)
+
+data class SollManagedBookAnalysis(
+    val answer: String,
+    val answerVerification: String,
+    val evidenceSha256: String,
+    val evidenceExcerpt: String,
+)
+
 data class SollBookSession(
     val active: Boolean,
     val query: String?,
@@ -818,6 +870,45 @@ interface SollGateway {
     suspend fun checkSource(sourceId: String): Result<Boolean>
     suspend fun createTaskFromSourceItem(sourceId: String, itemId: String): Result<SollTask?>
     suspend fun getBookStatus(): Result<SollBookStatus>
+    suspend fun getManagedBookLibrary(): Result<List<SollManagedBook>>
+    suspend fun uploadManagedBook(filename: String, bytes: ByteArray): Result<SollManagedBook>
+    suspend fun downloadManagedBook(bookId: String): Result<SollManagedBookDownload>
+    suspend fun getManagedBookPosition(bookId: String): Result<SollManagedBookPosition?>
+    suspend fun saveManagedBookPosition(
+        bookId: String,
+        chapterIndex: Int,
+        fraction: Double,
+        expectedUpdatedAt: String?,
+    ): Result<SollManagedBookPosition>
+    suspend fun getManagedBookNotes(bookId: String): Result<List<SollManagedBookNote>>
+    suspend fun createManagedBookNote(
+        bookId: String,
+        text: String,
+        chapterIndex: Int?,
+        selectedText: String = "",
+        locator: String = "",
+    ): Result<SollManagedBookNote>
+    suspend fun updateManagedBookNote(
+        bookId: String,
+        noteId: String,
+        text: String,
+        chapterIndex: Int?,
+        selectedText: String = "",
+        locator: String = "",
+    ): Result<SollManagedBookNote>
+    suspend fun deleteManagedBookNote(bookId: String, noteId: String): Result<Boolean>
+    suspend fun analyzeManagedBookText(
+        bookId: String,
+        chapterIndex: Int,
+        mode: String,
+        selectedText: String,
+        targetLanguage: String = "Russian",
+    ): Result<SollManagedBookAnalysis>
+    suspend fun getManagedBookSummary(bookId: String): Result<SollManagedBookSummary>
+    suspend fun createManagedBookSummary(
+        bookId: String,
+        force: Boolean = false,
+    ): Result<SollManagedBookSummary>
     suspend fun getCurrentBookResults(): Result<SollBookCurrentResults>
     suspend fun selectBook(number: Int): Result<SollBookSelection>
     suspend fun downloadBook(format: String): Result<SollBookDownload>

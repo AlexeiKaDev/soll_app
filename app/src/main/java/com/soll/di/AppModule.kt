@@ -14,6 +14,7 @@ import com.soll.data.local.dao.AppNotificationDao
 import com.soll.data.local.dao.AssistantEventDao
 import com.soll.data.local.dao.AssistantMemoryDao
 import com.soll.data.local.dao.BookDao
+import com.soll.data.local.dao.BookAnnotationDao
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.dao.BreathingSessionDao
 import com.soll.data.local.dao.CommandLogDao
@@ -702,6 +703,33 @@ object AppModule {
         }
     }
 
+    internal val migration25To26 = object : Migration(25, 26) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `book_annotations` (
+                    `id` TEXT NOT NULL,
+                    `bookId` INTEGER NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `chapterIndex` INTEGER NOT NULL,
+                    `startOffset` INTEGER NOT NULL,
+                    `endOffset` INTEGER NOT NULL,
+                    `selectedText` TEXT NOT NULL,
+                    `noteText` TEXT NOT NULL,
+                    `color` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_book_annotations_bookId_chapterIndex_startOffset` " +
+                    "ON `book_annotations` (`bookId`, `chapterIndex`, `startOffset`)"
+            )
+        }
+    }
+
     private const val ENCRYPTED_PREFS_NAME = "soll_secure_prefs"
 
     private fun createCoreTables(db: SupportSQLiteDatabase) {
@@ -877,6 +905,7 @@ object AppModule {
                 migration22To23,
                 migration23To24,
                 migration24To25,
+                migration25To26,
             )
             .build()
 
@@ -967,6 +996,11 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideBookAnnotationDao(database: SollDatabase): BookAnnotationDao =
+        database.bookAnnotationDao()
+
+    @Provides
+    @Singleton
     fun provideBreathingSessionDao(database: SollDatabase): BreathingSessionDao =
         database.breathingSessionDao()
 
@@ -1048,6 +1082,7 @@ object AppModule {
     @Singleton
     fun provideBookRepository(
         @ApplicationContext context: Context,
-        bookDao: BookDao
-    ): BookRepository = BookRepository(context, bookDao)
+        bookDao: BookDao,
+        bookAnnotationDao: BookAnnotationDao,
+    ): BookRepository = BookRepository(context, bookDao, bookAnnotationDao)
 }

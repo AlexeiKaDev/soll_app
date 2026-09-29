@@ -16,6 +16,10 @@ import com.soll.domain.music.MusicRepeatMode
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.music.MusicSettings
 import com.soll.domain.notes.NoteSettings
+import com.soll.domain.reader.ReaderAppearance
+import com.soll.domain.reader.ReaderFontFamily
+import com.soll.domain.reader.ReaderTextAlignment
+import com.soll.domain.reader.ReaderTheme
 import com.soll.domain.scanner.ScannerDuplicatePolicy
 import com.soll.domain.scanner.ScannerSettings
 import com.soll.domain.soll.SollPairingPayload
@@ -64,6 +68,14 @@ class SettingsRepository @Inject constructor(
         private const val KEY_TTS_CHATTERBOX_PACK_ID = "tts_chatterbox_pack_id"
         private const val KEY_TTS_BOOK_PERF_PROFILE = "tts_book_perf_profile"
         private const val KEY_BOOK_READER_S200_BOOTSTRAP = "book_reader_s200_bootstrap_done"
+        private const val KEY_READER_THEME = "reader_theme"
+        private const val KEY_READER_FONT_SIZE = "reader_font_size"
+        private const val KEY_READER_LINE_SPACING = "reader_line_spacing"
+        private const val KEY_READER_HORIZONTAL_MARGIN = "reader_horizontal_margin"
+        private const val KEY_READER_SCREEN_BRIGHTNESS = "reader_screen_brightness"
+        private const val KEY_READER_FONT_FAMILY = "reader_font_family"
+        private const val KEY_READER_CARLSBERG_DEFAULT_MIGRATED = "reader_carlsberg_default_migrated"
+        private const val KEY_READER_TEXT_ALIGNMENT = "reader_text_alignment"
         private const val KEY_TTS_SYSTEM_PITCH = "tts_system_pitch"
         private const val KEY_TTS_ONNX_MODEL_ID = "tts_onnx_model_id"
         private const val KEY_TTS_ONNX_PRECISION = "tts_onnx_precision"
@@ -137,7 +149,22 @@ class SettingsRepository @Inject constructor(
 
     init {
         migrateDefaultThemeVariant()
+        migrateReaderFontToCarlsbergDefault()
         seedRecommendedSollEndpoint()
+    }
+
+    /** Replaces the former serif default once while preserving every other explicit choice. */
+    private fun migrateReaderFontToCarlsbergDefault() {
+        if (sharedPreferences.getBoolean(KEY_READER_CARLSBERG_DEFAULT_MIGRATED, false)) return
+        val current = sharedPreferences.getString(KEY_READER_FONT_FAMILY, null)
+        sharedPreferences.edit()
+            .apply {
+                if (current == null || current == ReaderFontFamily.SERIF.storageKey) {
+                    putString(KEY_READER_FONT_FAMILY, ReaderFontFamily.CARLSBERG.storageKey)
+                }
+            }
+            .putBoolean(KEY_READER_CARLSBERG_DEFAULT_MIGRATED, true)
+            .apply()
     }
 
     private val _appThemeVariantFlow = MutableStateFlow(readAppThemeVariant())
@@ -154,6 +181,30 @@ class SettingsRepository @Inject constructor(
     var activityTrackerEnabled: Boolean
         get() = sharedPreferences.getBoolean(KEY_ACTIVITY_TRACKER_ENABLED, false)
         set(value) = sharedPreferences.edit().putBoolean(KEY_ACTIVITY_TRACKER_ENABLED, value).apply()
+
+    var readerAppearance: ReaderAppearance
+        get() = ReaderAppearance(
+            theme = ReaderTheme.fromStorage(sharedPreferences.getString(KEY_READER_THEME, null)),
+            fontSizeSp = sharedPreferences.getFloat(KEY_READER_FONT_SIZE, 19f),
+            lineSpacingMultiplier = sharedPreferences.getFloat(KEY_READER_LINE_SPACING, 1.5f),
+            horizontalMarginDp = sharedPreferences.getFloat(KEY_READER_HORIZONTAL_MARGIN, 18f),
+            screenBrightness = sharedPreferences.getFloat(KEY_READER_SCREEN_BRIGHTNESS, -1f)
+                .takeIf { it >= 0f },
+            fontFamily = ReaderFontFamily.fromStorage(sharedPreferences.getString(KEY_READER_FONT_FAMILY, null)),
+            textAlignment = ReaderTextAlignment.fromStorage(sharedPreferences.getString(KEY_READER_TEXT_ALIGNMENT, null)),
+        ).normalized()
+        set(value) {
+            val normalized = value.normalized()
+            sharedPreferences.edit()
+                .putString(KEY_READER_THEME, normalized.theme.storageKey)
+                .putFloat(KEY_READER_FONT_SIZE, normalized.fontSizeSp)
+                .putFloat(KEY_READER_LINE_SPACING, normalized.lineSpacingMultiplier)
+                .putFloat(KEY_READER_HORIZONTAL_MARGIN, normalized.horizontalMarginDp)
+                .putFloat(KEY_READER_SCREEN_BRIGHTNESS, normalized.screenBrightness ?: -1f)
+                .putString(KEY_READER_FONT_FAMILY, normalized.fontFamily.storageKey)
+                .putString(KEY_READER_TEXT_ALIGNMENT, normalized.textAlignment.storageKey)
+                .apply()
+        }
 
 
     // Bot Token (encrypted storage)

@@ -387,6 +387,85 @@ interface SollApiService {
         @Header("Authorization") authorization: String? = null,
     ): SollBookStatusResponse
 
+    @GET("api/v1/books/library")
+    suspend fun getManagedBookLibrary(
+        @Header("Authorization") authorization: String? = null,
+    ): ManagedBookLibraryResponse
+
+    @Multipart
+    @POST("api/v1/books/library/import")
+    suspend fun uploadManagedBook(
+        @Header("Authorization") authorization: String? = null,
+        @Part file: MultipartBody.Part,
+    ): ManagedBookImportResponse
+
+    @GET("api/v1/books/library/{book_id}/file")
+    suspend fun downloadManagedBook(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+    ): ResponseBody
+
+    @GET("api/v1/books/library/{book_id}/position")
+    suspend fun getManagedBookPosition(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+    ): ManagedBookPositionEnvelope
+
+    @PUT("api/v1/books/library/{book_id}/position")
+    suspend fun saveManagedBookPosition(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+        @Body request: ManagedBookPositionRequest,
+    ): ManagedBookPositionEnvelope
+
+    @GET("api/v1/books/library/{book_id}/notes")
+    suspend fun getManagedBookNotes(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+    ): ManagedBookNotesEnvelope
+
+    @POST("api/v1/books/library/{book_id}/notes")
+    suspend fun createManagedBookNote(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+        @Body request: ManagedBookNoteRequest,
+    ): ManagedBookNoteEnvelope
+
+    @PUT("api/v1/books/library/{book_id}/notes/{note_id}")
+    suspend fun updateManagedBookNote(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+        @Path("note_id") noteId: String,
+        @Body request: ManagedBookNoteRequest,
+    ): ManagedBookNoteEnvelope
+
+    @DELETE("api/v1/books/library/{book_id}/notes/{note_id}")
+    suspend fun deleteManagedBookNote(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+        @Path("note_id") noteId: String,
+    ): Response<Unit>
+
+    @POST("api/v1/books/library/{book_id}/analysis")
+    suspend fun analyzeManagedBookText(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+        @Body request: ManagedBookAnalysisRequest,
+    ): ManagedBookAnalysisResponse
+
+    @GET("api/v1/books/library/{book_id}/summary")
+    suspend fun getManagedBookSummary(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+    ): ManagedBookSummaryResponse
+
+    @POST("api/v1/books/library/{book_id}/summary")
+    suspend fun createManagedBookSummary(
+        @Header("Authorization") authorization: String? = null,
+        @Path("book_id") bookId: String,
+        @Body request: ManagedBookSummaryRequest = ManagedBookSummaryRequest(),
+    ): ManagedBookSummaryResponse
+
     @POST("api/v1/books/select")
     suspend fun selectBook(
         @Header("Authorization") authorization: String? = null,
@@ -1512,6 +1591,111 @@ data class RawUploadResponse(
 
 data class BookSelectRequest(
     val number: Int,
+)
+
+data class ManagedBookLibraryResponse(
+    val books: List<ManagedBookResponse> = emptyList(),
+)
+
+data class ManagedBookImportResponse(
+    val book: ManagedBookResponse? = null,
+    val created: Boolean = false,
+)
+
+data class ManagedBookResponse(
+    val id: String = "",
+    val title: String = "",
+    val author: String = "",
+    val language: String = "",
+    @Json(name = "has_cover") val hasCover: Boolean = false,
+    @Json(name = "size_bytes") val sizeBytes: Long = 0,
+    val sha256: String = "",
+)
+
+data class ManagedBookPositionEnvelope(
+    val position: ManagedBookPositionResponse? = null,
+)
+
+data class ManagedBookPositionResponse(
+    @Json(name = "book_id") val bookId: String = "",
+    @Json(name = "chapter_index") val chapterIndex: Int = 0,
+    val fraction: Double = 0.0,
+    val locator: String = "",
+    @Json(name = "updated_at") val updatedAt: String = "",
+)
+
+data class ManagedBookPositionRequest(
+    @Json(name = "chapter_index") val chapterIndex: Int,
+    val fraction: Double,
+    val locator: String = "",
+    @Json(name = "expected_updated_at") val expectedUpdatedAt: String? = null,
+)
+
+data class ManagedBookNotesEnvelope(
+    val notes: List<ManagedBookNoteResponse> = emptyList(),
+)
+
+data class ManagedBookNoteEnvelope(
+    val note: ManagedBookNoteResponse? = null,
+)
+
+data class ManagedBookNoteResponse(
+    val id: String = "",
+    @Json(name = "book_id") val bookId: String = "",
+    val text: String = "",
+    @Json(name = "chapter_index") val chapterIndex: Int? = null,
+    @Json(name = "selected_text") val selectedText: String = "",
+    val locator: String = "",
+    @Json(name = "created_at") val createdAt: String = "",
+    @Json(name = "updated_at") val updatedAt: String = "",
+)
+
+data class ManagedBookNoteRequest(
+    val text: String,
+    @Json(name = "chapter_index") val chapterIndex: Int? = null,
+    @Json(name = "selected_text") val selectedText: String = "",
+    val locator: String = "",
+)
+
+data class ManagedBookSummaryRequest(
+    val force: Boolean = false,
+)
+
+data class ManagedBookAnalysisRequest(
+    @Json(name = "chapter_index") val chapterIndex: Int,
+    val mode: String,
+    @Json(name = "selected_text") val selectedText: String,
+    val question: String = "",
+    @Json(name = "target_language") val targetLanguage: String = "Russian",
+)
+
+data class ManagedBookAnalysisEvidence(
+    val scope: String = "",
+    val sha256: String = "",
+    val excerpt: String = "",
+    @Json(name = "character_count") val characterCount: Int = 0,
+)
+
+data class ManagedBookAnalysisResponse(
+    val status: String = "",
+    val completed: Boolean = false,
+    val answer: String? = null,
+    @Json(name = "answer_verification") val answerVerification: String = "",
+    val evidence: ManagedBookAnalysisEvidence = ManagedBookAnalysisEvidence(),
+)
+
+data class ManagedBookSummaryResponse(
+    val status: String = "",
+    val completed: Boolean = false,
+    @Json(name = "book_id") val bookId: String = "",
+    @Json(name = "book_sha256") val bookSha256: String = "",
+    val summary: String? = null,
+    @Json(name = "answer_verification") val answerVerification: String = "",
+    @Json(name = "chapter_count") val chapterCount: Int = 0,
+    @Json(name = "character_count") val characterCount: Int = 0,
+    @Json(name = "segment_count") val segmentCount: Int = 0,
+    @Json(name = "created_at") val createdAt: String = "",
+    val cache: String = "",
 )
 
 data class BookDownloadRequest(

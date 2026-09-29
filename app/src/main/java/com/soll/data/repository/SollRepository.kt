@@ -34,6 +34,15 @@ import com.soll.data.api.BookResultResponse
 import com.soll.data.api.BookSelectRequest
 import com.soll.data.api.BookSelectResponse
 import com.soll.data.api.BookStatusSessionResponse
+import com.soll.data.api.ManagedBookResponse
+import com.soll.data.api.ManagedBookPositionRequest
+import com.soll.data.api.ManagedBookPositionResponse
+import com.soll.data.api.ManagedBookNoteRequest
+import com.soll.data.api.ManagedBookNoteResponse
+import com.soll.data.api.ManagedBookSummaryRequest
+import com.soll.data.api.ManagedBookAnalysisRequest
+import com.soll.data.api.ManagedBookAnalysisResponse
+import com.soll.data.api.ManagedBookSummaryResponse
 import com.soll.data.api.ChatActionExecuteRequest
 import com.soll.data.api.ChatActionExecuteResponse
 import com.soll.data.api.ChatMessageResponse
@@ -144,6 +153,12 @@ import com.soll.domain.soll.SollBookResult
 import com.soll.domain.soll.SollBookSelection
 import com.soll.domain.soll.SollBookSession
 import com.soll.domain.soll.SollBookStatus
+import com.soll.domain.soll.SollManagedBook
+import com.soll.domain.soll.SollManagedBookDownload
+import com.soll.domain.soll.SollManagedBookPosition
+import com.soll.domain.soll.SollManagedBookNote
+import com.soll.domain.soll.SollManagedBookSummary
+import com.soll.domain.soll.SollManagedBookAnalysis
 import com.soll.domain.soll.SollBriefing
 import com.soll.domain.soll.SollCalendarEvent
 import com.soll.domain.soll.SollCalendarSnapshot
@@ -208,6 +223,8 @@ import java.util.TimeZone
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
@@ -216,11 +233,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import okio.source
 import retrofit2.HttpException
@@ -237,6 +256,7 @@ class SollRepository @Inject constructor(
     private val moshi: Moshi,
     private val taskGraphCacheDao: TaskGraphCacheDao,
 ) : SollGateway {
+    private val deviceTokenRefreshMutex = Mutex()
     private val androidSyncStatusJsonAdapter by lazy {
         moshi.adapter(AndroidSyncStatusResponse::class.java)
     }
@@ -670,9 +690,11 @@ class SollRepository @Inject constructor(
         }
 
     override suspend fun refreshDeviceToken(): Result<SollDeviceToken> = runSuspendCatching {
-        val authorization = deviceAuthorizationHeader()
-        require(authorization != null) { "Device bearer не настроен" }
-        service().refreshDeviceToken(authorization).toDomain()
+        deviceTokenRefreshMutex.withLock {
+            val authorization = deviceAuthorizationHeader()
+            require(authorization != null) { "Device bearer не настроен" }
+            service().refreshDeviceToken(authorization).toDomain().also(::persistDeviceToken)
+        }
     }
 
     override suspend fun registerAndroidPushToken(
@@ -1120,6 +1142,166 @@ class SollRepository @Inject constructor(
         service().getBookStatus(authorizationHeader()).toDomain()
     }
 
+    override suspend fun getManagedBookLibrary(): Result<List<SollManagedBook>> = runSuspendCatching {
+        withBookAuthorizationRetry { authorization ->
+            service().getManagedBookLibrary(authorization)
+        }.books.map { it.toDomain() }
+    }
+
+    override suspend fun uploadManagedBook(filename: String, bytes: ByteArray): Result<SollManagedBook> =
+        runSuspendCatching {
+            require(bytes.isNotEmpty() && bytes.size.toLong() <= MAX_MANAGED_EPUB_BYTES) {
+                "Размер EPUB вне допустимого диапазона"
+            }
+            val cleanFilename = filename.substringAfterLast('/').substringAfterLast('\\')
+                .takeIf { it.endsWith(".epub", ignoreCase = true) }
+                ?: "book.epub"
+            val requestBody = bytes.toRequestBody("application/epub+zip".toMediaType())
+            val part = MultipartBody.Part.createFormData("file", cleanFilename, requestBody)
+            withBookAuthorizationRetry { authorization ->
+                service().uploadManagedBook(authorization, part)
+            }.book?.toDomain()
+                ?: error("Сервер не вернул импортированную книгу")
+        }
+
+    override suspend fun downloadManagedBook(bookId: String): Result<SollManagedBookDownload> = runSuspendCatching {
+        val cleanId = bookId.trim().lowercase()
+        require(cleanId.matches(Regex("[0-9a-f]{32}"))) { "Некорректный ID книги" }
+        val body = withBookAuthorizationRetry { authorization ->
+            service().downloadManagedBook(authorization, cleanId)
+        }
+        val length = body.contentLength()
+        require(length == -1L || length in 1..MAX_MANAGED_EPUB_BYTES) {
+            "Размер EPUB вне допустимого диапазона"
+        }
+        val bytes = body.bytes()
+        require(bytes.isNotEmpty() && bytes.size.toLong() <= MAX_MANAGED_EPUB_BYTES) {
+            "Размер EPUB вне допустимого диапазона"
+        }
+        SollManagedBookDownload(cleanId, bytes)
+    }
+
+    override suspend fun getManagedBookPosition(bookId: String): Result<SollManagedBookPosition?> =
+        runSuspendCatching {
+            val cleanId = bookId.trim().lowercase()
+            require(cleanId.matches(Regex("[0-9a-f]{32}"))) { "Некорректный ID книги" }
+            withBookAuthorizationRetry { authorization ->
+                service().getManagedBookPosition(authorization, cleanId)
+            }.position?.toDomain()
+        }
+
+    override suspend fun saveManagedBookPosition(
+        bookId: String,
+        chapterIndex: Int,
+        fraction: Double,
+        expectedUpdatedAt: String?,
+    ): Result<SollManagedBookPosition> = runSuspendCatching {
+        val cleanId = bookId.trim().lowercase()
+        require(cleanId.matches(Regex("[0-9a-f]{32}"))) { "Некорректный ID книги" }
+        require(chapterIndex >= 0) { "Некорректный номер главы" }
+        require(fraction in 0.0..1.0) { "Некорректная позиция чтения" }
+        withBookAuthorizationRetry { authorization ->
+            service().saveManagedBookPosition(
+                authorization = authorization,
+                bookId = cleanId,
+                request = ManagedBookPositionRequest(
+                    chapterIndex = chapterIndex,
+                    fraction = fraction,
+                    expectedUpdatedAt = expectedUpdatedAt,
+                ),
+            )
+        }.position?.toDomain() ?: error("Сервер не вернул позицию чтения")
+    }
+
+    override suspend fun getManagedBookNotes(bookId: String): Result<List<SollManagedBookNote>> =
+        runSuspendCatching {
+            val cleanId = validatedManagedBookId(bookId)
+            withBookAuthorizationRetry { authorization ->
+                service().getManagedBookNotes(authorization, cleanId)
+            }.notes.map { it.toDomain() }
+        }
+
+    override suspend fun createManagedBookNote(
+        bookId: String,
+        text: String,
+        chapterIndex: Int?,
+        selectedText: String,
+        locator: String,
+    ): Result<SollManagedBookNote> = runSuspendCatching {
+        val cleanId = validatedManagedBookId(bookId)
+        val request = validatedManagedBookNote(text, chapterIndex, selectedText, locator)
+        withBookAuthorizationRetry { authorization ->
+            service().createManagedBookNote(authorization, cleanId, request)
+        }
+            .note?.toDomain() ?: error("Сервер не вернул заметку")
+    }
+
+    override suspend fun updateManagedBookNote(
+        bookId: String,
+        noteId: String,
+        text: String,
+        chapterIndex: Int?,
+        selectedText: String,
+        locator: String,
+    ): Result<SollManagedBookNote> = runSuspendCatching {
+        val cleanId = validatedManagedBookId(bookId)
+        val cleanNoteId = noteId.trim().lowercase()
+        require(cleanNoteId.matches(Regex("[0-9a-f]{32}"))) { "Некорректный ID заметки" }
+        val request = validatedManagedBookNote(text, chapterIndex, selectedText, locator)
+        withBookAuthorizationRetry { authorization ->
+            service().updateManagedBookNote(authorization, cleanId, cleanNoteId, request)
+        }
+            .note?.toDomain() ?: error("Сервер не вернул заметку")
+    }
+
+    override suspend fun deleteManagedBookNote(bookId: String, noteId: String): Result<Boolean> =
+        runSuspendCatching {
+            val cleanId = validatedManagedBookId(bookId)
+            val cleanNoteId = noteId.trim().lowercase()
+            require(cleanNoteId.matches(Regex("[0-9a-f]{32}"))) { "Некорректный ID заметки" }
+            withBookResponseAuthorizationRetry { authorization ->
+                service().deleteManagedBookNote(authorization, cleanId, cleanNoteId)
+            }.isSuccessful
+        }
+
+    override suspend fun analyzeManagedBookText(
+        bookId: String,
+        chapterIndex: Int,
+        mode: String,
+        selectedText: String,
+        targetLanguage: String,
+    ): Result<SollManagedBookAnalysis> = runSuspendCatching {
+        require(mode in setOf("explain", "summarize", "translate")) { "Неизвестный режим анализа" }
+        require(selectedText.isNotBlank() && selectedText.length <= 20_000) { "Выберите текст до 20 000 символов" }
+        val response = withBookAuthorizationRetry { authorization ->
+            service().analyzeManagedBookText(
+                authorization,
+                validatedManagedBookId(bookId),
+                ManagedBookAnalysisRequest(chapterIndex, mode, selectedText, targetLanguage = targetLanguage),
+            )
+        }
+        require(response.completed && !response.answer.isNullOrBlank()) { "Модель не вернула результат" }
+        response.toDomain()
+    }
+
+    override suspend fun getManagedBookSummary(bookId: String): Result<SollManagedBookSummary> =
+        runSuspendCatching {
+            withBookAuthorizationRetry { authorization ->
+                service().getManagedBookSummary(authorization, validatedManagedBookId(bookId))
+            }.toDomain()
+        }
+
+    override suspend fun createManagedBookSummary(
+        bookId: String,
+        force: Boolean,
+    ): Result<SollManagedBookSummary> = runSuspendCatching {
+        withBookAuthorizationRetry { authorization ->
+            service().createManagedBookSummary(
+                authorization, validatedManagedBookId(bookId), ManagedBookSummaryRequest(force),
+            )
+        }.toDomain()
+    }
+
     override suspend fun getCurrentBookResults(): Result<SollBookCurrentResults> = runSuspendCatching {
         service().getCurrentBookResults(authorizationHeader()).toDomain()
     }
@@ -1461,16 +1643,16 @@ class SollRepository @Inject constructor(
         return ensureDeviceAuthorizationHeader() ?: authorizationHeader()
     }
 
-    private suspend fun ensureDeviceAuthorizationHeader(): String? {
+    private suspend fun ensureDeviceAuthorizationHeader(): String? = deviceTokenRefreshMutex.withLock {
         val current = deviceAuthorizationHeader()
         if (current != null && !deviceTokenNeedsRefresh()) {
-            return current
+            return@withLock current
         }
 
         val deviceId = settingsRepository.sollDeviceId.trim()
         val pairingSecret = settingsRepository.sollDevicePairingSecret.trim()
         if (deviceId.isBlank() || pairingSecret.isBlank()) {
-            return current
+            return@withLock current
         }
 
         val refreshed = if (current != null && settingsRepository.sollDeviceTokenExpiresAt.isNotBlank()) {
@@ -1490,7 +1672,50 @@ class SollRepository @Inject constructor(
             }
         }
 
-        return deviceAuthorizationHeader()
+        deviceAuthorizationHeader()
+    }
+
+    private suspend fun refreshDeviceAuthorizationAfterUnauthorized(failedAuthorization: String?): String? =
+        deviceTokenRefreshMutex.withLock {
+            val current = deviceAuthorizationHeader()
+            if (current != null && current != failedAuthorization) return@withLock current
+
+            val deviceId = settingsRepository.sollDeviceId.trim()
+            val pairingSecret = settingsRepository.sollDevicePairingSecret.trim()
+            if (deviceId.isBlank() || pairingSecret.isBlank()) return@withLock authorizationHeader()
+
+            val refreshed = current?.let { authorization ->
+                runSuspendCatching {
+                    val response = service().refreshDeviceToken(authorization)
+                    persistDeviceToken(response.toDomain())
+                    true
+                }.getOrDefault(false)
+            } ?: false
+            if (!refreshed) {
+                issueDeviceToken(deviceId, pairingSecret).getOrNull()?.let(::persistDeviceToken)
+            }
+            deviceAuthorizationHeader() ?: authorizationHeader()
+        }
+
+    private suspend fun <T> withBookAuthorizationRetry(block: suspend (String?) -> T): T {
+        val authorization = ensureDeviceAuthorizationHeader() ?: authorizationHeader()
+        return try {
+            block(authorization)
+        } catch (error: HttpException) {
+            if (error.code() != 401) throw error
+            Timber.w("Books request received 401 during device-token rotation; retrying once")
+            block(refreshDeviceAuthorizationAfterUnauthorized(authorization))
+        }
+    }
+
+    private suspend fun <T> withBookResponseAuthorizationRetry(
+        block: suspend (String?) -> retrofit2.Response<T>,
+    ): retrofit2.Response<T> {
+        val authorization = ensureDeviceAuthorizationHeader() ?: authorizationHeader()
+        val response = block(authorization)
+        if (response.code() != 401) return response
+        Timber.w("Books request received 401 during device-token rotation; retrying once")
+        return block(refreshDeviceAuthorizationAfterUnauthorized(authorization))
     }
 
     private fun deviceAuthorizationHeader(): String? {
@@ -2005,6 +2230,70 @@ class SollRepository @Inject constructor(
             userbotRunning = userbotRunning,
             session = session.toDomain(),
         )
+
+    private fun ManagedBookResponse.toDomain(): SollManagedBook =
+        SollManagedBook(
+            id = id,
+            title = title,
+            author = author,
+            language = language,
+            sizeBytes = sizeBytes,
+            sha256 = sha256,
+        )
+
+    private fun ManagedBookPositionResponse.toDomain(): SollManagedBookPosition =
+        SollManagedBookPosition(bookId, chapterIndex, fraction, locator, updatedAt)
+
+    private fun ManagedBookNoteResponse.toDomain(): SollManagedBookNote = SollManagedBookNote(
+        id = id,
+        bookId = bookId,
+        text = text,
+        chapterIndex = chapterIndex,
+        selectedText = selectedText,
+        locator = locator,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
+
+    private fun ManagedBookSummaryResponse.toDomain(): SollManagedBookSummary {
+        require(completed && !summary.isNullOrBlank()) { "Сервер не вернул готовое резюме книги" }
+        return SollManagedBookSummary(
+            bookId = bookId,
+            bookSha256 = bookSha256,
+            summary = summary,
+            answerVerification = answerVerification,
+            chapterCount = chapterCount,
+            characterCount = characterCount,
+            segmentCount = segmentCount,
+            createdAt = createdAt,
+            cache = cache,
+        )
+    }
+
+    private fun ManagedBookAnalysisResponse.toDomain() = SollManagedBookAnalysis(
+        answer = answer.orEmpty(),
+        answerVerification = answerVerification,
+        evidenceSha256 = evidence.sha256,
+        evidenceExcerpt = evidence.excerpt,
+    )
+
+    private fun validatedManagedBookId(bookId: String): String = bookId.trim().lowercase().also {
+        require(it.matches(Regex("[0-9a-f]{32}"))) { "Некорректный ID книги" }
+    }
+
+    private fun validatedManagedBookNote(
+        text: String,
+        chapterIndex: Int?,
+        selectedText: String,
+        locator: String,
+    ): ManagedBookNoteRequest {
+        val cleanText = text.trim()
+        require(cleanText.isNotEmpty() && cleanText.length <= 100_000) { "Некорректный текст заметки" }
+        require(chapterIndex == null || chapterIndex >= 0) { "Некорректный номер главы" }
+        require(selectedText.length <= 20_000) { "Выделенный текст слишком длинный" }
+        require(locator.length <= 2_048) { "Позиция заметки слишком длинная" }
+        return ManagedBookNoteRequest(cleanText, chapterIndex, selectedText, locator)
+    }
 
     private fun BookStatusSessionResponse.toDomain(): SollBookSession =
         SollBookSession(
@@ -2577,6 +2866,7 @@ private const val DEVICE_TOKEN_REFRESH_SAFETY_MS = 2 * 60_000L
 private const val SOURCE_TYPE_WEB = "web"
 private const val MAX_CHAT_VOICE_TEXT_CHARS = 1_200
 private const val MAX_CHAT_VOICE_AUDIO_BYTES = 25L * 1024L * 1024L
+private const val MAX_MANAGED_EPUB_BYTES = 200L * 1024L * 1024L
 private val SOURCE_TYPES = setOf(SOURCE_TYPE_WEB, "rss", "telegram_chat")
 
 fun normalizeSollBaseUrl(rawUrl: String): String {

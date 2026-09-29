@@ -6,6 +6,7 @@ import com.soll.data.local.dao.AppNotificationDao
 import com.soll.data.local.dao.AssistantEventDao
 import com.soll.data.local.dao.AssistantMemoryDao
 import com.soll.data.local.dao.BookDao
+import com.soll.data.local.dao.BookAnnotationDao
 import com.soll.data.local.dao.BotConfigDao
 import com.soll.data.local.dao.BreathingSessionDao
 import com.soll.data.local.dao.CommandLogDao
@@ -24,6 +25,7 @@ import com.soll.data.local.entity.AppNotificationEntity
 import com.soll.data.local.entity.AssistantEventEntity
 import com.soll.data.local.entity.AssistantMemoryEntity
 import com.soll.data.local.entity.BookEntity
+import com.soll.data.local.entity.BookAnnotationEntity
 import com.soll.data.local.entity.BreathingSessionEntity
 import com.soll.data.local.entity.BotConfigEntity
 import com.soll.data.local.entity.CommandLogEntity
@@ -57,6 +59,7 @@ import com.soll.data.local.entity.TodaySnapshotEntity
         MessageLogEntity::class,
         CommandLogEntity::class,
         BookEntity::class,
+        BookAnnotationEntity::class,
         BreathingSessionEntity::class,
         AssistantEventEntity::class,
         ToolJobEntity::class,
@@ -84,7 +87,7 @@ import com.soll.data.local.entity.TodaySnapshotEntity
         TaskGraphReachabilityEntity::class,
         TodaySnapshotEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = true,
 )
 abstract class SollDatabase : RoomDatabase() {
@@ -102,6 +105,7 @@ abstract class SollDatabase : RoomDatabase() {
     abstract fun musicDao(): MusicDao
     abstract fun scanDao(): ScanDao
     abstract fun bookDao(): BookDao
+    abstract fun bookAnnotationDao(): BookAnnotationDao
     abstract fun appNotificationDao(): AppNotificationDao
     abstract fun noteDao(): NoteDao
     abstract fun fieldPointDao(): FieldPointDao

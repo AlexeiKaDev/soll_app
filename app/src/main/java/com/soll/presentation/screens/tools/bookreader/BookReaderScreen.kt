@@ -7,13 +7,23 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import android.widget.TextView
+import android.text.SpannableString
+import android.text.style.BackgroundColorSpan
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -27,17 +37,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.content.res.ResourcesCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.soll.data.local.entity.BookEntity
+import com.soll.data.local.entity.BookAnnotationEntity
 import com.soll.domain.epub.EpubBook
 import com.soll.domain.epub.EpubChapter
+import com.soll.domain.reader.ReaderAppearance
+import com.soll.domain.reader.ReaderFontFamily
+import com.soll.domain.reader.ReaderTextAlignment
+import com.soll.domain.reader.ReaderTheme
+import com.soll.ui.theme.CarlsbergSansFamily
+import com.soll.domain.soll.SollManagedBookNote
+import com.soll.domain.soll.SollManagedBookSummary
 import com.soll.domain.tts.NatashaPlaybackDiagnostics
 import com.soll.domain.tts.PiperPlaybackDiagnostics
 import com.soll.domain.tts.PiperProsodyPreset
@@ -153,11 +182,23 @@ fun BookReaderScreen(
             book = currentBook,
             currentChapter = uiState.currentChapter,
             currentChapterIndex = uiState.currentChapterIndex,
+            currentChapterPosition = uiState.currentChapterPosition,
+            pendingJumpOffset = uiState.pendingJumpOffset,
+            onJumpConsumed = viewModel::consumePendingJump,
+            managedBookNotes = uiState.managedBookNotes,
+            managedBookNotesEnabled = uiState.managedBookId != null,
+            isNotesLoading = uiState.isNotesLoading,
+            managedBookSummary = uiState.managedBookSummary,
+            annotations = uiState.annotations,
+            selectionAnalysis = uiState.selectionAnalysis,
+            isSelectionAnalysisLoading = uiState.isSelectionAnalysisLoading,
+            isSummaryLoading = uiState.isSummaryLoading,
             isTtsPlaying = uiState.isTtsPlaying,
             ttsState = uiState.ttsState,
             speechRate = uiState.speechRate,
             autoAdvanceEnabled = uiState.autoAdvanceEnabled,
             highlightRange = uiState.highlightRange,
+            readerAppearance = uiState.readerAppearance,
             availableEngines = uiState.availableEngines.map { it.label to it.name },
             selectedEngine = uiState.selectedEngine,
             engineType = uiState.engineType,
@@ -185,12 +226,14 @@ fun BookReaderScreen(
             piperDiagnostics = uiState.piperDiagnostics,
             onBack = { viewModel.closeBook() },
             onChapterSelect = { viewModel.goToChapter(it) },
+            onGoToAnnotation = viewModel::goToAnnotation,
             onPreviousChapter = { viewModel.previousChapter() },
             onNextChapter = { viewModel.nextChapter() },
             onToggleTts = { viewModel.toggleTts() },
             onStopTts = { viewModel.stopTts() },
             onSpeechRateChange = { viewModel.setSpeechRate(it) },
             onAutoAdvanceChange = { viewModel.setAutoAdvance(it) },
+            onReaderAppearanceChange = viewModel::setReaderAppearance,
             onEngineSelect = { viewModel.selectTtsEngine(it) },
             onEngineTypeChange = { viewModel.setEngineType(it) },
             onEngineVoiceChange = { viewModel.setEngineVoice(it) },
@@ -216,13 +259,25 @@ fun BookReaderScreen(
             onDownloadTtsPack = { viewModel.downloadTtsPack(it) },
             onSelectEnginePack = { viewModel.selectEnginePack(it) },
             onResetProgress = { viewModel.resetCurrentBookProgress() },
+            onRefreshNotes = viewModel::refreshManagedBookNotes,
+            onCreateNote = viewModel::createManagedBookNote,
+            onUpdateNote = viewModel::updateManagedBookNote,
+            onDeleteNote = viewModel::deleteManagedBookNote,
+            onCreateSummary = viewModel::createManagedBookSummary,
+            onSaveSelectionAnnotation = viewModel::saveSelectionAnnotation,
+            onRemoveSelectionAnnotations = viewModel::removeSelectionAnnotations,
+            onAnalyzeSelection = viewModel::analyzeSelection,
+            onClearSelectionAnalysis = viewModel::clearSelectionAnalysis,
         )
     } else {
         BookLibraryScreen(
             books = uiState.books,
             isLoading = uiState.isLoading,
+            isServerSyncing = uiState.isServerSyncing,
+            serverBookCount = uiState.serverBookCount,
             onBack = onBack,
             onImportBook = { filePickerLauncher.launch(arrayOf("application/epub+zip")) },
+            onSyncSoll = viewModel::syncManagedLibrary,
             onOpenBook = { viewModel.openBook(it) },
             onDeleteBook = { viewModel.deleteBook(it) }
         )
@@ -234,8 +289,11 @@ fun BookReaderScreen(
 private fun BookLibraryScreen(
     books: List<BookEntity>,
     isLoading: Boolean,
+    isServerSyncing: Boolean,
+    serverBookCount: Int,
     onBack: () -> Unit,
     onImportBook: () -> Unit,
+    onSyncSoll: () -> Unit,
     onOpenBook: (BookEntity) -> Unit,
     onDeleteBook: (BookEntity) -> Unit
 ) {
@@ -249,6 +307,13 @@ private fun BookLibraryScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onSyncSoll, enabled = !isServerSyncing) {
+                        if (isServerSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = "Синхронизировать с Soll")
+                        }
+                    }
                     IconButton(onClick = onImportBook) {
                         Icon(Icons.Default.Add, contentDescription = "Импорт книги")
                     }
@@ -303,6 +368,13 @@ private fun BookLibraryScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    item {
+                        Text(
+                            text = if (serverBookCount > 0) "В Soll: $serverBookCount" else "Синхронизация с библиотекой Soll доступна сверху",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     items(books.size) { index ->
                         val book = books[index]
                         BookListItem(
@@ -685,11 +757,23 @@ private fun BookReadingScreen(
     book: EpubBook,
     currentChapter: EpubChapter?,
     currentChapterIndex: Int,
+    currentChapterPosition: Int,
+    pendingJumpOffset: Int?,
+    onJumpConsumed: () -> Unit,
+    managedBookNotes: List<SollManagedBookNote>,
+    managedBookNotesEnabled: Boolean,
+    isNotesLoading: Boolean,
+    managedBookSummary: SollManagedBookSummary?,
+    annotations: List<BookAnnotationEntity>,
+    selectionAnalysis: String?,
+    isSelectionAnalysisLoading: Boolean,
+    isSummaryLoading: Boolean,
     isTtsPlaying: Boolean,
     ttsState: TtsState,
     speechRate: Float,
     autoAdvanceEnabled: Boolean,
     highlightRange: IntRange?,
+    readerAppearance: ReaderAppearance,
     availableEngines: List<Pair<String, String>>,
     selectedEngine: String?,
     engineType: TtsEngineType,
@@ -717,12 +801,14 @@ private fun BookReadingScreen(
     piperDiagnostics: PiperPlaybackDiagnostics,
     onBack: () -> Unit,
     onChapterSelect: (Int) -> Unit,
+    onGoToAnnotation: (Int, Int) -> Unit,
     onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onToggleTts: () -> Unit,
     onStopTts: () -> Unit,
     onSpeechRateChange: (Float) -> Unit,
     onAutoAdvanceChange: (Boolean) -> Unit,
+    onReaderAppearanceChange: (ReaderAppearance) -> Unit,
     onEngineSelect: (String) -> Unit,
     onEngineTypeChange: (TtsEngineType) -> Unit,
     onEngineVoiceChange: (String) -> Unit,
@@ -743,21 +829,103 @@ private fun BookReadingScreen(
     onDownloadTtsPack: (String) -> Unit,
     onSelectEnginePack: (String) -> Unit,
     onResetProgress: () -> Unit,
+    onRefreshNotes: () -> Unit,
+    onCreateNote: (String) -> Unit,
+    onUpdateNote: (String, String) -> Unit,
+    onDeleteNote: (String) -> Unit,
+    onCreateSummary: (Boolean) -> Unit,
+    onSaveSelectionAnnotation: (String, Int, Int, String, String, String) -> Unit,
+    onRemoveSelectionAnnotations: (Int, Int) -> Unit,
+    onAnalyzeSelection: (String, String) -> Unit,
+    onClearSelectionAnalysis: () -> Unit,
 ) {
     var showChapterList by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showTtsImportBrowser by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
+    var noteDraft by remember { mutableStateOf("") }
+    var editingNoteId by remember { mutableStateOf<String?>(null) }
+    var showSummary by remember { mutableStateOf(false) }
+    var readerChromeVisible by remember { mutableStateOf(true) }
+    var textSelection by remember { mutableStateOf(TextRange.Zero) }
+    var noteSelection by remember { mutableStateOf<ReaderSelectedText?>(null) }
+    var aiSelection by remember { mutableStateOf<ReaderSelectedText?>(null) }
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val isTtsInitializing = ttsState is TtsState.Initializing
+    val readerPalette = readerAppearance.palette()
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val selectionRange = textSelection.takeIf { !it.collapsed }?.let { selection ->
+        selection.min until selection.max
+    }
+    val selectedText = selectionRange?.let { range ->
+        currentChapter?.content?.substring(
+            range.first.coerceIn(0, currentChapter.content.length),
+            (range.last + 1).coerceIn(0, currentChapter.content.length),
+        ).orEmpty()
+    }.orEmpty()
+    val activity = LocalContext.current as? Activity
+    val originalScreenBrightness = remember(activity) {
+        activity?.window?.attributes?.screenBrightness
+    }
+    val originalSystemBarStyle = remember(activity) {
+        activity?.window?.let { window ->
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            ReaderSystemBarStyle(
+                statusBarColor = window.statusBarColor,
+                navigationBarColor = window.navigationBarColor,
+                lightStatusIcons = controller.isAppearanceLightStatusBars,
+                lightNavigationIcons = controller.isAppearanceLightNavigationBars,
+            )
+        }
+    }
+
+    LaunchedEffect(activity, readerAppearance.screenBrightness) {
+        activity?.window?.let { window ->
+            val attributes = window.attributes
+            attributes.screenBrightness = readerAppearance.screenBrightness
+                ?: android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window.attributes = attributes
+        }
+    }
+    SideEffect {
+        activity?.window?.let { window ->
+            val background = readerPalette.background.toArgb()
+            window.statusBarColor = background
+            window.navigationBarColor = background
+            val useDarkIcons = readerPalette.background.luminance() > 0.5f
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                isAppearanceLightStatusBars = useDarkIcons
+                isAppearanceLightNavigationBars = useDarkIcons
+            }
+        }
+    }
+    DisposableEffect(activity) {
+        onDispose {
+            if (activity != null && originalScreenBrightness != null) {
+                val attributes = activity.window.attributes
+                attributes.screenBrightness = originalScreenBrightness
+                activity.window.attributes = attributes
+            }
+            if (activity != null && originalSystemBarStyle != null) {
+                activity.window.statusBarColor = originalSystemBarStyle.statusBarColor
+                activity.window.navigationBarColor = originalSystemBarStyle.navigationBarColor
+                WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                    isAppearanceLightStatusBars = originalSystemBarStyle.lightStatusIcons
+                    isAppearanceLightNavigationBars = originalSystemBarStyle.lightNavigationIcons
+                }
+            }
+        }
+    }
 
     // Track text layout for auto-scroll
-    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var readerTextView by remember { mutableStateOf<ReaderSelectableTextView?>(null) }
 
     // Auto-scroll to highlighted word
     LaunchedEffect(highlightRange) {
         if (highlightRange != null) {
-            val layout = textLayoutResult ?: return@LaunchedEffect
+            val layout = readerTextView?.layout ?: return@LaunchedEffect
             val content = currentChapter?.content?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
             val offset = highlightRange.first.coerceIn(0, content.length - 1)
             try {
@@ -779,9 +947,45 @@ private fun BookReadingScreen(
         }
     }
 
+    // Explicit navigation (open book, chapter jump, bookmark tap) — scroll to the saved/target offset.
+    LaunchedEffect(currentChapter, pendingJumpOffset) {
+        val target = pendingJumpOffset
+        if (target == null) return@LaunchedEffect
+        val content = currentChapter?.content
+        if (content.isNullOrEmpty()) {
+            onJumpConsumed()
+            return@LaunchedEffect
+        }
+        try {
+            // readerTextView's Layout is native (not Compose-observable), so poll a few
+            // frames until it reflects this chapter's text instead of a stale previous one.
+            var layout = readerTextView?.layout
+            var attempts = 0
+            while ((layout == null || layout.text.length != content.length) && attempts < 15) {
+                withFrameNanos {}
+                layout = readerTextView?.layout
+                attempts++
+            }
+            val resolvedLayout = layout
+            if (resolvedLayout != null && resolvedLayout.text.length == content.length) {
+                val offset = target.coerceIn(0, content.length - 1)
+                val line = resolvedLayout.getLineForOffset(offset)
+                val lineTop = resolvedLayout.getLineTop(line).toInt()
+                val targetScroll = (lineTop - with(density) { 200.dp.toPx() }.toInt())
+                    .coerceIn(0, scrollState.maxValue)
+                scrollState.scrollTo(targetScroll)
+            }
+        } catch (_: Exception) {
+            // Ignore layout errors
+        } finally {
+            onJumpConsumed()
+        }
+    }
+
     Scaffold(
+        containerColor = readerPalette.background,
         topBar = {
-            TopAppBar(
+            if (readerChromeVisible) TopAppBar(
                 title = {
                     Column {
                         Text(
@@ -807,19 +1011,68 @@ private fun BookReadingScreen(
                     }
                 },
                 actions = {
+                    if (managedBookNotesEnabled) {
+                        IconButton(onClick = { showSummary = true }) {
+                            Icon(Icons.Default.AutoStories, contentDescription = "Резюме всей книги")
+                        }
+                        IconButton(onClick = {
+                            showNotes = true
+                            onRefreshNotes()
+                        }) {
+                            Icon(Icons.Default.NoteAlt, contentDescription = "Заметки")
+                        }
+                    }
                     IconButton(onClick = { showChapterList = true }) {
                         Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "Главы")
                     }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Настройки")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = readerPalette.background,
+                    titleContentColor = readerPalette.text,
+                    navigationIconContentColor = readerPalette.text,
+                    actionIconContentColor = readerPalette.text,
+                ),
             )
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.background,
-                contentColor = MaterialTheme.colorScheme.onBackground,
+            if (selectionRange != null) {
+                ReaderSelectionBar(
+                    palette = readerPalette,
+                    onCopy = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(selectedText))
+                        Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                        textSelection = TextRange.Zero
+                    },
+                    onShare = {
+                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "“$selectedText”\n\n${book.title} — ${currentChapter?.title.orEmpty()}")
+                        }, "Поделиться цитатой"))
+                    },
+                    onNote = {
+                        noteDraft = ""
+                        noteSelection = ReaderSelectedText(selectionRange.first, selectionRange.last + 1, selectedText)
+                    },
+                    onBookmark = {
+                        onSaveSelectionAnnotation("bookmark", selectionRange.first, selectionRange.last + 1, selectedText, "", "")
+                        textSelection = TextRange.Zero
+                    },
+                    onHighlight = { color ->
+                        onSaveSelectionAnnotation("highlight", selectionRange.first, selectionRange.last + 1, selectedText, color, "")
+                        textSelection = TextRange.Zero
+                    },
+                    onRemove = {
+                        onRemoveSelectionAnnotations(selectionRange.first, selectionRange.last + 1)
+                        textSelection = TextRange.Zero
+                    },
+                    onAi = { aiSelection = ReaderSelectedText(selectionRange.first, selectionRange.last + 1, selectedText) },
+                )
+            } else if (readerChromeVisible) NavigationBar(
+                containerColor = readerPalette.background,
+                contentColor = readerPalette.text,
                 tonalElevation = 0.dp,
             ) {
                 Row(
@@ -874,22 +1127,36 @@ private fun BookReadingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .background(readerPalette.background)
                 .verticalScroll(scrollState)
-                .padding(16.dp)
+                .padding(horizontal = readerAppearance.horizontalMarginDp.dp, vertical = 16.dp)
         ) {
             currentChapter?.let { chapter ->
                 Text(
                     text = chapter.title,
                     style = MaterialTheme.typography.headlineSmall,
+                    color = readerPalette.text,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
                 // Build annotated string with word highlighting
                 val highlightColor = MaterialTheme.colorScheme.primaryContainer
                 val highlightTextColor = MaterialTheme.colorScheme.onPrimaryContainer
-                val annotatedText = remember(chapter.content, highlightRange) {
+                val chapterAnnotations = annotations.filter { it.chapterIndex == currentChapterIndex }
+                val annotatedText = remember(chapter.content, highlightRange, chapterAnnotations) {
                     buildAnnotatedString {
                         append(chapter.content)
+                        chapterAnnotations.filter { it.kind == "highlight" }.forEach { annotation ->
+                            val start = annotation.startOffset.coerceIn(0, chapter.content.length)
+                            val end = annotation.endOffset.coerceIn(start, chapter.content.length)
+                            if (start < end && chapter.content.substring(start, end) == annotation.selectedText) {
+                                addStyle(
+                                    SpanStyle(background = annotationColor(annotation.color)),
+                                    start,
+                                    end,
+                                )
+                            }
+                        }
                         if (highlightRange != null) {
                             val start = highlightRange.first.coerceIn(0, chapter.content.length)
                             val end = highlightRange.last.coerceIn(0, chapter.content.length)
@@ -907,13 +1174,54 @@ private fun BookReadingScreen(
                     }
                 }
 
-                Text(
-                    text = annotatedText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.5,
-                    onTextLayout = { result ->
-                        textLayoutResult = result
-                    }
+                AndroidView(
+                    factory = { viewContext ->
+                        ReaderSelectableTextView(viewContext).also { view ->
+                            readerTextView = view
+                            view.onSelectionRangeChanged = { start, end ->
+                                textSelection = if (start >= 0 && end > start) TextRange(start, end) else TextRange.Zero
+                            }
+                            view.setOnClickListener {
+                                if (view.selectionStart == view.selectionEnd) readerChromeVisible = !readerChromeVisible
+                            }
+                        }
+                    },
+                    update = { view ->
+                        readerTextView = view
+                        view.setTextColor(readerPalette.text.toArgb())
+                        view.textSize = readerAppearance.fontSizeSp
+                        view.setLineSpacing(0f, readerAppearance.lineSpacingMultiplier)
+                        view.typeface = when (readerAppearance.fontFamily) {
+                            ReaderFontFamily.CARLSBERG -> ResourcesCompat.getFont(context, com.soll.R.font.carlsberg_sans_light)
+                            ReaderFontFamily.SERIF -> android.graphics.Typeface.SERIF
+                            ReaderFontFamily.SANS_SERIF -> android.graphics.Typeface.SANS_SERIF
+                            ReaderFontFamily.MONOSPACE -> android.graphics.Typeface.MONOSPACE
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            view.justificationMode = if (readerAppearance.textAlignment == ReaderTextAlignment.JUSTIFY) {
+                                android.text.Layout.JUSTIFICATION_MODE_INTER_WORD
+                            } else android.text.Layout.JUSTIFICATION_MODE_NONE
+                        }
+                        view.textAlignment = when (readerAppearance.textAlignment) {
+                            ReaderTextAlignment.CENTER -> View.TEXT_ALIGNMENT_CENTER
+                            else -> View.TEXT_ALIGNMENT_TEXT_START
+                        }
+                        val key = annotatedText.hashCode()
+                        if (view.tag != key) {
+                            val spannable = SpannableString(chapter.content)
+                            annotatedText.spanStyles.forEach { range ->
+                                range.item.background.takeIf { it != Color.Unspecified }?.let { color ->
+                                    spannable.setSpan(
+                                        BackgroundColorSpan(color.toArgb()), range.start, range.end,
+                                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                                    )
+                                }
+                            }
+                            view.text = spannable
+                            view.tag = key
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } ?: run {
                 Text(
@@ -925,6 +1233,182 @@ private fun BookReadingScreen(
         }
     }
 
+    noteSelection?.let { selected ->
+        AlertDialog(
+            onDismissRequest = { noteSelection = null },
+            title = { Text("Цитата и заметка") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("“${selected.text}”", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedTextField(
+                        value = noteDraft,
+                        onValueChange = { noteDraft = it },
+                        label = { Text("Комментарий") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = noteDraft.isNotBlank(),
+                    onClick = {
+                        onSaveSelectionAnnotation("note", selected.start, selected.end, selected.text, "", noteDraft)
+                        noteSelection = null
+                        textSelection = TextRange.Zero
+                    },
+                ) { Text("Сохранить заметку") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    onSaveSelectionAnnotation("quote", selected.start, selected.end, selected.text, "", "")
+                    noteSelection = null
+                    textSelection = TextRange.Zero
+                }) { Text("Сохранить цитату") }
+            },
+        )
+    }
+
+    aiSelection?.let { selected ->
+        AlertDialog(
+            onDismissRequest = { if (!isSelectionAnalysisLoading) aiSelection = null },
+            title = { Text("Soll AI для фрагмента") },
+            text = {
+                if (isSelectionAnalysisLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(selected.text, maxLines = 5, overflow = TextOverflow.Ellipsis)
+                    Button(onClick = { onAnalyzeSelection("explain", selected.text) }, modifier = Modifier.fillMaxWidth()) { Text("Объяснить") }
+                    Button(onClick = { onAnalyzeSelection("translate", selected.text) }, modifier = Modifier.fillMaxWidth()) { Text("Перевести на русский") }
+                    Button(onClick = { onAnalyzeSelection("summarize", selected.text) }, modifier = Modifier.fillMaxWidth()) { Text("Кратко пересказать") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { aiSelection = null }) { Text("Закрыть") } },
+        )
+    }
+
+    selectionAnalysis?.let { answer ->
+        AlertDialog(
+            onDismissRequest = onClearSelectionAnalysis,
+            title = { Text("Результат Soll AI") },
+            text = { Text(answer) },
+            confirmButton = { TextButton(onClick = onClearSelectionAnalysis) { Text("Готово") } },
+        )
+    }
+
+    if (showSummary) {
+        AlertDialog(
+            onDismissRequest = { if (!isSummaryLoading) showSummary = false },
+            title = { Text("Резюме всей книги") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (isSummaryLoading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("Локальная модель обрабатывает все главы. Это может занять несколько минут.")
+                    } else if (managedBookSummary != null) {
+                        Text(managedBookSummary.summary)
+                        Text(
+                            "Глав: ${managedBookSummary.chapterCount}; сегментов: ${managedBookSummary.segmentCount}. " +
+                                "AI-результат привязан к тексту книги, но не проверен независимо.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text("Готового резюме ещё нет. Soll обработает все читаемые главы локальной моделью.")
+                    }
+                    IconButton(onClick = {
+                        onSaveSelectionAnnotation(
+                            "bookmark", currentChapterPosition, currentChapterPosition,
+                            "", "", "",
+                        )
+                    }) {
+                        Icon(Icons.Default.BookmarkAdd, contentDescription = "Закладка в текущем месте")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onCreateSummary(managedBookSummary != null) },
+                    enabled = !isSummaryLoading,
+                ) { Text(if (managedBookSummary == null) "Создать" else "Обновить") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showSummary = false },
+                    enabled = !isSummaryLoading,
+                ) { Text("Закрыть") }
+            },
+        )
+    }
+
+    if (showNotes) {
+        val chapterNotes = managedBookNotes.filter {
+            it.chapterIndex == null || it.chapterIndex == currentChapterIndex
+        }
+        AlertDialog(
+            onDismissRequest = { showNotes = false },
+            title = { Text("Заметки к книге") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = noteDraft,
+                        onValueChange = { noteDraft = it },
+                        label = {
+                            Text(if (editingNoteId == null) "Новая заметка к текущей главе" else "Изменить заметку")
+                        },
+                        minLines = 2,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = {
+                            val noteId = editingNoteId
+                            if (noteId == null) onCreateNote(noteDraft)
+                            else onUpdateNote(noteId, noteDraft)
+                            noteDraft = ""
+                            editingNoteId = null
+                        },
+                        enabled = noteDraft.isNotBlank() && !isNotesLoading,
+                    ) { Text(if (editingNoteId == null) "Сохранить" else "Обновить") }
+                    if (isNotesLoading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(chapterNotes, key = { it.id }) { note ->
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Text(note.text, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = {
+                                        editingNoteId = note.id
+                                        noteDraft = note.text
+                                    }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Изменить заметку")
+                                    }
+                                    IconButton(onClick = { onDeleteNote(note.id) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Удалить заметку")
+                                    }
+                                }
+                            }
+                        }
+                        if (chapterNotes.isEmpty() && !isNotesLoading) {
+                            item { Text("Заметок для этой главы пока нет") }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showNotes = false }) { Text("Закрыть") }
+            },
+        )
+    }
+
     // Chapter list dialog
     if (showChapterList) {
         AlertDialog(
@@ -932,6 +1416,7 @@ private fun BookReadingScreen(
             title = { Text("Главы") },
             text = {
                 LazyColumn {
+                    item { Text("Оглавление", style = MaterialTheme.typography.titleSmall) }
                     items(book.chapters.size) { index ->
                         val chapter = book.chapters[index]
                         ListItem(
@@ -954,6 +1439,23 @@ private fun BookReadingScreen(
                                 ListItemDefaults.colors()
                             }
                         )
+                    }
+                    val saved = annotations.filter { it.kind in setOf("bookmark", "quote", "note") }
+                    if (saved.isNotEmpty()) {
+                        item { Text("Закладки и цитаты", style = MaterialTheme.typography.titleSmall) }
+                        items(saved, key = { it.id }) { annotation ->
+                            ListItem(
+                                headlineContent = {
+                                    Text(annotation.noteText.ifBlank { annotation.selectedText.ifBlank { "Закладка" } }, maxLines = 2)
+                                },
+                                supportingContent = { Text("Глава ${annotation.chapterIndex + 1}") },
+                                leadingContent = { Icon(Icons.Default.Bookmark, null) },
+                                modifier = Modifier.clickable {
+                                    onGoToAnnotation(annotation.chapterIndex, annotation.startOffset)
+                                    showChapterList = false
+                                },
+                            )
+                        }
                     }
                 }
             },
@@ -985,6 +1487,11 @@ private fun BookReadingScreen(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    ReaderAppearanceSettings(
+                        appearance = readerAppearance,
+                        onChange = onReaderAppearanceChange,
+                    )
+
                     ReaderSettingsSection(
                         title = "Воспроизведение",
                         subtitle = "Скорость, профиль нагрузки и поведение при переходе по главам.",
@@ -1410,6 +1917,367 @@ private fun BookReadingScreen(
             onEnterDirectory = onTtsBrowserEnter,
             onImportCandidate = onImportTtsCandidate,
         )
+    }
+}
+
+private data class ReaderPalette(val background: Color, val text: Color)
+
+private data class ReaderSelectedText(val start: Int, val end: Int, val text: String)
+
+private class ReaderSelectableTextView(context: android.content.Context) : TextView(context) {
+    var onSelectionRangeChanged: ((Int, Int) -> Unit)? = null
+    private var selectionTouchX = 0f
+    private var selectionTouchY = 0f
+    private var dragAnchorStart = -1
+    private var dragAnchorEnd = -1
+    private var longPressDragActive = false
+    private var draggedHandle = 0
+    private var startHandleX = 0f
+    private var startHandleY = 0f
+    private var endHandleX = 0f
+    private var endHandleY = 0f
+    private val selectionHandlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(111, 207, 196)
+    }
+    private val selectionHandleRadius: Float
+        get() = 11f * resources.displayMetrics.density
+
+    init {
+        setTextIsSelectable(true)
+        isLongClickable = true
+        movementMethod = android.text.method.ArrowKeyMovementMethod.getInstance()
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        includeFontPadding = false
+        showSoftInputOnFocus = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            setTextSelectHandle(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            setTextSelectHandleLeft(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            setTextSelectHandleRight(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        }
+        customSelectionActionModeCallback = object : ActionMode.Callback {
+            override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                menu?.clear()
+                return true
+            }
+            override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                menu?.clear()
+                return true
+            }
+            override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?): Boolean = false
+            override fun onDestroyActionMode(mode: ActionMode?) {
+                onSelectionRangeChanged?.invoke(-1, -1)
+            }
+        }
+    }
+
+    override fun performLongClick(): Boolean {
+        // Start Android's selection controller first so the native draggable
+        // handles stay active, then normalize the initial range to the touched
+        // word. TextView occasionally chooses the adjacent blank EPUB line.
+        val handled = super.performLongClick()
+        val content = text?.toString().orEmpty()
+        if (content.isNotEmpty()) {
+            var offset = getOffsetForPosition(selectionTouchX, selectionTouchY)
+                .coerceIn(0, content.lastIndex)
+            if (!content[offset].isReaderWordCharacter()) {
+                val forward = (offset until minOf(content.length, offset + 128))
+                    .firstOrNull { content[it].isReaderWordCharacter() }
+                val backward = (offset downTo maxOf(0, offset - 128))
+                    .firstOrNull { content[it].isReaderWordCharacter() }
+                offset = when {
+                    forward == null -> backward ?: offset
+                    backward == null -> forward
+                    forward - offset <= offset - backward -> forward
+                    else -> backward
+                }
+            }
+            var start = offset
+            var end = offset
+            while (start > 0 && content[start - 1].isReaderWordCharacter()) start--
+            while (end < content.length && content[end].isReaderWordCharacter()) end++
+            if (start < end) {
+                val normalizedStart = start
+                val normalizedEnd = end
+                dragAnchorStart = normalizedStart
+                dragAnchorEnd = normalizedEnd
+                longPressDragActive = true
+                post {
+                    (text as? android.text.Spannable)?.let {
+                        android.text.Selection.setSelection(it, normalizedStart, normalizedEnd)
+                    }
+                    onSelectionRangeChanged?.invoke(normalizedStart, normalizedEnd)
+                    requestLayout()
+                    invalidate()
+                }
+            }
+        }
+        return handled
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            val hitRadius = selectionHandleRadius * 2.6f
+            draggedHandle = when {
+                distance(event.x, event.y, startHandleX, startHandleY) <= hitRadius -> -1
+                distance(event.x, event.y, endHandleX, endHandleY) <= hitRadius -> 1
+                else -> 0
+            }
+            if (draggedHandle != 0) return true
+            selectionTouchX = event.x
+            selectionTouchY = event.y
+        }
+        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE && draggedHandle != 0) {
+            updateDraggedHandle(event.x, event.y)
+            return true
+        }
+        if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE && longPressDragActive) {
+            val content = text?.toString().orEmpty()
+            if (content.isNotEmpty()) {
+                var offset = getOffsetForPosition(event.x, event.y).coerceIn(0, content.lastIndex)
+                while (offset < content.lastIndex && !content[offset].isReaderWordCharacter()) offset++
+                var rangeStart = minOf(dragAnchorStart, offset)
+                var rangeEnd = maxOf(dragAnchorEnd, offset + 1)
+                while (rangeStart > 0 && content[rangeStart - 1].isReaderWordCharacter()) rangeStart--
+                while (rangeEnd < content.length && content[rangeEnd].isReaderWordCharacter()) rangeEnd++
+                (text as? android.text.Spannable)?.let {
+                    android.text.Selection.setSelection(it, rangeStart, rangeEnd)
+                }
+                onSelectionRangeChanged?.invoke(rangeStart, rangeEnd)
+                invalidate()
+            }
+            return true
+        }
+        if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+            event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+        ) {
+            if (draggedHandle != 0) {
+                updateDraggedHandle(event.x, event.y)
+                draggedHandle = 0
+                return true
+            }
+            longPressDragActive = false
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        super.onDraw(canvas)
+        val start = selectionStart
+        val end = selectionEnd
+        val textLayout = layout ?: return
+        if (start < 0 || end <= start || end > text.length) return
+        val startLine = textLayout.getLineForOffset(start)
+        val endLine = textLayout.getLineForOffset((end - 1).coerceAtLeast(start))
+        startHandleX = totalPaddingLeft + textLayout.getPrimaryHorizontal(start) - scrollX
+        startHandleY = totalPaddingTop + textLayout.getLineBottom(startLine) - scrollY + selectionHandleRadius
+        endHandleX = totalPaddingLeft + textLayout.getPrimaryHorizontal(end) - scrollX
+        endHandleY = totalPaddingTop + textLayout.getLineBottom(endLine) - scrollY + selectionHandleRadius
+        canvas.drawCircle(startHandleX, startHandleY, selectionHandleRadius, selectionHandlePaint)
+        canvas.drawCircle(endHandleX, endHandleY, selectionHandleRadius, selectionHandlePaint)
+    }
+
+    private fun updateDraggedHandle(x: Float, y: Float) {
+        val content = text?.toString().orEmpty()
+        if (content.isEmpty()) return
+        val offset = getOffsetForPosition(x, y).coerceIn(0, content.length)
+        val currentStart = selectionStart.coerceAtLeast(0)
+        val currentEnd = selectionEnd.coerceAtLeast(currentStart + 1)
+        val nextStart = if (draggedHandle < 0) offset.coerceAtMost(currentEnd - 1) else currentStart
+        val nextEnd = if (draggedHandle > 0) offset.coerceAtLeast(currentStart + 1) else currentEnd
+        (text as? android.text.Spannable)?.let {
+            android.text.Selection.setSelection(it, nextStart, nextEnd)
+        }
+        onSelectionRangeChanged?.invoke(nextStart, nextEnd)
+        invalidate()
+    }
+
+    private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float =
+        kotlin.math.hypot(x1 - x2, y1 - y2)
+
+    override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+        super.onSelectionChanged(selStart, selEnd)
+        onSelectionRangeChanged?.invoke(minOf(selStart, selEnd), maxOf(selStart, selEnd))
+    }
+}
+
+private fun Char.isReaderWordCharacter(): Boolean =
+    isLetterOrDigit() || this == '\'' || this == '\u2019' || this == '-'
+
+@Composable
+private fun ReaderSelectionBar(
+    palette: ReaderPalette,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onNote: () -> Unit,
+    onBookmark: () -> Unit,
+    onHighlight: (String) -> Unit,
+    onRemove: () -> Unit,
+    onAi: () -> Unit,
+) {
+    Surface(color = palette.background, contentColor = palette.text, tonalElevation = 0.dp) {
+      Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).navigationBarsPadding(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        IconButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, "Копировать") }
+        IconButton(onClick = onShare) { Icon(Icons.Default.Share, "Поделиться") }
+        IconButton(onClick = onNote) { Icon(Icons.Default.Comment, "Цитата или заметка") }
+        IconButton(onClick = onBookmark) { Icon(Icons.Default.BookmarkAdd, "Добавить закладку") }
+        listOf("blue", "purple", "yellow").forEach { color ->
+            IconButton(onClick = { onHighlight(color) }) {
+                Box(
+                    Modifier.size(28.dp).background(annotationColor(color), MaterialTheme.shapes.small)
+                )
+            }
+        }
+        IconButton(onClick = onRemove) { Icon(Icons.Default.FormatColorReset, "Удалить выделение") }
+        IconButton(onClick = onAi) { Icon(Icons.Default.AutoAwesome, "Soll AI") }
+      }
+    }
+}
+
+private fun annotationColor(value: String): Color = when (value) {
+    "blue" -> Color(0x9966B9DC)
+    "purple" -> Color(0x999F8AC7)
+    else -> Color(0x99FFCA55)
+}
+
+private data class ReaderSystemBarStyle(
+    val statusBarColor: Int,
+    val navigationBarColor: Int,
+    val lightStatusIcons: Boolean,
+    val lightNavigationIcons: Boolean,
+)
+
+private fun ReaderAppearance.palette(): ReaderPalette = when (theme) {
+    ReaderTheme.LIGHT -> ReaderPalette(Color(0xFFFFFEFC), Color(0xFF202124))
+    ReaderTheme.SEPIA -> ReaderPalette(Color(0xFFF4ECD8), Color(0xFF443526))
+    ReaderTheme.DARK -> ReaderPalette(Color(0xFF2B2E35), Color(0xFFF2F2F2))
+    ReaderTheme.EYE_COMFORT -> ReaderPalette(Color(0xFFDDE8D2), Color(0xFF263328))
+}
+
+private fun ReaderFontFamily.composeFontFamily(): FontFamily = when (this) {
+    ReaderFontFamily.CARLSBERG -> CarlsbergSansFamily
+    ReaderFontFamily.SERIF -> FontFamily.Serif
+    ReaderFontFamily.SANS_SERIF -> FontFamily.SansSerif
+    ReaderFontFamily.MONOSPACE -> FontFamily.Monospace
+}
+
+private fun ReaderTextAlignment.composeTextAlign(): TextAlign = when (this) {
+    ReaderTextAlignment.START -> TextAlign.Start
+    ReaderTextAlignment.JUSTIFY -> TextAlign.Justify
+    ReaderTextAlignment.CENTER -> TextAlign.Center
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReaderAppearanceSettings(
+    appearance: ReaderAppearance,
+    onChange: (ReaderAppearance) -> Unit,
+) {
+    ReaderSettingsSection(
+        title = "Оформление страницы",
+        subtitle = "Параметры меняют только страницу и сохраняются между запусками. Коснитесь текста книги, чтобы скрыть или вернуть панели.",
+    ) {
+        Text("Тема", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                ReaderTheme.LIGHT to "Светлая",
+                ReaderTheme.SEPIA to "Сепия",
+                ReaderTheme.DARK to "Тёмная",
+                ReaderTheme.EYE_COMFORT to "Для глаз",
+            ).forEach { (theme, label) ->
+                FilterChip(
+                    selected = appearance.theme == theme,
+                    onClick = { onChange(appearance.copy(theme = theme)) },
+                    label = { Text(label) },
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("Размер текста: ${appearance.fontSizeSp.toInt()} sp")
+        Slider(
+            value = appearance.fontSizeSp,
+            onValueChange = { onChange(appearance.copy(fontSizeSp = it)) },
+            valueRange = ReaderAppearance.MIN_FONT_SIZE_SP..ReaderAppearance.MAX_FONT_SIZE_SP,
+            steps = 9,
+        )
+        Text("Межстрочный интервал: ${formatOneDecimal(appearance.lineSpacingMultiplier)}")
+        Slider(
+            value = appearance.lineSpacingMultiplier,
+            onValueChange = { onChange(appearance.copy(lineSpacingMultiplier = it)) },
+            valueRange = ReaderAppearance.MIN_LINE_SPACING..ReaderAppearance.MAX_LINE_SPACING,
+            steps = 8,
+        )
+        Text("Поля страницы: ${appearance.horizontalMarginDp.toInt()} dp")
+        Slider(
+            value = appearance.horizontalMarginDp,
+            onValueChange = { onChange(appearance.copy(horizontalMarginDp = it)) },
+            valueRange = ReaderAppearance.MIN_MARGIN_DP..ReaderAppearance.MAX_MARGIN_DP,
+            steps = 7,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Яркость страницы")
+                Text(
+                    if (appearance.screenBrightness == null) "Системная"
+                    else "${(appearance.screenBrightness * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = appearance.screenBrightness != null,
+                onCheckedChange = { enabled ->
+                    onChange(appearance.copy(screenBrightness = if (enabled) 0.65f else null))
+                },
+            )
+        }
+        appearance.screenBrightness?.let { brightness ->
+            Slider(
+                value = brightness,
+                onValueChange = { onChange(appearance.copy(screenBrightness = it)) },
+                valueRange = ReaderAppearance.MIN_SCREEN_BRIGHTNESS..ReaderAppearance.MAX_SCREEN_BRIGHTNESS,
+                steps = 18,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Шрифт", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                ReaderFontFamily.CARLSBERG to "Carlsberg",
+                ReaderFontFamily.SERIF to "Книжный",
+                ReaderFontFamily.SANS_SERIF to "Без засечек",
+                ReaderFontFamily.MONOSPACE to "Моно",
+            ).forEach { (font, label) ->
+                FilterChip(
+                    selected = appearance.fontFamily == font,
+                    onClick = { onChange(appearance.copy(fontFamily = font)) },
+                    label = { Text(label) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Выравнивание", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                ReaderTextAlignment.START to "По левому краю",
+                ReaderTextAlignment.JUSTIFY to "По ширине",
+                ReaderTextAlignment.CENTER to "По центру",
+            ).forEach { (alignment, label) ->
+                FilterChip(
+                    selected = appearance.textAlignment == alignment,
+                    onClick = { onChange(appearance.copy(textAlignment = alignment)) },
+                    label = { Text(label) },
+                )
+            }
+        }
     }
 }
 

@@ -61,12 +61,32 @@ object AndroidPushTokenRegistrar {
                 return
             }
 
+        if (force) {
+            messaging.deleteToken().addOnCompleteListener { deletion ->
+                if (!deletion.isSuccessful) {
+                    Timber.w(deletion.exception, "Could not delete stale FCM token before forced refresh")
+                }
+                fetchAndRegisterToken(messaging, appContext, reason, force, onFinished)
+            }
+        } else {
+            fetchAndRegisterToken(messaging, appContext, reason, force, onFinished)
+        }
+    }
+
+    private fun fetchAndRegisterToken(
+        messaging: FirebaseMessaging,
+        appContext: Context,
+        reason: String,
+        force: Boolean,
+        onFinished: (() -> Unit)?,
+    ) {
         messaging.token
             .addOnSuccessListener { token ->
                 registerToken(appContext, token, reason = reason, force = force, onFinished = onFinished)
             }
             .addOnFailureListener { error ->
-                settings.sollPushTokenLastError = "Token fetch failed: ${error.message.orEmpty()}"
+                entryPoint(appContext).settingsRepository().sollPushTokenLastError =
+                    "Token fetch failed: ${error.message.orEmpty()}"
                 Timber.w(error, "Could not fetch FCM token")
                 onFinished?.invoke()
             }

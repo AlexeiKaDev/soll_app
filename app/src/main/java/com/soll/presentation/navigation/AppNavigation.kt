@@ -125,8 +125,10 @@ fun AppNavigation(
         onLaunchCommandConsumed()
     }
 
-    // Hide bottom bar on certain screens
-    val showBottomBar = currentRoute in screens.map { it.route }
+    // Hide bottom bar on certain screens. Routes with optional query args (e.g.
+    // Tasks' "tasks?focus={focus}") report that full template as currentRoute,
+    // not the bare destination id, so compare on the path segment only.
+    val showBottomBar = currentRoute?.substringBefore('?') in screens.map { it.route }
 
     Scaffold(
         modifier = modifier,

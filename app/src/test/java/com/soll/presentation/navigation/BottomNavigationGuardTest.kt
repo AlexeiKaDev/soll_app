@@ -22,6 +22,18 @@ class BottomNavigationGuardTest {
         assertFalse(destinations.contains("route = Routes.NFC"))
     }
 
+    @Test
+    fun `bottom bar visibility ignores optional query args on the current route`() {
+        val navigation = projectFile("app/src/main/java/com/soll/presentation/navigation/AppNavigation.kt").readText()
+
+        // Tasks registers "tasks?focus={focus}" as its NavHost route, so
+        // currentRoute carries that full template, not the bare "tasks" id.
+        // Comparing it as-is against the bottom-bar route list always misses,
+        // hiding the bar every time Tasks is opened.
+        assertTrue(navigation.contains("currentRoute?.substringBefore('?') in screens.map"))
+        assertFalse(navigation.contains("val showBottomBar = currentRoute in screens.map"))
+    }
+
     private fun projectFile(path: String): File {
         var current = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {

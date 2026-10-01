@@ -12,11 +12,11 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
 object AndroidPushTokenRegistrar {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun registerCurrentToken(
         context: Context,
@@ -125,7 +125,8 @@ object AndroidPushTokenRegistrar {
             return
         }
 
-        scope.launch {
+        val tokenScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        tokenScope.launch {
             try {
                 val result = entryPoint.sollGateway().registerAndroidPushToken(cleanToken, provider = "fcm")
                 result
@@ -149,6 +150,8 @@ object AndroidPushTokenRegistrar {
             } finally {
                 onFinished?.invoke()
             }
+        }.invokeOnCompletion {
+            tokenScope.cancel()
         }
     }
 

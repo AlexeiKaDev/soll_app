@@ -234,6 +234,25 @@ class TaskBoardFilterTest {
         assertEquals(listOf("project-a"), graph.projectFilterNodes().map { it.id })
     }
 
+    @Test
+    fun `sources sub-tab defaults to the list and survives an unrelated state copy`() {
+        val initial = TaskBoardUiState()
+
+        assertEquals(SourcesSubTab.LIST, initial.selectedSourcesSubTab)
+
+        val afterSelect = initial.copy(
+            selectedSourceId = "source-1",
+            selectedSourcesSubTab = SourcesSubTab.MATERIALS,
+        )
+
+        assertEquals(SourcesSubTab.MATERIALS, afterSelect.selectedSourcesSubTab)
+        assertEquals("source-1", afterSelect.selectedSourceId)
+
+        val afterUnrelatedUpdate = afterSelect.copy(searchQuery = "unrelated")
+
+        assertEquals(SourcesSubTab.MATERIALS, afterUnrelatedUpdate.selectedSourcesSubTab)
+    }
+
     private fun task(
         id: String,
         status: String,

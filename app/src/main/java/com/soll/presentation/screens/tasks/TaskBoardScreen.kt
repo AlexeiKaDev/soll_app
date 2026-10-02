@@ -775,6 +775,37 @@ private fun SourcesMode(
     uiState: TaskBoardUiState,
     viewModel: TaskBoardViewModel,
 ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        ScrollableTabRow(selectedTabIndex = uiState.selectedSourcesSubTab.ordinal, edgePadding = 12.dp) {
+            SourcesSubTab.entries.forEach { tab ->
+                Tab(
+                    selected = uiState.selectedSourcesSubTab == tab,
+                    onClick = { viewModel.selectSourcesSubTab(tab) },
+                    text = {
+                        Text(
+                            if (tab == SourcesSubTab.MATERIALS && uiState.sourceItemsTotal > 0) {
+                                "${tab.label} (${uiState.sourceItemsTotal})"
+                            } else {
+                                tab.label
+                            }
+                        )
+                    },
+                )
+            }
+        }
+
+        when (uiState.selectedSourcesSubTab) {
+            SourcesSubTab.LIST -> SourcesListTab(uiState = uiState, viewModel = viewModel)
+            SourcesSubTab.MATERIALS -> SourceMaterialsTab(uiState = uiState, viewModel = viewModel)
+        }
+    }
+}
+
+@Composable
+private fun SourcesListTab(
+    uiState: TaskBoardUiState,
+    viewModel: TaskBoardViewModel,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -793,41 +824,54 @@ private fun SourcesMode(
                 onCheck = { viewModel.checkSource(source) },
             )
         }
-        if (uiState.sourceItems.isNotEmpty()) {
-            item(key = "source-items-title") {
-                Text(
-                    "Материалы Soll: ${uiState.sourceItems.size} из ${uiState.sourceItemsTotal}",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
+    }
+}
+
+@Composable
+private fun SourceMaterialsTab(
+    uiState: TaskBoardUiState,
+    viewModel: TaskBoardViewModel,
+) {
+    if (uiState.selectedSourceId == null) {
+        EmptyWorkspace(text = "Сначала откройте источник на вкладке «Источники»")
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (uiState.sourceItems.isEmpty() && !uiState.workspaceLoading) {
+            item(key = "empty-source-items", contentType = "empty") {
+                EmptyWorkspace(text = "Материалов пока нет")
             }
-            val sourceEnabled = uiState.sources
-                .firstOrNull { it.id == uiState.selectedSourceId }
-                ?.enabled == true && uiState.sourceDisabledReason.isBlank()
-            items(uiState.sourceItems, key = { it.itemId }) { item ->
-                SourceItemCard(
-                    item = item,
-                    sourceEnabled = sourceEnabled,
-                    isCreatingTask = uiState.sourceItemTaskId == item.itemId,
-                    onCreateTask = {
-                        uiState.selectedSourceId?.let { sourceId ->
-                            viewModel.createTaskFromSourceItem(sourceId, item)
-                        }
-                    },
-                )
-            }
-            if (uiState.sourceItemsHasMore) {
-                item(key = "source-items-more", contentType = "source-items-more") {
-                    Button(
-                        onClick = viewModel::loadMoreSourceItems,
-                        enabled = !uiState.sourceItemsLoadingMore,
-                    ) {
-                        if (uiState.sourceItemsLoadingMore) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        Text("Загрузить ещё")
+        }
+        val sourceEnabled = uiState.sources
+            .firstOrNull { it.id == uiState.selectedSourceId }
+            ?.enabled == true && uiState.sourceDisabledReason.isBlank()
+        items(uiState.sourceItems, key = { it.itemId }) { item ->
+            SourceItemCard(
+                item = item,
+                sourceEnabled = sourceEnabled,
+                isCreatingTask = uiState.sourceItemTaskId == item.itemId,
+                onCreateTask = {
+                    uiState.selectedSourceId?.let { sourceId ->
+                        viewModel.createTaskFromSourceItem(sourceId, item)
                     }
+                },
+            )
+        }
+        if (uiState.sourceItemsHasMore) {
+            item(key = "source-items-more", contentType = "source-items-more") {
+                Button(
+                    onClick = viewModel::loadMoreSourceItems,
+                    enabled = !uiState.sourceItemsLoadingMore,
+                ) {
+                    if (uiState.sourceItemsLoadingMore) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Загрузить ещё")
                 }
             }
         }

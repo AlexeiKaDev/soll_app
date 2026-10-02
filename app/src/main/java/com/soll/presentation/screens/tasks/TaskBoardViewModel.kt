@@ -66,6 +66,11 @@ enum class InsightStatusFilter(val label: String, val apiStatus: String?) {
     ALL("Все", null),
 }
 
+enum class SourcesSubTab(val label: String) {
+    LIST("Источники"),
+    MATERIALS("Материалы"),
+}
+
 data class TaskBoardUiState(
     val today: List<SollTask> = emptyList(),
     val blocked: List<SollTask> = emptyList(),
@@ -95,6 +100,7 @@ data class TaskBoardUiState(
     val sources: List<SollMonitoredSource> = emptyList(),
     val sourceItems: List<SollSourceItem> = emptyList(),
     val selectedSourceId: String? = null,
+    val selectedSourcesSubTab: SourcesSubTab = SourcesSubTab.LIST,
     val sourceItemTaskId: String? = null,
     val sourceItemsHasMore: Boolean = false,
     val sourceItemsTotal: Int = 0,
@@ -819,6 +825,7 @@ class TaskBoardViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 selectedSourceId = source.id,
+                selectedSourcesSubTab = SourcesSubTab.MATERIALS,
                 sourceItems = cachedPage?.items.orEmpty(),
                 sourceItemsHasMore = cachedPage?.hasMore == true,
                 sourceItemsTotal = cachedPage?.total ?: 0,
@@ -831,6 +838,10 @@ class TaskBoardViewModel @Inject constructor(
         if (cachedPage == null) {
             loadSourceItems(source.id)
         }
+    }
+
+    fun selectSourcesSubTab(tab: SourcesSubTab) {
+        _uiState.update { it.copy(selectedSourcesSubTab = tab) }
     }
 
     fun createSource(name: String, target: String, sourceType: String = "web") {

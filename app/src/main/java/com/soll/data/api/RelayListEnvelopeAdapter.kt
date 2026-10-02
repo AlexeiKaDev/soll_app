@@ -74,3 +74,41 @@ object RelayListEnvelopeAdapterFactory : JsonAdapter.Factory {
         return RelayListEnvelopeAdapter(elementAdapter).nullSafe()
     }
 }
+
+/**
+ * The relay's normalizeSourceItem() defaults a missing/non-array link_preview
+ * to PHP's `[]`, which json_encode emits as a JSON *array* (`[]`), not an
+ * object -- PHP has no distinct empty-map literal. Every map-typed field
+ * (Map<String, Any?>, used for link_preview, metadata, payload, etc.
+ * throughout this API) must tolerate that shape instead of Moshi's default
+ * Map adapter throwing "Expected BEGIN_OBJECT but was BEGIN_ARRAY", which
+ * silently failed to parse an item's entire containing list in practice
+ * (e.g. every item for a source whose items all lack a real link preview).
+ */
+private class TolerantMapAdapter(
+    private val delegate: JsonAdapter<Map<String, Any?>>,
+) : JsonAdapter<Map<String, Any?>>() {
+    override fun fromJson(reader: JsonReader): Map<String, Any?>? {
+        if (reader.peek() == JsonReader.Token.BEGIN_ARRAY) {
+            reader.skipValue()
+            return emptyMap()
+        }
+        return delegate.fromJson(reader)
+    }
+
+    override fun toJson(writer: JsonWriter, value: Map<String, Any?>?) {
+        delegate.toJson(writer, value)
+    }
+}
+
+object TolerantMapAdapterFactory : JsonAdapter.Factory {
+    override fun create(type: Type, annotations: MutableSet<out Annotation>, moshi: Moshi): JsonAdapter<*>? {
+        if (annotations.isNotEmpty()) return null
+        if (Types.getRawType(type) != Map::class.java) return null
+        val args = (type as? ParameterizedType)?.actualTypeArguments ?: return null
+        if (args.size != 2 || args[0] != String::class.java) return null
+        @Suppress("UNCHECKED_CAST")
+        val delegate = moshi.nextAdapter<Map<String, Any?>>(this, type, emptySet())
+        return TolerantMapAdapter(delegate).nullSafe()
+    }
+}

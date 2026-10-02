@@ -42,6 +42,7 @@ class RelayListEnvelopeAdapterTest {
             .build()
         val moshi = Moshi.Builder()
             .add(RelayListEnvelopeAdapterFactory)
+            .add(TolerantMapAdapterFactory)
             .add(KotlinJsonAdapterFactory())
             .build()
         api = Retrofit.Builder()
@@ -87,6 +88,30 @@ class RelayListEnvelopeAdapterTest {
 
         assertEquals(1, items.size)
         assertEquals("item-1", items[0].itemId)
+    }
+
+    @Test
+    fun `item with an empty-array link_preview parses instead of crashing the whole list`() = runBlocking {
+        // The relay's normalizeSourceItem() defaults a missing link_preview
+        // to PHP's [], which json_encode emits as a JSON array, not an
+        // object. Real production payload observed for every item of a
+        // real source (NeMo Guardrails Releases) that had no captured link
+        // preview -- Moshi's default Map adapter throws on this, which
+        // silently dropped the item's entire containing source's materials
+        // (16 real items reduced to "Материалов пока нет" with no visible
+        // error, since the failure got swallowed by a Result.getOrNull()
+        // fallback layer upstream).
+        server.enqueue(
+            jsonResponse(
+                """{"data":[{"item_id":"item-1","title":"v0.19.0","link_preview":[]}]}"""
+            )
+        )
+
+        val items = api.listSourceItems("Bearer test-only", sourceId = "src-1", limit = 20)
+
+        assertEquals(1, items.size)
+        assertEquals("item-1", items[0].itemId)
+        assertEquals(emptyMap<String, Any?>(), items[0].linkPreview)
     }
 
     @Test

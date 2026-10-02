@@ -1056,8 +1056,24 @@ class SollRepository @Inject constructor(
         }
     }.recoverCatching { error ->
         if (!error.isWorkspaceSnapshotFallbackStatus()) throw error
+        // The relay does not implement a paged items route at all (always
+        // 404s), unlike the local server. Its plain, non-paged items
+        // endpoint does work through the relay, so prefer that real data
+        // over the sync-status snapshot, which never actually carries items.
+        val cleanSourceId = sourceId.trim()
+        val plainItems = listSourceItems(cleanSourceId, limit.coerceIn(1, 100)).getOrNull()
+        if (plainItems != null) {
+            return@recoverCatching SollSourceItemsPage(
+                items = if (cursor.isBlank()) plainItems else emptyList(),
+                nextCursor = "",
+                hasMore = false,
+                total = plainItems.size,
+                sourceEnabled = true,
+                disabledReason = "",
+            )
+        }
         val snapshotItems = getAndroidSyncStatus().getOrThrow()
-            .sourceItemsBySource[sourceId.trim()]
+            .sourceItemsBySource[cleanSourceId]
             .orEmpty()
         SollSourceItemsPage(
             items = if (cursor.isBlank()) snapshotItems else emptyList(),

@@ -327,7 +327,7 @@ interface SollApiService {
         @Body request: RoadmapLineTaskRequest = RoadmapLineTaskRequest(),
     ): RoadmapLineTaskResponse
 
-    @GET("api/v1/sources/")
+    @GET("api/v1/sources")
     suspend fun listSources(
         @Header("Authorization") authorization: String? = null,
         @Query("scope") scope: String = "project_soll",

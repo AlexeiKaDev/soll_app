@@ -843,6 +843,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideMoshi(): Moshi = Moshi.Builder()
+        .add(com.soll.data.api.RelayListEnvelopeAdapterFactory)
         .add(KotlinJsonAdapterFactory())
         .build()
 

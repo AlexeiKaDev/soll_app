@@ -124,6 +124,22 @@ class RelayListEnvelopeAdapterTest {
         assertEquals("/api/v1/soll/sources?scope=project_soll", request.path)
     }
 
+    @Test
+    fun `createSource request path has no trailing slash`() = runBlocking {
+        // The relay 404s a trailing-slash POST to the sources collection route,
+        // same as the already-fixed GET -- reproduced live from the Android
+        // "Добавить источник" dialog before this fix.
+        server.enqueue(jsonResponse("""{"id":"src-1","name":"Example"}"""))
+
+        api.createSource(
+            "Bearer test-only",
+            MonitoredSourceCreateRequest(target = "https://example.com/feed"),
+        )
+        val request = server.takeRequest()
+
+        assertEquals("/api/v1/soll/sources", request.path)
+    }
+
     private fun jsonResponse(body: String): MockResponse =
         MockResponse().setBody(body).setHeader("Content-Type", "application/json")
 }

@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Done
@@ -107,6 +108,7 @@ fun TaskBoardScreen(
     var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var evidenceTask by remember { mutableStateOf<SollTask?>(null) }
     var editingTask by remember { mutableStateOf<SollTask?>(null) }
+    var showCreateSourceDialog by remember { mutableStateOf(false) }
     val evidencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val task = evidenceTask
         evidenceTask = null
@@ -140,6 +142,17 @@ fun TaskBoardScreen(
         )
     }
 
+    if (showCreateSourceDialog) {
+        CreateSourceDialog(
+            isSaving = uiState.workspaceLoading,
+            onDismiss = { showCreateSourceDialog = false },
+            onCreate = { name, target ->
+                viewModel.createSource(name, target)
+                showCreateSourceDialog = false
+            },
+        )
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -154,6 +167,13 @@ fun TaskBoardScreen(
                     }
                 },
                 actions = {
+                    if (uiState.selectedMode == TaskWorkspaceMode.SOURCES &&
+                        uiState.selectedSourcesSubTab == SourcesSubTab.LIST
+                    ) {
+                        IconButton(onClick = { showCreateSourceDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Добавить источник")
+                        }
+                    }
                     IconButton(onClick = viewModel::refresh, enabled = !uiState.isLoading) {
                         Icon(Icons.Default.Refresh, contentDescription = "Обновить")
                     }
@@ -1289,6 +1309,55 @@ private fun TaskEditDialog(
                     Spacer(modifier = Modifier.width(6.dp))
                 }
                 Text("Сохранить")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) {
+                Text("Отмена")
+            }
+        },
+    )
+}
+
+@Composable
+private fun CreateSourceDialog(
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onCreate: (String, String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Добавить источник") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = target,
+                    onValueChange = { target = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("URL") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Название (необязательно)") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(name, target) },
+                enabled = target.isNotBlank() && !isSaving,
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                Text("Добавить")
             }
         },
         dismissButton = {

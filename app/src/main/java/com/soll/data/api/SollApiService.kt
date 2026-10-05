@@ -356,7 +356,7 @@ interface SollApiService {
         @Body request: SourceItemTaskRequest = SourceItemTaskRequest(),
     ): SourceItemTaskResponse
 
-    @POST("api/v1/sources/")
+    @POST("api/v1/sources")
     suspend fun createSource(
         @Header("Authorization") authorization: String? = null,
         @Body request: MonitoredSourceCreateRequest,

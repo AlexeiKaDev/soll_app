@@ -85,6 +85,7 @@ import com.soll.domain.tts.catalog.TtsTreeAccessState
 import com.soll.domain.tts.chatterbox.ChatterboxPlaybackDiagnostics
 import com.soll.domain.tts.kokoro.KokoroPlaybackDiagnostics
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import timber.log.Timber
 import java.util.Locale
 
@@ -185,6 +186,7 @@ fun BookReaderScreen(
             currentChapterPosition = uiState.currentChapterPosition,
             pendingJumpOffset = uiState.pendingJumpOffset,
             onJumpConsumed = viewModel::consumePendingJump,
+            onReadingPositionChanged = viewModel::updateReadingPosition,
             managedBookNotes = uiState.managedBookNotes,
             managedBookNotesEnabled = uiState.managedBookId != null,
             isNotesLoading = uiState.isNotesLoading,
@@ -760,6 +762,7 @@ private fun BookReadingScreen(
     currentChapterPosition: Int,
     pendingJumpOffset: Int?,
     onJumpConsumed: () -> Unit,
+    onReadingPositionChanged: (Int) -> Unit,
     managedBookNotes: List<SollManagedBookNote>,
     managedBookNotesEnabled: Boolean,
     isNotesLoading: Boolean,
@@ -980,6 +983,31 @@ private fun BookReadingScreen(
         } finally {
             onJumpConsumed()
         }
+    }
+
+    // Silent (non-TTS) reading never otherwise reports a position: without this, scrolling
+    // through a chapter leaves currentChapterPosition stuck at whatever a jump or TTS last set,
+    // so persistCurrentProgress() on exit silently re-saves a stale offset instead of where the
+    // user actually stopped reading. Skipped while TTS drives the scroll itself (more precise,
+    // word-level tracking already covers that case).
+    LaunchedEffect(currentChapter, isTtsPlaying) {
+        if (isTtsPlaying) return@LaunchedEffect
+        snapshotFlow { scrollState.value }
+            .debounce(800)
+            .collect { scrollValue ->
+                val layout = readerTextView?.layout ?: return@collect
+                val content = currentChapter?.content
+                if (content.isNullOrEmpty()) return@collect
+                try {
+                    val approxTop = (scrollValue + with(density) { 200.dp.toPx() }.toInt())
+                        .coerceIn(0, (layout.height - 1).coerceAtLeast(0))
+                    val line = layout.getLineForVertical(approxTop)
+                    val offset = layout.getLineStart(line).coerceIn(0, content.length - 1)
+                    onReadingPositionChanged(offset)
+                } catch (_: Exception) {
+                    // Ignore layout errors
+                }
+            }
     }
 
     Scaffold(

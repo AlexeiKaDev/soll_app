@@ -1746,6 +1746,17 @@ class BookReaderViewModel @Inject constructor(
         saveProgress()
     }
 
+    /**
+     * Manual scrolling never emits through [ttsManager.currentWordRange], so without this the
+     * reader's position state is only ever advanced by TTS playback or an explicit jump --
+     * silent reading (the common case) never reaches here and persistCurrentProgress() on exit
+     * just re-saves a stale position. Called from a debounced scroll listener in the UI.
+     */
+    fun updateReadingPosition(position: Int) {
+        _uiState.update { it.copy(currentChapterPosition = position) }
+        saveProgressIfNeeded(position)
+    }
+
     private fun saveProgress() {
         persistReaderProgress(force = true)
     }

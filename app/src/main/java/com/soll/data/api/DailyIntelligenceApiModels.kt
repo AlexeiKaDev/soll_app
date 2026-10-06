@@ -13,6 +13,7 @@ import com.soll.domain.soll.SollTodayCard
 import com.soll.domain.soll.SollTodayFreshness
 import com.soll.domain.soll.SollTodayNextAction
 import com.soll.domain.soll.SollTodaySnapshot
+import com.soll.domain.soll.SollSystemPulse
 
 data class TodaySnapshotResponse(
     val date: String = "",
@@ -26,6 +27,13 @@ data class TodaySnapshotResponse(
     val freshness: TodayFreshnessResponse = TodayFreshnessResponse(),
     val calendar: CalendarSnapshotResponse = CalendarSnapshotResponse(),
     val warnings: List<String> = emptyList(),
+    @Json(name = "system_pulse") val systemPulse: SystemPulseResponse = SystemPulseResponse(),
+)
+
+data class SystemPulseResponse(
+    @Json(name = "local_model") val localModel: String = "unknown",
+    @Json(name = "local_model_tokens_decoded") val localModelTokensDecoded: Int = 0,
+    @Json(name = "local_model_prompt_tokens") val localModelPromptTokens: Int = 0,
 )
 
 data class TodayCardResponse(
@@ -207,6 +215,13 @@ fun TodaySnapshotResponse.toDomain(): SollTodaySnapshot = SollTodaySnapshot(
     freshness = freshness.toDomain(),
     calendar = calendar.toDomain(),
     warnings = warnings,
+    systemPulse = systemPulse.toDomain(),
+)
+
+fun SystemPulseResponse.toDomain(): SollSystemPulse = SollSystemPulse(
+    localModel = localModel,
+    localModelTokensDecoded = localModelTokensDecoded,
+    localModelPromptTokens = localModelPromptTokens,
 )
 
 fun FeedPageResponse.toDomain(): SollFeedPage = SollFeedPage(

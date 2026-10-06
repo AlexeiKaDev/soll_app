@@ -15,6 +15,13 @@ data class SollTodaySnapshot(
     val freshness: SollTodayFreshness = SollTodayFreshness(),
     val calendar: SollCalendarSnapshot = SollCalendarSnapshot(),
     val warnings: List<String> = emptyList(),
+    val systemPulse: SollSystemPulse = SollSystemPulse(),
+)
+
+data class SollSystemPulse(
+    val localModel: String = "unknown",
+    val localModelTokensDecoded: Int = 0,
+    val localModelPromptTokens: Int = 0,
 )
 
 data class SollTodayCard(

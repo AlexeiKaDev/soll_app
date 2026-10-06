@@ -104,6 +104,23 @@ fun TodayScreen(viewModel: TodayViewModel = hiltViewModel()) {
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     }
+                    // Shown only while there is something to report -- an idle/unknown
+                    // local model is the normal state and not worth a line on every
+                    // Today glance; this exists purely to answer "why is the GPU busy"
+                    // without digging through server logs.
+                    snapshot?.systemPulse?.takeIf { it.localModel == "busy" }?.let { pulse ->
+                        item {
+                            Text(
+                                if (pulse.localModelPromptTokens > 0) {
+                                    "🧠 Локальная модель занята: ${pulse.localModelTokensDecoded} токенов сгенерировано"
+                                } else {
+                                    "🧠 Локальная модель занята"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     snapshot?.nextAction?.takeIf { it.title.isNotBlank() }?.let { action ->
                         item {
                             Card(Modifier.fillMaxWidth()) {

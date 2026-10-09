@@ -3,6 +3,11 @@ package com.soll.domain.soll
 const val SOLL_FEED_IMPORT_CLIENT_ID_MAX_LENGTH = 80
 const val SOLL_DURABLE_CLIENT_ID_MAX_LENGTH = 80
 
+private fun defaultSollTodayNextAction() = SollTodayNextAction()
+private fun defaultSollTodayFreshness() = SollTodayFreshness()
+private fun defaultSollCalendarSnapshot() = SollCalendarSnapshot()
+private fun defaultSollSystemPulse() = SollSystemPulse()
+
 data class SollTodaySnapshot(
     val date: String = "",
     val generatedAt: String = "",
@@ -11,11 +16,11 @@ data class SollTodaySnapshot(
     val briefingCards: List<SollTodayCard> = emptyList(),
     val urgent: List<SollFeedItem> = emptyList(),
     val feedPreview: List<SollFeedItem> = emptyList(),
-    val nextAction: SollTodayNextAction = SollTodayNextAction(),
-    val freshness: SollTodayFreshness = SollTodayFreshness(),
-    val calendar: SollCalendarSnapshot = SollCalendarSnapshot(),
+    val nextAction: SollTodayNextAction = defaultSollTodayNextAction(),
+    val freshness: SollTodayFreshness = defaultSollTodayFreshness(),
+    val calendar: SollCalendarSnapshot = defaultSollCalendarSnapshot(),
     val warnings: List<String> = emptyList(),
-    val systemPulse: SollSystemPulse = SollSystemPulse(),
+    val systemPulse: SollSystemPulse = defaultSollSystemPulse(),
 )
 
 data class SollSystemPulse(

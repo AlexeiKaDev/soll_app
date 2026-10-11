@@ -26,6 +26,7 @@ import com.soll.domain.assistant.proactive.ProactiveSuggestionAction
 import com.soll.domain.assistant.proactive.ProactiveSuggestionFeedback
 import com.soll.domain.assistant.proactive.ScenarioDetector
 import com.soll.domain.assistant.proactive.SuggestionEngine
+import com.soll.domain.assistant.proactive.ActionLoop
 import com.soll.domain.notification.SollNotificationChannel
 import com.soll.domain.notification.SollNotificationCenter
 import com.soll.domain.notification.SollNotificationPriority
@@ -91,6 +92,7 @@ class HomeViewModel @Inject constructor(
     private val notificationCenter: SollNotificationCenter,
 ) : AndroidViewModel(application) {
 
+    private val actionLoop = ActionLoop()
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     private val scenarioDetector = ScenarioDetector()
@@ -201,7 +203,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun acceptProactiveSuggestion(suggestionId: String) {
-        val suggestion = _uiState.value.proactiveSuggestions.firstOrNull { it.id == suggestionId } ?: return
+        val suggestion = actionLoop.accept(suggestionId) ?: return
         settingsRepository.recordProactiveSuggestionFeedback(
             suggestionId = suggestion.id,
             feedback = ProactiveSuggestionFeedback.ACCEPTED,
@@ -279,8 +281,11 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.withProactiveSuggestions() }
     }
 
-    private fun HomeUiState.withProactiveSuggestions(): HomeUiState =
-        copy(proactiveSuggestions = buildProactiveSuggestions(this))
+    private fun HomeUiState.withProactiveSuggestions(): HomeUiState {
+        val suggestions = buildProactiveSuggestions(this)
+        actionLoop.submit(suggestions)
+        return copy(proactiveSuggestions = suggestions)
+    }
 
     private fun buildProactiveSuggestions(state: HomeUiState): List<ProactiveSuggestion> {
         if (!settingsRepository.proactiveSuggestionsEnabled) return emptyList()

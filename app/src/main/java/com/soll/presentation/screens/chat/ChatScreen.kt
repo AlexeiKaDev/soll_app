@@ -936,7 +936,8 @@ private fun AssistantMessageContent(
                         strokeWidth = 2.dp,
                     )
                 }
-                voicePlaybackPhase == AssistantVoicePlaybackPhase.PLAYING -> {
+                voicePlaybackPhase == AssistantVoicePlaybackPhase.PLAYING ||
+                    voicePlaybackPhase == AssistantVoicePlaybackPhase.PAUSED -> {
                     Icon(
                         imageVector = Icons.Default.Stop,
                         contentDescription = "Остановить голосовой ответ",

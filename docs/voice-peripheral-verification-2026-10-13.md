@@ -72,3 +72,40 @@ and silent playback tests alone are insufficient to close it.
 
 Server restart is not required for these Android changes. Corrected debug APK
 is installed; full paired user-flow verification remains outstanding.
+
+## Follow-up after Bluetooth connection
+
+The observations above describe the first inspection. Subsequent physical QA:
+
+- EDIFIER X3 Lite is now connected as SCO input/output and A2DP output.
+- At 14:21:12 the speech adapter selected EDIFIER (type 7). Russian text
+  appeared in the Chat input; the route was released at 14:21:35. Offline
+  recognition mode and the exact expected phrase were not confirmed.
+- The user authorized pairing recovery. The ordinary Android credential was
+  rotated and its saved fingerprint verified inside the installed app. The
+  phone fetched exact server reply 10154. Server history was fetched again;
+  deleted app-local data was not recovered.
+- A controlled transient audio-focus test reproduced stale PLAYING state while
+  ExoPlayer was paused. Added PAUSED state and retained the stop action; the
+  same reply resumes on focus return. Three physical player tests now pass.
+  Dictation cancels active reply audio and pending synthesis before recording.
+- `VoicePeripheralDeviceQa` explicitly checks stored token fingerprint and
+  fetches an exact reply over the phone's configured HTTPS connection. It
+  passed; ordinary CI skips this opt-in physical-network test.
+- Relay turn `chat-turn:8165d297701e030418608dbd433c6df8` answered: user
+  10153 / assistant 10154, text `Голос работает.`. Both appeared in Android
+  Chat. Policy: task_intake=false, allow_actions=false. Nine five-second polls
+  were needed; this is coarse completion timing, not STT latency.
+- One listen action produced one 24 kHz speech AudioTrack, 14:32:29–14:32:30,
+  on port 4250, which AudioPolicy maps to EDIFIER A2DP. Text remained visible.
+  This was Google system TTS fallback: public `/voice/synthesize` returned 404
+  in 0.281 seconds. User confirmation of audible sound remains outstanding.
+- Updated Android voice/chat JVM selection: 71 passed. APK updated with `-r`;
+  manual instrumentation retained the app and its pairing.
+- Battery later: 99%, USB charging, 43.0 C. No battery-drain claim.
+
+Current remaining gates: deliberate Windows speech/STT, audible-output
+confirmation, real music/call and headset-disconnect recovery, and battery
+measurement unplugged. The server voice route remains unavailable. The task
+stays open. Desktop capture fixes and observations are recorded in
+`D:/Projects/Soll/docs/voice-peripheral-physical-2026-10-13.md`.

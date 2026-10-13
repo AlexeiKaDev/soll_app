@@ -24,6 +24,7 @@ enum class AssistantVoicePlaybackPhase {
     IDLE,
     PREPARING,
     PLAYING,
+    PAUSED,
     ERROR,
 }
 
@@ -106,6 +107,13 @@ class AssistantVoicePlayer @Inject constructor(
                 _state.value = AssistantVoicePlaybackState(
                     messageId = messageId,
                     phase = AssistantVoicePlaybackPhase.PLAYING,
+                )
+            } else if (_state.value.phase == AssistantVoicePlaybackPhase.PLAYING &&
+                player?.playbackState == Player.STATE_READY
+            ) {
+                _state.value = AssistantVoicePlaybackState(
+                    messageId = messageId,
+                    phase = AssistantVoicePlaybackPhase.PAUSED,
                 )
             }
         }

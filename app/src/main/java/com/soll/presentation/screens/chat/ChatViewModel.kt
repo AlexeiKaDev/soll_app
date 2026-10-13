@@ -440,6 +440,7 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(voiceError = "Распознавание речи недоступно на этом устройстве") }
             return
         }
+        stopVoiceOutput()
         _uiState.update { it.copy(voiceError = null, voicePartialText = "") }
         sttAdapter.startListening(
             preferOffline = settingsRepository.voiceLocalOnly,
@@ -468,6 +469,7 @@ class ChatViewModel @Inject constructor(
             current.voicePlayback.phase in setOf(
                 AssistantVoicePlaybackPhase.PREPARING,
                 AssistantVoicePlaybackPhase.PLAYING,
+                AssistantVoicePlaybackPhase.PAUSED,
             )
         if (current.voiceLoadingMessageId == message.id || playbackIsActive) {
             stopVoiceOutput()

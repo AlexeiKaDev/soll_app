@@ -66,7 +66,7 @@ class AssistantVoicePlayer @Inject constructor(
             val nextPlayer = ExoPlayer.Builder(context).build().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(C.USAGE_ASSISTANT)
+                        .setUsage(C.USAGE_MEDIA)
                         .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
                         .build(),
                     true,

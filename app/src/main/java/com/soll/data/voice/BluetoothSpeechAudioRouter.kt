@@ -8,6 +8,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.annotation.RequiresApi
 
 internal class BluetoothSpeechAudioRouter(context: Context) {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -49,6 +50,7 @@ internal class BluetoothSpeechAudioRouter(context: Context) {
         Log.i(TAG, "Bluetooth speech route released")
     }
 
+    @RequiresApi(Build.VERSION_CODES.S)
     private fun prepareModernBluetoothInput(): Boolean {
         if (
             ContextCompat.checkSelfPermission(

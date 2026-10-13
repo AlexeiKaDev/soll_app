@@ -14,7 +14,7 @@ import com.soll.domain.soll.isRoutineSchedulerTelemetry
 import com.soll.domain.tts.AssistantVoicePlaybackPhase
 import com.soll.domain.tts.AssistantVoicePlaybackState
 import com.soll.domain.tts.AssistantVoicePlayer
-import com.soll.domain.tts.TextToSpeechManager
+import com.soll.domain.tts.AssistantSpeechSynthesizer
 import com.soll.domain.voice.resolveSttTerminal
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -88,7 +88,7 @@ class ChatViewModel @Inject constructor(
     private val sttAdapter: AndroidSpeechRecognizerAdapter,
     private val settingsRepository: SettingsRepository,
     private val capabilityRegistry: CapabilityRegistry,
-    private val ttsManager: TextToSpeechManager,
+    private val speechSynthesizer: AssistantSpeechSynthesizer,
     private val assistantVoicePlayer: AssistantVoicePlayer,
 ) : ViewModel() {
     private val turnIntentStore = ChatTurnIntentStore(savedStateHandle)
@@ -504,7 +504,6 @@ class ChatViewModel @Inject constructor(
         voiceFallbackText = ""
         voiceFallbackHandled = false
         assistantVoicePlayer.stop()
-        ttsManager.stop()
         _uiState.update { it.copy(voiceLoadingMessageId = null) }
     }
 
@@ -754,7 +753,23 @@ class ChatViewModel @Inject constructor(
     private fun fallbackToSystemVoice(messageId: Long, text: String) {
         if (voiceFallbackHandled || voiceFallbackMessageId != messageId || text.isBlank()) return
         voiceFallbackHandled = true
-        ttsManager.speakAssistantResponse(text)
+        val generation = voiceRequestGeneration
+        _uiState.update { it.copy(voiceLoadingMessageId = messageId) }
+        voiceRequestJob = viewModelScope.launch {
+            try {
+                val audio = speechSynthesizer.synthesize(text)
+                if (generation != voiceRequestGeneration) return@launch
+                _uiState.update { it.copy(voiceLoadingMessageId = null) }
+                assistantVoicePlayer.play(messageId, audio)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (generation == voiceRequestGeneration) {
+                    _uiState.update { it.copy(voiceLoadingMessageId = null,
+                        voiceError = error.message ?: "Не удалось озвучить ответ") }
+                }
+            }
+        }
     }
 
     private fun speakAutomaticallyIfNew(message: SollChatMessage) {
@@ -788,7 +803,6 @@ class ChatViewModel @Inject constructor(
         voiceFallbackText = ""
         assistantVoicePlayer.stop()
         sttAdapter.destroy()
-        ttsManager.stop()
         super.onCleared()
     }
 }

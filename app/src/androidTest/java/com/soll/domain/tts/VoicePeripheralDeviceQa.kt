@@ -30,8 +30,9 @@ class VoicePeripheralDeviceQa {
             .digest(token.toByteArray()).joinToString("") { "%02x".format(it) }.take(12)
         Log.i("SollVoicePhysicalQa", "endpoint=${URI(server).host}; client=$client; tokenPresent=${token.isNotBlank()}; tokenFingerprint=$fingerprint")
         assertEquals(args.getString("expectedTokenFingerprint"), fingerprint)
+        val expectedId = requireNotNull(args.getString("expectedReplyId")).toLong()
         val messages = withContext(Dispatchers.IO) {
-            val connection = URL(server.trimEnd('/') + "/" + prefix.trim('/') + "/chat/sessions/soll-main?limit=10").openConnection() as HttpURLConnection
+            val connection = URL(server.trimEnd('/') + "/" + prefix.trim('/') + "/chat/sessions/soll-main?after_id=${expectedId - 1}&limit=2").openConnection() as HttpURLConnection
             try {
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 10_000
@@ -41,7 +42,6 @@ class VoicePeripheralDeviceQa {
                 JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getJSONArray("messages")
             } finally { connection.disconnect() }
         }
-        val expectedId = requireNotNull(args.getString("expectedReplyId")).toLong()
         assertTrue("Exact completed voice QA reply must reach the paired phone", (0 until messages.length()).any {
             val message = messages.getJSONObject(it)
             message.optLong("id") == expectedId && message.optString("content") == "Голос работает."

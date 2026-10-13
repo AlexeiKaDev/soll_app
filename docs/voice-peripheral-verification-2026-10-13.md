@@ -109,3 +109,60 @@ confirmation, real music/call and headset-disconnect recovery, and battery
 measurement unplugged. The server voice route remains unavailable. The task
 stays open. Desktop capture fixes and observations are recorded in
 `D:/Projects/Soll/docs/voice-peripheral-physical-2026-10-13.md`.
+
+## Managed system fallback follow-up
+
+The public relay does not implement server voice synthesis. Its system TTS
+fallback previously bypassed AssistantVoicePlayer and reused the book engine,
+so the player's focus/noisy handling and Chat stop state did not cover the
+actual fallback heard by the user.
+
+Chat now uses a dedicated system synthesizer to create bounded WAV chunks.
+The same AssistantVoicePlayer plays server audio and the system fallback,
+including audio focus, becoming-noisy pause, stop and playlist completion.
+Cancellation shuts down that synthesis instance and removes only its temporary
+files. Book TTS code/settings remain untouched. Long replies are split without
+losing words; cancellation is propagated rather than converted into a new
+playback error.
+
+Changed files in this follow-up:
+
+- `app/src/main/java/com/soll/domain/tts/AssistantSpeechSynthesizer.kt`
+- `app/src/main/java/com/soll/domain/tts/AssistantVoicePlayer.kt`
+- `app/src/main/java/com/soll/presentation/screens/chat/ChatViewModel.kt`
+- `app/src/androidTest/java/com/soll/domain/tts/AssistantSpeechSynthesizerTest.kt`
+- `app/src/androidTest/java/com/soll/domain/tts/AssistantVoicePlayerTest.kt`
+- `app/src/androidTest/java/com/soll/domain/tts/VoicePeripheralDeviceQa.kt`
+- `app/src/test/java/com/soll/domain/tts/AssistantSpeechChunksTest.kt`
+- `docs/voice-peripheral-verification-2026-10-13.md`
+
+Verification:
+
+- Debug APK/test APK build passed; debug APK installed with `adb install -r`.
+- Selected voice/chat/chunk JVM tests: 74 passed.
+- Seven manual instrumentation tests passed on S200 Plus: system synthesis,
+  cancellation/retry, all playlist chunks, player start/stop/replay, invalid
+  audio recovery, transient focus pause/resume and exact paired-server reply.
+- One additional explicit physical test passed: while a silent 30-second
+  track was playing through Bluetooth, `cmd bluetooth_manager disable`
+  disconnected the headset. Player became PAUSED, playWhenReady=false,
+  isPlaying=false, same reply ID retained. This is a real route-disconnect
+  test with synthetic silent content, not a user audibility test.
+- Bluetooth was enabled again in a finally block. STATE_ON and EDIFIER SCO
+  input/output plus A2DP output were confirmed after the test.
+- Actual Chat listen action on reply 10158 (`Голос работает.`), turn
+  `chat-turn:e8274922a87c9dde075a747b4358a9ee`, produced one app-owned
+  24 kHz speech AudioTrack at 15:07:11–15:07:12, uid 10462/pid 13872.
+  Both request 10157 and reply 10158 remained visible. Server policy forbade
+  task intake/actions. System fallback now plays through Soll's Media3,
+  rather than directly through the Google engine's playback process.
+- Full lint remains at four prior errors outside voice and 132 warnings;
+  no full lint success is claimed.
+- Both installed packages and saved pairing remain present. Battery observed
+  98%, USB charging, 46.0 C; no unplugged drain measurement.
+
+Public server synthesis is still unavailable. Desktop UI reload, deliberate
+Windows phrase/STT, subjective audible confirmation, real call/music and
+unplugged battery measurement remain open. No Desktop/server restart was
+attempted in this follow-up; the earlier Desktop restart policy rejection
+still requires a normal manual application restart.

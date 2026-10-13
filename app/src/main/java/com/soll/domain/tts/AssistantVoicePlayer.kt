@@ -44,8 +44,12 @@ class AssistantVoicePlayer @Inject constructor(
     private var player: ExoPlayer? = null
 
     suspend fun play(messageId: Long, audio: ByteArray): Boolean {
+        return play(messageId, listOf(audio))
+    }
+
+    suspend fun play(messageId: Long, audio: List<ByteArray>): Boolean {
         releasePlayer()
-        if (!audio.isSollVoiceWav()) {
+        if (audio.isEmpty() || audio.any { !it.isSollVoiceWav() }) {
             _state.value = AssistantVoicePlaybackState(
                 messageId = messageId,
                 phase = AssistantVoicePlaybackPhase.ERROR,
@@ -53,9 +57,10 @@ class AssistantVoicePlayer @Inject constructor(
             )
             return false
         }
-        val audioFile = runCatching {
-            withContext(Dispatchers.IO) { cachedAudioFile(messageId, audio) }
+        val audioFiles = runCatching {
+            withContext(Dispatchers.IO) { audio.map { cachedAudioFile(messageId, it) } }
         }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
             _state.value = AssistantVoicePlaybackState(
                 messageId = messageId,
                 phase = AssistantVoicePlaybackPhase.ERROR,
@@ -74,7 +79,7 @@ class AssistantVoicePlayer @Inject constructor(
                 )
                 setHandleAudioBecomingNoisy(true)
                 addListener(playbackListener)
-                setMediaItem(MediaItem.fromUri(Uri.fromFile(audioFile)))
+                setMediaItems(audioFiles.map { MediaItem.fromUri(Uri.fromFile(it)) })
             }
             player = nextPlayer
             _state.value = AssistantVoicePlaybackState(

@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
+import android.os.Bundle
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.platform.app.InstrumentationRegistry
 import java.nio.ByteBuffer
@@ -15,8 +17,55 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Assume.assumeTrue
 
 class AssistantVoicePlayerTest {
+    /** The operator toggles Bluetooth externally; ordinary test runs skip this. */
+    @Test fun physicalHeadsetDisconnectPausesPlayback() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        assumeTrue(InstrumentationRegistry.getArguments().getString("runPhysicalDisconnectQa") == "true")
+        val context = instrumentation.targetContext
+        val manager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        assertTrue(manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+        })
+        withContext(Dispatchers.Main) {
+            val player = AssistantVoicePlayer(context)
+            try {
+                assertTrue(player.play(107L, silentWav(seconds = 30)))
+                awaitPlaying(player)
+                instrumentation.sendStatus(0, Bundle().apply { putString("stream", "READY_FOR_HEADSET_DISCONNECT\n") })
+                withTimeout(25_000) {
+                    while (player.state.value.phase != AssistantVoicePlaybackPhase.PAUSED) delay(20)
+                }
+                val engine = AssistantVoicePlayer::class.java.getDeclaredField("player").apply {
+                    isAccessible = true
+                }.get(player) as ExoPlayer
+                assertFalse("Noisy route must disable playback, rather than just duck it", engine.playWhenReady)
+                assertFalse(engine.isPlaying)
+                assertEquals(107L, player.state.value.messageId)
+            } finally { player.stop() }
+        }
+    }
+
+    @Test fun longReplyPlaysEveryChunkBeforeFinishing() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        withContext(Dispatchers.Main) {
+            val player = AssistantVoicePlayer(context)
+            try {
+                assertTrue(player.play(106L, listOf(silentWav(), silentWav(seconds = 2))))
+                awaitPlaying(player)
+                val engine = AssistantVoicePlayer::class.java.getDeclaredField("player").apply {
+                    isAccessible = true
+                }.get(player) as ExoPlayer
+                withTimeout(5_000) { while (engine.currentMediaItemIndex != 1) delay(10) }
+                assertEquals(106L, player.state.value.messageId)
+                assertNotEquals(AssistantVoicePlaybackPhase.IDLE, player.state.value.phase)
+                withTimeout(5_000) { while (player.state.value.phase != AssistantVoicePlaybackPhase.IDLE) delay(10) }
+            } finally { player.stop() }
+        }
+    }
+
     @Test fun transientFocusLossPausesReplyAndFocusReturnResumesIt() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val manager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

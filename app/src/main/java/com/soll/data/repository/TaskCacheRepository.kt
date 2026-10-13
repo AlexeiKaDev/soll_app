@@ -13,6 +13,14 @@ import javax.inject.Singleton
 class TaskCacheRepository @Inject constructor(
     private val taskCacheDao: TaskCacheDao,
 ) {
+    suspend fun mergePage(tasks: List<SollTask>) {
+        taskCacheDao.insertAll(tasks.map { TaskCacheEntity.fromDomain(it, System.currentTimeMillis()) })
+    }
+    suspend fun mergeBoard(board: SollTaskBoard, pendingStatuses: Map<String, String>): SollTaskBoard {
+        val adjusted = board.withoutDailyTodoTasks().withPendingStatuses(pendingStatuses)
+        mergePage(adjusted.allTasks())
+        return adjusted
+    }
     suspend fun replaceWith(
         board: SollTaskBoard,
         pendingStatuses: Map<String, String> = emptyMap(),

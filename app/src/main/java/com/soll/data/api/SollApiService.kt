@@ -226,6 +226,28 @@ interface SollApiService {
         @Part file: MultipartBody.Part,
     ): RawUploadResponse
 
+    @POST("api/v1/tasks/")
+    suspend fun createTask(@Header("Authorization") authorization: String?, @Body request: TaskCreateRequest): SollTaskMutationResponse
+
+    @Multipart
+    @POST("api/v1/tasks/{task_id}/evidence")
+    suspend fun uploadTaskEvidence(@Header("Authorization") authorization: String?, @Path("task_id", encoded = true) taskId: String,
+        @Part file: MultipartBody.Part): SollTaskMutationResponse
+
+    @GET("api/v1/tasks/projects")
+    suspend fun getTaskProjects(@Header("Authorization") authorization: String?): List<TaskProjectResponse>
+
+    @GET("api/v1/tasks/page")
+    suspend fun getTaskPage(
+        @Header("Authorization") authorization: String?,
+        @Query("section") section: String, @Query("q") query: String,
+        @Query("project_id") projectId: String?, @Query("priority") priority: String?,
+        @Query("offset") offset: Int, @Query("limit") limit: Int = 80,
+    ): TaskPageResponse
+
+    @GET("api/v1/tasks/{task_id}")
+    suspend fun getTask(@Header("Authorization") authorization: String?, @Path("task_id", encoded = true) taskId: String): SollTaskMutationResponse
+
     @POST("api/v1/tasks/{task_id}/status/{status}")
     suspend fun setTaskStatus(
         @Header("Authorization") authorization: String? = null,
@@ -811,6 +833,7 @@ data class ChatMessageResponse(
     @Json(name = "created_at")
     val createdAt: String = "",
     val metadata: Map<String, Any?> = emptyMap(),
+    @Json(name = "encrypted_payload") val encryptedPayload: SecurePayloadEnvelopeRequest? = null,
 )
 
 data class ChatSessionsResponse(
@@ -1148,6 +1171,23 @@ data class VoiceSynthesisRequest(
 data class TaskUpdateRequest(
     val title: String,
     val description: String,
+    val priority: String? = null,
+    @Json(name = "project_id") val projectId: String? = null,
+    @Json(name = "project_name") val projectName: String? = null,
+    @Json(name = "due_date") val dueDate: String? = null,
+)
+
+data class TaskCreateRequest(
+    val title: String, val description: String, val priority: String,
+    @Json(name = "client_request_id") val clientRequestId: String,
+    @Json(name = "project_id") val projectId: String? = null,
+    @Json(name = "due_date") val dueDate: String? = null,
+)
+data class TaskProjectResponse(val id: String, val name: String)
+data class TaskPageResponse(
+    val tasks: List<SollTaskResponse> = emptyList(),
+    @Json(name = "total_count") val totalCount: Int = 0,
+    @Json(name = "has_more") val hasMore: Boolean = false,
 )
 
 data class SollTaskBoardCountsResponse(
@@ -1424,6 +1464,7 @@ data class RoadmapResponse(
     val currentStage: String = "",
     val stages: List<RoadmapStageResponse> = emptyList(),
     val readiness: List<RoadmapReadinessResponse> = emptyList(),
+    @Json(name = "edit_supported") val editSupported: Boolean = false,
 )
 
 data class RoadmapStageResponse(
@@ -1436,6 +1477,8 @@ data class RoadmapStageResponse(
 data class RoadmapLineResponse(
     val line: String = "",
     val text: String = "",
+    val status: String = "planned",
+    val comment: String = "",
 )
 
 data class RoadmapReadinessResponse(

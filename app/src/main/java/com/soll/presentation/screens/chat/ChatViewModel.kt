@@ -302,8 +302,14 @@ class ChatViewModel @Inject constructor(
     }
 
     fun send() {
+        if (_uiState.value.isSending) return
         val content = _uiState.value.input.trim()
         if (content.isBlank()) return
+        val taskBody = explicitTaskBody(content)
+        if (taskBody != null && taskBody.isBlank()) {
+            _uiState.update { it.copy(error = "Напиши текст задачи после «добавь задачу».") }
+            return
+        }
         viewModelScope.launch {
             val restoredIntent = turnIntentStore.restore()?.takeIf { it.content == content }
             val sessionId = restoredIntent?.sessionId ?: _uiState.value.sessionId
@@ -321,7 +327,7 @@ class ChatViewModel @Inject constructor(
                 content = content,
                 sessionId = sessionId,
                 runAssistant = true,
-                taskIntake = false,
+                taskIntake = taskBody != null,
                 allowActions = false,
                 metadata = mapOf(
                     "client_turn_id" to pendingTurn.clientTurnId,

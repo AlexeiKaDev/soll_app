@@ -449,7 +449,9 @@ class SollSyncQueueRepository @Inject constructor(
         return when (item.kind) {
             SyncQueueEntity.KIND_RAW_NOTE -> {
                 val tags = payload.optJSONArray("tags").toStringList()
-                sollGateway.createRawNote(
+                val taskId = payload.optString("task_id").takeIf { it.isNotBlank() }
+                if (taskId != null) sollGateway.createTaskEvidenceNote(taskId, payload.getString("content")).map { Unit }
+                else sollGateway.createRawNote(
                     title = payload.getString("title"),
                     content = payload.getString("content"),
                     tags = tags,
@@ -461,7 +463,9 @@ class SollSyncQueueRepository @Inject constructor(
                 if (!file.exists()) {
                     Result.failure(IllegalStateException("Локальный файл очереди не найден"))
                 } else {
-                    sollGateway.uploadRawFile(Uri.fromFile(file)).map { Unit }
+                    val taskId = payload.optString("task_id").takeIf { it.isNotBlank() }
+                    if (taskId != null) sollGateway.uploadTaskEvidence(taskId, Uri.fromFile(file)).map { Unit }
+                    else sollGateway.uploadRawFile(Uri.fromFile(file)).map { Unit }
                 }
             }
 

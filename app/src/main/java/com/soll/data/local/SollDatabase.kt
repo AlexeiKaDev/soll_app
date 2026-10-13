@@ -87,7 +87,7 @@ import com.soll.data.local.entity.TodaySnapshotEntity
         TaskGraphReachabilityEntity::class,
         TodaySnapshotEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = true,
 )
 abstract class SollDatabase : RoomDatabase() {

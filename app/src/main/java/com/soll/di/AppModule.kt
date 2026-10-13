@@ -703,6 +703,12 @@ object AppModule {
         }
     }
 
+    internal val migration26To27 = object : Migration(26, 27) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE task_cache ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}'")
+        }
+    }
+
     internal val migration25To26 = object : Migration(25, 26) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -908,6 +914,7 @@ object AppModule {
                 migration23To24,
                 migration24To25,
                 migration25To26,
+                migration26To27,
             )
             .build()
 

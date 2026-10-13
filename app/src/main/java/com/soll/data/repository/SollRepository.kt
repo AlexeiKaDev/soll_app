@@ -202,6 +202,7 @@ import com.soll.domain.soll.SollProtocolWorkerContract
 import com.soll.domain.soll.SollRawNote
 import com.soll.domain.soll.SollRawUpload
 import com.soll.domain.soll.SollTask
+import com.soll.domain.soll.isDailyTodoTask
 import com.soll.domain.soll.SollTaskBoard
 import com.soll.domain.soll.SollTaskBoardCounts
 import com.soll.domain.soll.SollTaskGraph
@@ -420,7 +421,7 @@ class SollRepository @Inject constructor(
             ?: TASK_BOARD_SECTION_LIMIT
         val boardResult = runSuspendCatching {
             service().getTaskBoard(
-                authorization = readAuthorizationHeader(),
+                authorization = refreshAwareReadAuthorizationHeader(),
                 importDaily = false,
                 limitPerSection = sectionLimit,
                 includeCounts = true,
@@ -434,7 +435,7 @@ class SollRepository @Inject constructor(
         }
 
         val syncStatusResult = runSuspendCatching {
-            val response = service().getAndroidSyncStatus(ensureDeviceAuthorizationHeader() ?: readAuthorizationHeader())
+            val response = service().getAndroidSyncStatus(ensureDeviceAuthorizationHeader() ?: refreshAwareReadAuthorizationHeader())
             cacheAndroidSyncStatus(response)
             response.tasks.toDomain().withoutDailyTodoTasks()
         }
@@ -781,11 +782,59 @@ class SollRepository @Inject constructor(
         service().uploadRawFile(authorizationHeader(), part).toDomain()
     }
 
+    override suspend fun uploadTaskEvidence(taskId: String, uri: Uri): Result<SollTask> = runSuspendCatching {
+        val metadata = resolveRawUploadMetadata(uri)
+        val part = MultipartBody.Part.createFormData("file", buildRawUploadFilename(metadata.displayName),
+            uriRequestBody(uri, metadata.mimeType, metadata.size))
+        service().uploadTaskEvidence(writeAuthorizationHeader(), taskId.encodedSollPathSegment(fieldName = "task_id"), part).taskResponse().toDomain()
+    }
+
+    override suspend fun createTaskEvidenceNote(taskId: String, content: String): Result<SollTask> = runSuspendCatching {
+        val part = MultipartBody.Part.createFormData("file", "task-note.md", content.toRequestBody("text/markdown".toMediaType()))
+        service().uploadTaskEvidence(writeAuthorizationHeader(), taskId.encodedSollPathSegment(fieldName = "task_id"), part).taskResponse().toDomain()
+    }
+
+    override suspend fun createTask(input: com.soll.domain.soll.SollTaskInput, clientRequestId: String): Result<SollTask> = runSuspendCatching {
+        service().createTask(writeAuthorizationHeader(), com.soll.data.api.TaskCreateRequest(
+            title = input.title.trim(), description = input.description.trim(), priority = input.priority,
+            clientRequestId = clientRequestId, projectId = input.projectId.ifBlank { null },
+            dueDate = input.dueDate.ifBlank { null },
+        )).taskResponse().toDomain()
+    }
+
+    override suspend fun updateTaskDetails(taskId: String, input: com.soll.domain.soll.SollTaskInput): Result<SollTask> = runSuspendCatching {
+        service().updateTask(writeAuthorizationHeader(), taskId.encodedSollPathSegment(fieldName = "task_id"),
+            TaskUpdateRequest(input.title.trim(), input.description.trim(), input.priority,
+                input.projectId.takeUnless { it.isBlank() && input.projectName.isNotBlank() },
+                input.projectName.takeUnless { input.projectId.isBlank() && it.isNotBlank() }, input.dueDate)
+        ).taskResponse().toDomain()
+    }
+
+    override suspend fun getTask(taskId: String): Result<SollTask> = runSuspendCatching {
+        service().getTask(refreshAwareReadAuthorizationHeader(), taskId.encodedSollPathSegment(fieldName = "task_id")).taskResponse().toDomain()
+    }
+
+    override suspend fun getTaskProjects(): Result<List<com.soll.domain.soll.SollTaskProject>> = runSuspendCatching {
+        val projects = service().getTaskProjects(refreshAwareReadAuthorizationHeader())
+        val stored = org.json.JSONArray().apply { projects.forEach { put(org.json.JSONObject().put("id", it.id).put("name", it.name)) } }
+        context.getSharedPreferences(SOLL_CACHE_PREFS, Context.MODE_PRIVATE).edit().putString("task_projects", stored.toString()).apply()
+        projects.map { com.soll.domain.soll.SollTaskProject(it.id, it.name) }
+    }.recoverCatching { error ->
+        if (error !is java.io.IOException && !(error is HttpException && (error.code() == 404 || error.code() >= 500))) throw error
+        val stored = org.json.JSONArray(context.getSharedPreferences(SOLL_CACHE_PREFS, Context.MODE_PRIVATE).getString("task_projects", "[]"))
+        (0 until stored.length()).map { index -> stored.getJSONObject(index).let { com.soll.domain.soll.SollTaskProject(it.getString("id"), it.getString("name")) } }
+    }
+
+    override suspend fun getTaskPage(section: String, query: String, projectId: String?, priority: String?, offset: Int): Result<com.soll.domain.soll.SollTaskPage> = runSuspendCatching {
+        val response = service().getTaskPage(refreshAwareReadAuthorizationHeader(), section, query, projectId, priority, offset)
+        com.soll.domain.soll.SollTaskPage(response.tasks.map { it.toDomain() }.filterNot { it.isDailyTodoTask() }, response.totalCount, response.hasMore)
+    }
+
     override suspend fun setTaskStatus(taskId: String, status: String): Result<SollTask> = runSuspendCatching {
         val cleanStatus = status.trim()
         require(cleanStatus.isNotBlank()) { "Статус задачи не задан" }
         service().setTaskStatus(
-            authorizationHeader(),
+            writeAuthorizationHeader(),
             taskId.encodedSollPathSegment(fieldName = "task_id"),
             cleanStatus,
         ).taskResponse().toDomain()
@@ -810,28 +859,28 @@ class SollRepository @Inject constructor(
 
     override suspend fun moveTaskToToday(taskId: String): Result<SollTask> = runSuspendCatching {
         service().moveTaskToToday(
-            authorizationHeader(),
+            writeAuthorizationHeader(),
             taskId.encodedSollPathSegment(fieldName = "task_id"),
         ).taskResponse().toDomain()
     }
 
     override suspend fun completeTask(taskId: String): Result<SollTask> = runSuspendCatching {
         service().completeTask(
-            authorizationHeader(),
+            writeAuthorizationHeader(),
             taskId.encodedSollPathSegment(fieldName = "task_id"),
         ).taskResponse().toDomain()
     }
 
     override suspend fun deferTask(taskId: String): Result<SollTask> = runSuspendCatching {
         service().deferTask(
-            authorizationHeader(),
+            writeAuthorizationHeader(),
             taskId.encodedSollPathSegment(fieldName = "task_id"),
         ).taskResponse().toDomain()
     }
 
     override suspend fun rejectTask(taskId: String): Result<SollTask> = runSuspendCatching {
         service().rejectTask(
-            authorizationHeader(),
+            writeAuthorizationHeader(),
             taskId.encodedSollPathSegment(fieldName = "task_id"),
         ).taskResponse().toDomain()
     }
@@ -915,7 +964,7 @@ class SollRepository @Inject constructor(
     override suspend fun getLearningItems(status: String?, limit: Int): Result<List<SollLearningItem>> =
         runSuspendCatching {
             service().getLearningItems(
-                authorization = readAuthorizationHeader(),
+                authorization = refreshAwareReadAuthorizationHeader(),
                 status = status?.takeIf { it.isNotBlank() },
                 limit = limit.coerceIn(1, 200),
             ).items
@@ -932,7 +981,7 @@ class SollRepository @Inject constructor(
     override suspend fun updateLearningItemStatus(itemId: String, status: String): Result<SollLearningItem?> =
         runSuspendCatching {
             service().updateLearningItemStatus(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 itemId = itemId.trim(),
                 request = LearningItemStatusRequest(status = status.trim()),
             ).item?.toDomain()
@@ -940,7 +989,7 @@ class SollRepository @Inject constructor(
 
     override suspend fun createTaskFromLearningItem(itemId: String): Result<SollTask?> = runSuspendCatching {
         service().createTaskFromLearningItem(
-            authorization = authorizationHeader(),
+            authorization = writeAuthorizationHeader(),
             itemId = itemId.trim(),
             request = LearningItemTaskRequest(priority = "B", markDone = true),
         ).task?.toDomain()
@@ -948,7 +997,7 @@ class SollRepository @Inject constructor(
 
     override suspend fun getRoadmap(): Result<SollRoadmap> =
         runSuspendCatching {
-            service().getRoadmap(readAuthorizationHeader()).toDomain()
+            service().getRoadmap(refreshAwareReadAuthorizationHeader()).toDomain()
         }.recoverCatching { error ->
             if (!error.isHttpStatus(404)) throw error
             SollRoadmap(currentStage = "Relay без roadmap")
@@ -957,7 +1006,7 @@ class SollRepository @Inject constructor(
     override suspend fun addRoadmapLine(stageId: String, line: String, text: String): Result<SollRoadmap> =
         runSuspendCatching {
             service().addRoadmapLine(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 stageId = stageId.trim(),
                 request = RoadmapLineRequest(line = line.trim(), text = text.trim()),
             ).toDomain()
@@ -977,7 +1026,7 @@ class SollRepository @Inject constructor(
         require(cleanLine.isNotBlank()) { "Строка roadmap не задана" }
         require(cleanText.isNotBlank()) { "Текст roadmap не задан" }
         service().updateRoadmapLine(
-            authorization = authorizationHeader(),
+            authorization = writeAuthorizationHeader(),
             stageId = cleanStageId,
             line = cleanLine,
             request = RoadmapLineUpdateRequest(line = cleanNewLine, text = cleanText),
@@ -987,7 +1036,7 @@ class SollRepository @Inject constructor(
     override suspend fun deleteRoadmapLine(stageId: String, line: String): Result<SollRoadmap> =
         runSuspendCatching {
             service().deleteRoadmapLine(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 stageId = stageId.trim(),
                 line = line.trim(),
             ).toDomain()
@@ -1000,7 +1049,7 @@ class SollRepository @Inject constructor(
             require(cleanStageId.isNotBlank()) { "ID этапа roadmap не задан" }
             require(cleanLine.isNotBlank()) { "Строка roadmap не задана" }
             service().createTaskFromRoadmapLine(
-                authorization = authorizationHeader(),
+                authorization = writeAuthorizationHeader(),
                 stageId = cleanStageId,
                 line = cleanLine,
                 request = RoadmapLineTaskRequest(priority = "B"),
@@ -1009,7 +1058,7 @@ class SollRepository @Inject constructor(
 
     override suspend fun listSources(scope: SollSourceScope): Result<List<SollMonitoredSource>> =
         runSuspendCatching {
-            service().listSources(readAuthorizationHeader(), scope = scope.apiValue)
+            service().listSources(refreshAwareReadAuthorizationHeader(), scope = scope.apiValue)
                 .mapNotNull { it.toDomainOrNull() }
                 .filterForSourceScope(scope)
         }.recoverCatching { error ->
@@ -1020,7 +1069,7 @@ class SollRepository @Inject constructor(
     override suspend fun listSourceItems(sourceId: String, limit: Int): Result<List<SollSourceItem>> =
         runSuspendCatching {
             service().listSourceItems(
-                authorization = readAuthorizationHeader(),
+                authorization = refreshAwareReadAuthorizationHeader(),
                 sourceId = sourceId.trim(),
                 limit = limit.coerceIn(1, 100),
             ).map { it.toDomain() }
@@ -1040,7 +1089,7 @@ class SollRepository @Inject constructor(
         val cleanSourceId = sourceId.trim()
         require(cleanSourceId.isNotBlank()) { "ID источника не задан" }
         service().listSourceItemsPage(
-            authorization = readAuthorizationHeader(),
+            authorization = refreshAwareReadAuthorizationHeader(),
             sourceId = cleanSourceId,
             cursor = cursor.trim().takeIf { it.isNotBlank() },
             limit = limit.coerceIn(1, 200),
@@ -1924,7 +1973,9 @@ class SollRepository @Inject constructor(
             id = id,
             sessionId = sessionId,
             role = role,
-            content = content,
+            content = encryptedPayload?.let { envelope -> runCatching {
+                com.soll.data.api.decryptRelayChatContent(envelope, settingsRepository.sollDevicePairingSecret.trim(), settingsRepository.sollDeviceId.trim())
+            }.getOrDefault("Не удалось прочитать зашифрованное сообщение.") } ?: content,
             createdAt = createdAt,
             metadata = metadata,
         )
@@ -2001,6 +2052,7 @@ class SollRepository @Inject constructor(
             stages = stages.map { it.toDomain() },
             readiness = readiness.map { it.toDomain() },
             updated = updated,
+            editSupported = editSupported,
         )
 
     private fun RoadmapStageResponse.toDomain(): SollRoadmapStage =
@@ -2012,7 +2064,7 @@ class SollRepository @Inject constructor(
         )
 
     private fun RoadmapLineResponse.toDomain(): SollRoadmapLine =
-        SollRoadmapLine(line = line, text = text)
+        SollRoadmapLine(line = line, text = text, status = status, comment = comment)
 
     private fun RoadmapReadinessResponse.toDomain(): SollRoadmapReadiness =
         SollRoadmapReadiness(area = area, percent = percent, gap = gap)
@@ -2191,6 +2243,7 @@ class SollRepository @Inject constructor(
 
     private fun SollTaskResponse.toDomain(): SollTask =
         SollTask(
+            projectId = projectId,
             id = id,
             title = title,
             description = description,

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -35,8 +36,17 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -81,14 +91,13 @@ import com.soll.domain.soll.SollRoadmapReadiness
 import com.soll.domain.soll.SollRoadmapStage
 import com.soll.domain.soll.SollSourceItem
 import com.soll.domain.soll.SollTask
-import com.soll.domain.soll.SollTaskGraphNode
 import com.soll.ui.components.PassiveChip
 import com.soll.ui.components.RemoteLinkPreviewImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskBoardScreen(
-    title: String = "Задачи Soll",
+    title: String = "Задачи",
     initialMode: TaskWorkspaceMode = TaskWorkspaceMode.TASKS,
     visibleModes: List<TaskWorkspaceMode> = listOf(
         TaskWorkspaceMode.TASKS,
@@ -105,9 +114,9 @@ fun TaskBoardScreen(
         focusTaskId?.takeIf { it.isNotBlank() }?.let(viewModel::focusTask)
     }
     val snackbarHostState = remember { SnackbarHostState() }
-    var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var evidenceTask by remember { mutableStateOf<SollTask?>(null) }
-    var editingTask by remember { mutableStateOf<SollTask?>(null) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    var showSections by remember { mutableStateOf(false) }
     var showCreateSourceDialog by remember { mutableStateOf(false) }
     val evidencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val task = evidenceTask
@@ -124,23 +133,28 @@ fun TaskBoardScreen(
     }
 
     LaunchedEffect(uiState.message) {
-        uiState.message?.let { message ->
+        uiState.message?.takeUnless { uiState.isError }?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearMessage()
         }
     }
 
-    editingTask?.let { task ->
-        TaskEditDialog(
-            task = task,
-            isSaving = uiState.actionTaskId == task.id,
-            onDismiss = { editingTask = null },
-            onSave = { title, description ->
-                viewModel.updateTask(task, title, description)
-                editingTask = null
-            },
-        )
+    if (uiState.editorVisible) {
+        TaskEditorSheet(uiState.editorInput, uiState.projects, uiState.editorTaskId != null,
+            uiState.editorSaving, uiState.editorError, viewModel::updateEditor, viewModel::closeEditor, viewModel::saveEditor)
+    } else uiState.detailTask?.let { task ->
+        TaskDetailSheet(task = task, busy = uiState.actionTaskId != null,
+            pendingAction = task.id in uiState.pendingTaskActionIds,
+            pendingEvidence = task.id in uiState.pendingEvidenceTaskIds,
+            evidenceBusy = uiState.evidenceTaskId == task.id,
+            onDismiss = viewModel::closeTask, onEdit = { viewModel.openEditor(task) },
+            onAttach = { evidenceTask = task; evidencePicker.launch("*/*") },
+            onToday = { viewModel.moveToToday(task) }, onStart = { viewModel.startTask(task) },
+            onDone = { viewModel.completeTask(task) }, onDefer = { viewModel.deferTask(task) },
+            onReject = { viewModel.rejectTask(task) })
     }
+    if (showFilters) TaskFilterSheet(uiState, viewModel::selectPriority, viewModel::selectProject, { showFilters = false })
+    LaunchedEffect(uiState.workspaceActionRevision) { showCreateSourceDialog = false }
 
     if (showCreateSourceDialog) {
         CreateSourceDialog(
@@ -148,7 +162,6 @@ fun TaskBoardScreen(
             onDismiss = { showCreateSourceDialog = false },
             onCreate = { name, target ->
                 viewModel.createSource(name, target)
-                showCreateSourceDialog = false
             },
         )
     }
@@ -156,6 +169,12 @@ fun TaskBoardScreen(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (uiState.selectedMode == TaskWorkspaceMode.TASKS) {
+                ExtendedFloatingActionButton(onClick = { viewModel.openEditor() },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) }, text = { Text("Задача") })
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -196,7 +215,12 @@ fun TaskBoardScreen(
                 onSelect = viewModel::selectMode,
             )
 
-            TaskSummary(uiState)
+            if (uiState.isShowingCache || uiState.pendingTaskActionCount > 0 || uiState.pendingEvidenceCount > 0) {
+                Text(if (uiState.isShowingCache) "Нет связи · показаны сохранённые задачи" else "Есть действия в очереди синхронизации",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (uiState.pageLoading && uiState.selectedMode == TaskWorkspaceMode.TASKS) LinearProgressIndicator(Modifier.fillMaxWidth())
 
             uiState.message
                 ?.takeIf { uiState.isError }
@@ -214,24 +238,37 @@ fun TaskBoardScreen(
                 when (uiState.selectedMode) {
                     TaskWorkspaceMode.TASKS -> {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            TaskBoardFilters(
-                                searchQuery = uiState.searchQuery,
-                                selectedPriority = uiState.selectedPriority,
-                                graphRoots = uiState.taskGraph?.projectFilterNodes().orEmpty(),
-                                selectedGraphNodeId = uiState.selectedGraphNodeId,
-                                graphQueryLoading = uiState.graphQueryLoading,
-                                onSearchQueryChange = viewModel::updateSearchQuery,
-                                onPriorityChange = viewModel::selectPriority,
-                                onGraphNodeChange = viewModel::selectGraphNode,
-                            )
-
-                            ScrollableTabRow(selectedTabIndex = uiState.selectedTab.ordinal, edgePadding = 12.dp) {
-                                TaskTab.entries.forEach { tab ->
-                                    Tab(
-                                        selected = uiState.selectedTab == tab,
-                                        onClick = { viewModel.selectTab(tab) },
-                                        text = { Text(tab.title(uiState)) },
-                                    )
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(value = uiState.searchQuery, onValueChange = viewModel::updateSearchQuery,
+                                    modifier = Modifier.weight(1f), singleLine = true, label = { Text("Поиск задач") },
+                                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                    trailingIcon = { if (uiState.searchQuery.isNotBlank()) IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Очистить поиск")
+                                    } }, shape = RoundedCornerShape(16.dp))
+                                IconButton(onClick = { showFilters = true }) {
+                                    Icon(Icons.Default.FilterList, contentDescription = "Фильтры задач")
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween) {
+                                Box {
+                                    TextButton(onClick = { showSections = true }) {
+                                        Text(uiState.selectedTab.label()); Spacer(Modifier.width(4.dp))
+                                        Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(18.dp))
+                                    }
+                                    DropdownMenu(expanded = showSections, onDismissRequest = { showSections = false }) {
+                                        TaskTab.entries.forEach { tab -> DropdownMenuItem(text = { Text(tab.label()) },
+                                            onClick = { viewModel.selectTab(tab); showSections = false }) }
+                                    }
+                                }
+                                Text("${uiState.pageTotal ?: uiState.selectedTaskCount} задач", style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (uiState.selectedPriority != TaskPriorityFilter.ALL || uiState.selectedProjectId != null) {
+                                TextButton(onClick = { showFilters = true }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    Text(listOfNotNull(uiState.selectedPriority.label.takeUnless { uiState.selectedPriority == TaskPriorityFilter.ALL },
+                                        uiState.selectedProjectId?.let { selected -> uiState.projects.firstOrNull { it.id == selected }?.name ?: "Проект недоступен" }).joinToString(" · "))
                                 }
                             }
 
@@ -241,46 +278,25 @@ fun TaskBoardScreen(
                                     .fillMaxWidth()
                                     .weight(1f),
                             ) {
-                                if (tasks.isEmpty() && !uiState.isLoading) {
+                                if (tasks.isEmpty() && !uiState.isLoading && !uiState.pageLoading) {
                                     EmptyTasks(tab = uiState.selectedTab)
                                 } else {
                                     LazyColumn(
                                         modifier = Modifier.fillMaxSize(),
-                                        contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
+                                        contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 96.dp),
                                         verticalArrangement = Arrangement.spacedBy(10.dp),
                                     ) {
                                         items(tasks, key = { it.taskListKey() }, contentType = { "task" }) { task ->
-                                            TaskCard(
-                                                task = task,
-                                                expanded = expandedTaskId == task.id,
-                                                isActionRunning = uiState.actionTaskId == task.id,
-                                                isEvidenceRunning = uiState.evidenceTaskId == task.id,
-                                                hasPendingEvidence = task.id in uiState.pendingEvidenceTaskIds,
-                                                hasPendingTaskAction = task.id in uiState.pendingTaskActionIds,
-                                                onToggleDetails = {
-                                                    expandedTaskId = if (expandedTaskId == task.id) null else task.id
-                                                },
-                                                onAttachEvidence = {
-                                                    evidenceTask = task
-                                                    evidencePicker.launch("*/*")
-                                                },
-                                                onEdit = { editingTask = task },
-                                                onMoveToToday = { viewModel.moveToToday(task) },
-                                                onStart = { viewModel.startTask(task) },
-                                                onDone = { viewModel.completeTask(task) },
-                                                onDefer = { viewModel.deferTask(task) },
-                                                onReject = { viewModel.rejectTask(task) },
-                                            )
+                                            CompactTaskRow(task = task,
+                                                pending = task.id in uiState.pendingTaskActionIds || task.id in uiState.pendingEvidenceTaskIds,
+                                                onOpen = { viewModel.openTask(task) })
                                         }
                                         if (uiState.canLoadMoreTasks) {
                                             item(key = "load-more-tasks", contentType = "load-more") {
-                                                LoadMoreTasksRow(
-                                                    displayedTotal = uiState.selectedDisplayedTaskCount,
-                                                    total = uiState.selectedTaskCount,
-                                                    currentLimit = uiState.taskBoardLimitPerSection
-                                                        ?: uiState.requestedTaskBoardLimitPerSection,
-                                                    onLoadMore = viewModel::loadMoreTasks,
-                                                )
+                                                OutlinedButton(onClick = viewModel::loadMoreTasks,
+                                                    enabled = !uiState.pageLoading && !uiState.isLoading, modifier = Modifier.fillMaxWidth()) {
+                                                    Text(if (uiState.pageLoading) "Загружаю…" else "Загрузить ещё")
+                                                }
                                             }
                                         }
                                     }
@@ -292,40 +308,6 @@ fun TaskBoardScreen(
                     TaskWorkspaceMode.ROADMAP -> RoadmapMode(uiState = uiState, viewModel = viewModel)
                     TaskWorkspaceMode.SOURCES -> SourcesMode(uiState = uiState, viewModel = viewModel)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LoadMoreTasksRow(
-    displayedTotal: Int,
-    total: Int,
-    currentLimit: Int,
-    onLoadMore: () -> Unit,
-) {
-    Card(shape = RoundedCornerShape(8.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Показано $displayedTotal из $total",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Лимит секции: $currentLimit",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            OutlinedButton(onClick = onLoadMore) {
-                Text("Показать больше")
             }
         }
     }
@@ -358,6 +340,7 @@ private fun TaskWorkspaceTabs(
                         }
                     )
                     .clickable { onSelect(mode) }
+                    .heightIn(min = 48.dp)
                     .padding(horizontal = 8.dp, vertical = 5.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -380,135 +363,6 @@ private fun TaskWorkspaceTabs(
                         )
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun TaskBoardFilters(
-    searchQuery: String,
-    selectedPriority: TaskPriorityFilter,
-    graphRoots: List<SollTaskGraphNode>,
-    selectedGraphNodeId: String?,
-    graphQueryLoading: Boolean,
-    onSearchQueryChange: (String) -> Unit,
-    onPriorityChange: (TaskPriorityFilter) -> Unit,
-    onGraphNodeChange: (String?) -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchQueryChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            placeholder = { Text("Поиск задач") },
-            shape = RoundedCornerShape(12.dp),
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TaskPriorityFilter.entries.forEach { filter ->
-                val badgeStyle = priorityBadgeStyle(filter.label)
-                FilterChip(
-                    selected = selectedPriority == filter,
-                    onClick = { onPriorityChange(filter) },
-                    label = { Text(filter.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        containerColor = badgeStyle.containerColor,
-                        labelColor = badgeStyle.contentColor,
-                        selectedContainerColor = badgeStyle.contentColor,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                )
-            }
-        }
-        if (graphRoots.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Проект",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FilterChip(
-                    selected = selectedGraphNodeId == null,
-                    onClick = { onGraphNodeChange(null) },
-                    label = { Text("Все") },
-                )
-                graphRoots.forEach { node ->
-                    FilterChip(
-                        selected = selectedGraphNodeId == node.id,
-                        onClick = { onGraphNodeChange(node.id) },
-                        enabled = !graphQueryLoading,
-                        label = {
-                            Text(
-                                text = node.label,
-                                modifier = Modifier.widthIn(max = 180.dp),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                    )
-                }
-            }
-        }
-        if (graphQueryLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-    }
-}
-
-@Composable
-private fun TaskSummary(uiState: TaskBoardUiState) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PassiveChip(
-            text = "Открытых: ${uiState.openCount}",
-            icon = Icons.Default.Schedule,
-        )
-        PassiveChip(
-            text = "Сегодня: ${uiState.taskCounts?.today ?: uiState.today.size}",
-            icon = Icons.Default.PlayArrow,
-        )
-        val blockedCount = uiState.taskCounts?.blocked ?: uiState.blocked.size
-        if (blockedCount > 0) {
-            PassiveChip(text = "Блок: $blockedCount", icon = Icons.Default.Warning)
-        }
-        if (uiState.hasLimitedSections) {
-            PassiveChip(
-                text = "Показано: ${uiState.displayedTotalCount}/${uiState.totalCount}",
-                icon = Icons.Default.FilterList,
-            )
-        }
-        if (uiState.isShowingCache) {
-            PassiveChip(text = "Кэш", icon = Icons.Default.Warning)
-        }
-        if (uiState.pendingEvidenceCount > 0) {
-            PassiveChip(text = "В очереди: ${uiState.pendingEvidenceCount}", icon = Icons.Default.AttachFile)
-        }
-        if (uiState.pendingTaskActionCount > 0) {
-            PassiveChip(text = "Действия: ${uiState.pendingTaskActionCount}", icon = Icons.Default.Schedule)
-        }
-        if (uiState.routedOpenTaskCount > 0) {
-            PassiveChip(text = "Маршрут: ${uiState.routedOpenTaskCount}", icon = Icons.Default.FilterList)
         }
     }
 }
@@ -605,6 +459,21 @@ private fun RoadmapMode(
     uiState: TaskBoardUiState,
     viewModel: TaskBoardViewModel,
 ) {
+    var editStage by remember { mutableStateOf<String?>(null) }
+    var editLine by remember { mutableStateOf<SollRoadmapLine?>(null) }
+    var deleteLine by remember { mutableStateOf<Pair<String, SollRoadmapLine>?>(null) }
+    var readinessExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(uiState.workspaceActionRevision) { editStage = null; deleteLine = null }
+    editStage?.let { stageId -> RoadmapEditorDialog(stageId, editLine, uiState.workspaceLoading,
+        uiState.message?.takeIf { uiState.isError }, { editStage = null }, { line, text ->
+            val previous = editLine
+            if (previous == null) viewModel.addRoadmapLine(stageId, line, text)
+            else viewModel.updateRoadmapLine(stageId, previous.line, line, text)
+        }) }
+    deleteLine?.let { (stageId, line) -> AlertDialog(onDismissRequest = { deleteLine = null },
+        title = { Text("Архивировать пункт Roadmap?") }, text = { Text("${line.text}\n\nПункт останется в истории.") },
+        confirmButton = { TextButton(onClick = { viewModel.deleteRoadmapLine(stageId, line.line) }, enabled = !uiState.workspaceLoading) { Text("Архивировать") } },
+        dismissButton = { TextButton(onClick = { deleteLine = null }, enabled = !uiState.workspaceLoading) { Text("Отмена") } }) }
     val roadmap = uiState.roadmap
     if (roadmap == null) {
         EmptyWorkspace(text = "Roadmap еще не загружен")
@@ -617,38 +486,58 @@ private fun RoadmapMode(
     ) {
         item(key = "roadmap-head", contentType = "roadmap-head") {
             RoadmapHeaderCard(
-                currentStage = roadmap.currentStage,
+                currentStage = roadmap.stages.firstOrNull { it.id == roadmap.currentStage }?.label ?: roadmap.currentStage,
                 updated = roadmap.updated,
             )
         }
+        if (!roadmap.editSupported) {
+            item(key = "roadmap-edit-unavailable") {
+                Text("Редактирование станет доступно после обновления сервера.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         if (roadmap.readiness.isNotEmpty()) {
             item(key = "roadmap-readiness-title", contentType = "roadmap-readiness-title") {
-                Text("Готовность", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = { readinessExpanded = !readinessExpanded }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Готовность по направлениям (${roadmap.readiness.size})", modifier = Modifier.weight(1f))
+                    Icon(if (readinessExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (readinessExpanded) "Свернуть готовность" else "Показать готовность")
+                }
             }
-            items(
-                items = roadmap.readiness,
-                key = { item -> "readiness:${item.area}" },
-                contentType = { "roadmap-readiness" },
-            ) { item ->
-                RoadmapReadinessCard(item = item)
+            if (readinessExpanded) {
+                items(
+                    items = roadmap.readiness,
+                    key = { item -> "readiness:${item.area}" },
+                    contentType = { "roadmap-readiness" },
+                ) { item ->
+                    RoadmapReadinessCard(item = item)
+                }
             }
         }
         roadmap.stages.forEach { stage ->
             item(key = "stage:${stage.id}", contentType = "roadmap-stage") {
-                RoadmapStageHeader(
-                    stage = stage,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { RoadmapStageHeader(stage = stage) }
+                    IconButton(onClick = { editLine = null; editStage = stage.id }, enabled = roadmap.editSupported && !uiState.workspaceLoading) {
+                        Icon(Icons.Default.Add, contentDescription = "Добавить пункт в ${stage.label}")
+                    }
+                }
             }
             items(
                 items = stage.lines,
                 key = { line -> "line:${stage.id}:${line.line}" },
                 contentType = { "roadmap-line" },
             ) { line ->
-                RoadmapLineCard(
-                    item = line,
-                    isCreatingTask = uiState.roadmapLineTaskKey == roadmapLineTaskKey(stage.id, line.line),
-                    onCreateTask = { viewModel.createTaskFromRoadmapLine(stage.id, line) },
-                )
+                Column {
+                    RoadmapLineCard(item = line, isCreatingTask = uiState.roadmapLineTaskKey == roadmapLineTaskKey(stage.id, line.line),
+                        onCreateTask = { viewModel.createTaskFromRoadmapLine(stage.id, line) })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { editLine = line; editStage = stage.id }, enabled = roadmap.editSupported && !uiState.workspaceLoading) { Text("Изменить") }
+                        if (line.status !in setOf("declined", "replaced")) {
+                            TextButton(onClick = { deleteLine = stage.id to line }, enabled = roadmap.editSupported && !uiState.workspaceLoading) { Text("В архив") }
+                        }
+                    }
+                }
             }
         }
     }
@@ -732,7 +621,12 @@ private fun RoadmapStageHeader(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            PassiveChip(text = stage.status)
+            PassiveChip(text = when (stage.status) {
+                "done" -> "Завершён"
+                "current" -> "Сейчас"
+                "next" -> "Далее"
+                else -> "Запланирован"
+            })
         }
     }
 }
@@ -754,7 +648,7 @@ private fun RoadmapLineCard(
 }
 
 @Composable
-private fun RoadmapLineRow(
+internal fun RoadmapLineRow(
     item: SollRoadmapLine,
     isCreatingTask: Boolean,
     onCreateTask: () -> Unit,
@@ -765,7 +659,15 @@ private fun RoadmapLineRow(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = item.line,
+            text = when (item.status) {
+                "active" -> "В работе"
+                "blocked" -> "Заблокирован"
+                "delivered" -> "Выполнен"
+                "deferred" -> "Отложен"
+                "declined" -> "В архиве"
+                "replaced" -> "Заменён"
+                else -> "Запланирован"
+            },
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
@@ -776,6 +678,10 @@ private fun RoadmapLineRow(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (item.comment.isNotBlank()) {
+            Text(item.comment, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
@@ -784,7 +690,9 @@ private fun RoadmapLineRow(
             if (isCreatingTask) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             } else {
-                TextButton(onClick = onCreateTask) { Text("В задачу") }
+                if (item.status !in setOf("declined", "replaced")) {
+                    TextButton(onClick = onCreateTask) { Text("В задачу") }
+                }
             }
         }
     }
@@ -826,6 +734,17 @@ private fun SourcesListTab(
     uiState: TaskBoardUiState,
     viewModel: TaskBoardViewModel,
 ) {
+    var editingSource by remember { mutableStateOf<SollMonitoredSource?>(null) }
+    var deletingSource by remember { mutableStateOf<SollMonitoredSource?>(null) }
+    LaunchedEffect(uiState.workspaceActionRevision) { editingSource = null; deletingSource = null }
+    editingSource?.let { source -> SourceEditorDialog(source, uiState.workspaceLoading,
+        uiState.message?.takeIf { uiState.isError }, { editingSource = null }, { name, description, tags, enabled ->
+            viewModel.updateSource(source, name, description, tags, enabled)
+        }) }
+    deletingSource?.let { source -> AlertDialog(onDismissRequest = { deletingSource = null },
+        title = { Text("Удалить источник?") }, text = { Text(source.name) },
+        confirmButton = { TextButton(onClick = { viewModel.deleteSource(source) }, enabled = !uiState.workspaceLoading) { Text("Удалить") } },
+        dismissButton = { TextButton(onClick = { deletingSource = null }, enabled = !uiState.workspaceLoading) { Text("Отмена") } }) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -842,6 +761,8 @@ private fun SourcesListTab(
                 selected = source.id == uiState.selectedSourceId,
                 onSelect = { viewModel.selectSource(source) },
                 onCheck = { viewModel.checkSource(source) },
+                onEdit = { editingSource = source }, onDelete = { deletingSource = source },
+                busy = uiState.workspaceLoading,
             )
         }
     }
@@ -904,7 +825,11 @@ private fun SourceCard(
     selected: Boolean,
     onSelect: () -> Unit,
     onCheck: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    busy: Boolean,
 ) {
+    var showActions by remember(source.id) { mutableStateOf(false) }
     Card(shape = RoundedCornerShape(8.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -940,18 +865,26 @@ private fun SourceCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 PassiveChip(text = source.sourceType)
-                PassiveChip(text = "seen: ${source.itemsSeen}")
+                PassiveChip(text = "Материалов: ${source.itemsSeen}")
                 if (source.newItemsLastCheck > 0) {
                     PassiveChip(text = "+${source.newItemsLastCheck}")
                 }
                 source.tags.forEach { tag -> PassiveChip(text = tag) }
             }
             Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onSelect) { Text("Открыть") }
-                Button(onClick = onCheck, enabled = source.enabled) { Text("Проверить") }
+                OutlinedButton(onClick = onSelect, enabled = !busy) { Text("Открыть") }
+                Button(onClick = onCheck, enabled = source.enabled && !busy) { Text("Проверить") }
+                Box {
+                    IconButton(onClick = { showActions = true }, enabled = !busy) { Icon(Icons.Default.MoreVert, contentDescription = "Управление источником") }
+                    DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                        DropdownMenuItem(text = { Text("Изменить") }, onClick = { showActions = false; onEdit() })
+                        DropdownMenuItem(text = { Text("Удалить") }, onClick = { showActions = false; onDelete() })
+                    }
+                }
             }
         }
     }
@@ -1081,245 +1014,6 @@ private fun EmptyWorkspace(text: String) {
 }
 
 @Composable
-private fun TaskCard(
-    task: SollTask,
-    expanded: Boolean,
-    isActionRunning: Boolean,
-    isEvidenceRunning: Boolean,
-    hasPendingEvidence: Boolean,
-    hasPendingTaskAction: Boolean,
-    onEdit: () -> Unit,
-    onToggleDetails: () -> Unit,
-    onAttachEvidence: () -> Unit,
-    onMoveToToday: () -> Unit,
-    onStart: () -> Unit,
-    onDone: () -> Unit,
-    onDefer: () -> Unit,
-    onReject: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                val priorityBadge = priorityBadgeStyle(task.priority)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (task.projectName?.isNotBlank() == true) {
-                        Text(
-                            text = task.projectName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onEdit, enabled = !isActionRunning) {
-                        Icon(Icons.Default.Edit, contentDescription = "Редактировать задачу")
-                    }
-                    PassiveChip(
-                        text = priorityBadge.label,
-                        containerColor = priorityBadge.containerColor,
-                        contentColor = priorityBadge.contentColor,
-                    )
-                }
-            }
-
-            if (task.description.isNotBlank()) {
-                Text(
-                    text = task.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (expanded) Int.MAX_VALUE else TASK_DESCRIPTION_COLLAPSED_LINES,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-            ) {
-                PassiveChip(text = task.status.statusLabel())
-                task.dueDate?.takeIf { it.isNotBlank() }?.let { dueDate ->
-                    PassiveChip(text = "Дата: $dueDate")
-                }
-                if (hasPendingEvidence) {
-                    PassiveChip(text = "Вложение в очереди")
-                }
-                if (hasPendingTaskAction) {
-                    PassiveChip(text = "Действие в очереди")
-                }
-                task.executionPhase.takeIf { it.isNotBlank() }?.let { phase ->
-                    PassiveChip(text = "Исполнение: ${phase.executionPhaseLabel()}")
-                }
-                if (task.executionAttempts > 0) {
-                    PassiveChip(text = "Попытка: ${task.executionAttempts}")
-                }
-                task.commitSha.takeIf { it.isNotBlank() }?.let { sha ->
-                    PassiveChip(text = "Commit: ${sha.take(8)}")
-                }
-            }
-
-            task.shortHoldReason()?.let { reason ->
-                Text(
-                    text = "Почему: $reason",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                    color = if (task.isExecutionBlocked()) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            if (task.hasRoutingContext()) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                ) {
-                    task.routingState.takeIf { it.isNotBlank() }?.let { routingState ->
-                        PassiveChip(text = "Маршрут: ${routingState.routingStateLabel()}")
-                    }
-                    task.assignedNodeId?.takeIf { it.isNotBlank() }?.let { nodeId ->
-                        PassiveChip(text = "Нода: $nodeId")
-                    }
-                    if (task.requiredCapabilities.isNotEmpty()) {
-                        PassiveChip(text = "Нужно: ${task.requiredCapabilities.requiredCapabilitiesLabel()}")
-                    }
-                }
-            }
-
-            if (task.sourceRef.isNotBlank()) {
-                Text(
-                    text = "Источник: ${task.sourceRef}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            TaskActions(
-                status = task.status,
-                taskId = task.id,
-                isActionRunning = isActionRunning || hasPendingTaskAction,
-                onMoveToToday = onMoveToToday,
-                onStart = onStart,
-                onDone = onDone,
-                onDefer = onDefer,
-                onReject = onReject,
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onToggleDetails) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (expanded) "Скрыть детали" else "Детали")
-                }
-
-                OutlinedButton(
-                    onClick = onAttachEvidence,
-                    enabled = !isEvidenceRunning,
-                ) {
-                    if (isEvidenceRunning) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Вложить")
-                }
-            }
-
-            if (expanded) {
-                TaskDetailSection(task = task)
-            }
-        }
-    }
-}
-
-@Composable
-private fun TaskEditDialog(
-    task: SollTask,
-    isSaving: Boolean,
-    onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit,
-) {
-    var title by remember(task.id, task.title) { mutableStateOf(task.title) }
-    var description by remember(task.id, task.description) { mutableStateOf(task.description) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Редактировать задачу") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Название") },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Описание") },
-                    minLines = 3,
-                    maxLines = 8,
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onSave(title, description) },
-                enabled = title.isNotBlank() && !isSaving,
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-                Text("Сохранить")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSaving) {
-                Text("Отмена")
-            }
-        },
-    )
-}
-
-@Composable
 private fun CreateSourceDialog(
     isSaving: Boolean,
     onDismiss: () -> Unit,
@@ -1361,7 +1055,7 @@ private fun CreateSourceDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSaving) {
+                TextButton(onClick = onDismiss, enabled = !isSaving) {
                 Text("Отмена")
             }
         },
@@ -1369,7 +1063,7 @@ private fun CreateSourceDialog(
 }
 
 @Composable
-private fun TaskDetailSection(task: SollTask) {
+internal fun TaskDetailSection(task: SollTask) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1396,6 +1090,14 @@ private fun TaskDetailSection(task: SollTask) {
         if (task.requiredCapabilities.isNotEmpty()) {
             DetailRow(label = "Нужно", value = task.requiredCapabilities.joinToString(", "))
         }
+        task.executionPhase.takeIf { it.isNotBlank() }?.let { DetailRow("Исполнение", it.executionPhaseLabel()) }
+        if (task.executionAttempts > 0) DetailRow("Попытки", task.executionAttempts.toString())
+        task.executionRunId.takeIf { it.isNotBlank() }?.let { DetailRow("Запуск", it) }
+        task.commitSha.takeIf { it.isNotBlank() }?.let { DetailRow("Commit", it) }
+        task.baseSha.takeIf { it.isNotBlank() }?.let { DetailRow("Основа", it) }
+        task.rollbackSha.takeIf { it.isNotBlank() }?.let { DetailRow("Откат", it) }
+        if (task.acceptanceCriteria.isNotEmpty()) DetailRow("Приёмка", task.acceptanceCriteria.joinToString("\n"))
+        if (task.testPlan.isNotEmpty()) DetailRow("Проверки", task.testPlan.joinToString("\n"))
         task.truthDetailRows().forEach { row ->
             DetailRow(label = row.label, value = row.value)
         }
@@ -1454,8 +1156,9 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TaskActions(
+internal fun TaskActions(
     status: String,
     taskId: String,
     isActionRunning: Boolean,
@@ -1466,12 +1169,10 @@ private fun TaskActions(
     onReject: () -> Unit,
 ) {
     val visibility = taskActionVisibility(status = status, taskId = taskId)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (isActionRunning) {
             CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -1556,18 +1257,6 @@ private fun EmptyTasks(tab: TaskTab) {
     }
 }
 
-private fun TaskTab.title(uiState: TaskBoardUiState): String =
-    when (this) {
-        TaskTab.ALL -> "Все ${uiState.openCount}"
-        TaskTab.TODAY -> "Сегодня ${uiState.taskCounts?.today ?: uiState.today.size}"
-        TaskTab.BLOCKED -> "Блок ${uiState.taskCounts?.blocked ?: uiState.blocked.size}"
-        TaskTab.INBOX -> "Вход ${uiState.taskCounts?.inbox ?: uiState.inbox.size}"
-        TaskTab.STALE -> "Зависли ${uiState.taskCounts?.stale ?: uiState.stale.size}"
-        TaskTab.DEFERRED -> "Отложено ${uiState.taskCounts?.deferred ?: uiState.deferred.size}"
-        TaskTab.IDEAS -> "Идеи ${uiState.ideaCount}"
-        TaskTab.DONE -> "Готово ${uiState.doneCount}"
-    }
-
 private fun TaskTab.emptyText(): String =
     when (this) {
         TaskTab.ALL -> "Задач нет"
@@ -1580,39 +1269,7 @@ private fun TaskTab.emptyText(): String =
         TaskTab.DONE -> "Недавних закрытых задач нет"
     }
 
-private data class PriorityBadgeStyle(
-    val label: String,
-    val containerColor: Color,
-    val contentColor: Color,
-)
-
-@Composable
-private fun priorityBadgeStyle(priority: String): PriorityBadgeStyle {
-    val label = priorityLabel(priority)
-    val contentColor = when (label) {
-        "A" -> Color(0xFF247A52)
-        "B" -> MaterialTheme.colorScheme.primary
-        "C" -> MaterialTheme.colorScheme.tertiary
-        "D" -> MaterialTheme.colorScheme.outline
-        else -> MaterialTheme.colorScheme.primary
-    }
-    return PriorityBadgeStyle(
-        label = label,
-        containerColor = contentColor.copy(alpha = 0.16f),
-        contentColor = contentColor,
-    )
-}
-
-private fun priorityLabel(priority: String): String =
-    when (priority.trim().uppercase()) {
-        "", "B", "P2" -> "B"
-        "A", "P1" -> "A"
-        "C", "P3" -> "C"
-        "D", "P4" -> "D"
-        else -> priority.trim().uppercase()
-    }
-
-private fun String.statusLabel(): String =
+internal fun String.statusLabel(): String =
     when (this) {
         "inbox" -> "входящая"
         "today" -> "сегодня"
@@ -1749,7 +1406,6 @@ private fun List<String>.requiredCapabilitiesLabel(): String {
     return visible.joinToString(", ") + suffix
 }
 
-private const val TASK_DESCRIPTION_COLLAPSED_LINES = 4
 private const val TASK_HOLD_REASON_MAX_LENGTH = 140
 private val TASK_HOLD_STATUSES = setOf("blocked", "deferred", "stale")
 private val TASK_HOLD_EXECUTION_PHASES = setOf("needs_user", "failed", "retry_wait")

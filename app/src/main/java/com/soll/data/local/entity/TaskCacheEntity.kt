@@ -6,6 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.soll.domain.soll.SollTask
 import org.json.JSONArray
+import org.json.JSONObject
 
 @Entity(
     tableName = "task_cache",
@@ -73,9 +74,12 @@ data class TaskCacheEntity(
 
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long,
+    @ColumnInfo(name = "details_json", defaultValue = "'{}'")
+    val detailsJson: String = "{}",
 ) {
-    fun toDomain(): SollTask =
-        SollTask(
+    fun toDomain(): SollTask {
+        val details = JSONObject(detailsJson)
+        return SollTask(
             id = id,
             title = title,
             description = description,
@@ -97,7 +101,21 @@ data class TaskCacheEntity(
             routingState = routingState,
             executionPhase = executionPhase,
             executionReason = executionReason,
+            projectId = details.optString("project_id").takeIf { it.isNotBlank() },
+            executionRunId = details.optString("execution_run_id"),
+            executionAttempts = details.optInt("execution_attempts"),
+            executionUpdatedAt = details.optString("execution_updated_at").takeIf { it.isNotBlank() },
+            completionKind = details.optString("completion_kind"),
+            completionResult = details.optString("completion_result"),
+            completionEvidence = (details.optJSONArray("completion_evidence") ?: JSONArray()).toStringList(),
+            acceptanceCriteria = (details.optJSONArray("acceptance_criteria") ?: JSONArray()).toStringList(),
+            testPlan = (details.optJSONArray("test_plan") ?: JSONArray()).toStringList(),
+            riskClass = details.optString("risk_class"),
+            baseSha = details.optString("base_sha"),
+            commitSha = details.optString("commit_sha"),
+            rollbackSha = details.optString("rollback_sha"),
         )
+    }
 
     companion object {
         fun fromDomain(task: SollTask, updatedAt: Long): TaskCacheEntity =
@@ -124,6 +142,21 @@ data class TaskCacheEntity(
                 executionPhase = task.executionPhase,
                 executionReason = task.executionReason,
                 updatedAt = updatedAt,
+                detailsJson = JSONObject().apply {
+                    put("project_id", task.projectId)
+                    put("execution_run_id", task.executionRunId)
+                    put("execution_attempts", task.executionAttempts)
+                    put("execution_updated_at", task.executionUpdatedAt)
+                    put("completion_kind", task.completionKind)
+                    put("completion_result", task.completionResult)
+                    put("completion_evidence", JSONArray(task.completionEvidence))
+                    put("acceptance_criteria", JSONArray(task.acceptanceCriteria))
+                    put("test_plan", JSONArray(task.testPlan))
+                    put("risk_class", task.riskClass)
+                    put("base_sha", task.baseSha)
+                    put("commit_sha", task.commitSha)
+                    put("rollback_sha", task.rollbackSha)
+                }.toString(),
             )
     }
 }

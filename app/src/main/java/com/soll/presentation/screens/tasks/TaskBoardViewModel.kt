@@ -2,6 +2,10 @@ package com.soll.presentation.screens.tasks
 
 import android.net.Uri
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
+import com.soll.domain.soll.SollTaskInput
+import com.soll.domain.soll.SollTaskProject
+import kotlinx.coroutines.Job
 import androidx.lifecycle.viewModelScope
 import com.soll.data.local.entity.SyncQueueEntity
 import com.soll.data.repository.SollSyncQueueRepository
@@ -16,8 +20,6 @@ import com.soll.domain.soll.SollSourceItemsPage
 import com.soll.domain.soll.SollSourceScope
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoardCounts
-import com.soll.domain.soll.SollTaskGraph
-import com.soll.domain.soll.SollTaskGraphNode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +74,20 @@ enum class SourcesSubTab(val label: String) {
 }
 
 data class TaskBoardUiState(
+    val projects: List<SollTaskProject> = emptyList(),
+    val selectedProjectId: String? = null,
+    val pageTasks: List<SollTask>? = null,
+    val pageTotal: Int? = null,
+    val pageHasMore: Boolean = false,
+    val pageNextOffset: Int = 0,
+    val pageLoading: Boolean = false,
+    val detailTask: SollTask? = null,
+    val editorVisible: Boolean = false,
+    val editorTaskId: String? = null,
+    val editorInput: SollTaskInput = SollTaskInput(""),
+    val editorSaving: Boolean = false,
+    val editorError: String? = null,
+    val workspaceActionRevision: Int = 0,
     val today: List<SollTask> = emptyList(),
     val blocked: List<SollTask> = emptyList(),
     val inbox: List<SollTask> = emptyList(),
@@ -111,10 +127,6 @@ data class TaskBoardUiState(
     val taskCounts: SollTaskBoardCounts? = null,
     val taskBoardLimitPerSection: Int? = null,
     val requestedTaskBoardLimitPerSection: Int = DEFAULT_TASK_BOARD_SECTION_LIMIT,
-    val taskGraph: SollTaskGraph? = null,
-    val selectedGraphNodeId: String? = null,
-    val graphDescendants: List<SollTaskGraphNode> = emptyList(),
-    val graphQueryLoading: Boolean = false,
 ) {
     val openCount: Int
         get() = taskCounts?.openCount ?: displayedOpenCount
@@ -189,7 +201,7 @@ data class TaskBoardUiState(
         get() = openTasksRaw().count { it.hasRoutingContext() }
 
     val canLoadMoreTasks: Boolean
-        get() = hasLimitedSelectedTaskSection && requestedTaskBoardLimitPerSection < MAX_TASK_BOARD_SECTION_LIMIT
+        get() = if (pageTasks != null) pageHasMore else hasLimitedSelectedTaskSection && requestedTaskBoardLimitPerSection < MAX_TASK_BOARD_SECTION_LIMIT
 }
 
 @HiltViewModel
@@ -197,13 +209,29 @@ class TaskBoardViewModel @Inject constructor(
     private val sollGateway: SollGateway,
     private val syncQueueRepository: SollSyncQueueRepository,
     private val taskCacheRepository: TaskCacheRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TaskBoardUiState(isLoading = true))
     val uiState: StateFlow<TaskBoardUiState> = _uiState.asStateFlow()
     private val sourceItemsCache = mutableMapOf<String, SollSourceItemsPage>()
+    private var pageJob: Job? = null
+    private var pageGeneration = 0
+    private var editorRequestId: String = savedStateHandle["tasks.editor.request_id"] ?: java.util.UUID.randomUUID().toString()
 
     init {
+        if (savedStateHandle.contains("tasks.editor.title")) {
+            _uiState.update { it.copy(editorVisible = savedStateHandle["tasks.editor.visible"] ?: false, editorTaskId = savedStateHandle["tasks.editor.task_id"],
+                editorInput = SollTaskInput(savedStateHandle["tasks.editor.title"] ?: "", savedStateHandle["tasks.editor.description"] ?: "",
+                    savedStateHandle["tasks.editor.priority"] ?: "B", savedStateHandle["tasks.editor.project_id"] ?: "",
+                    savedStateHandle["tasks.editor.project_name"] ?: "", savedStateHandle["tasks.editor.due_date"] ?: "")) }
+        }
+        _uiState.update { it.copy(
+            searchQuery = savedStateHandle["tasks.search"] ?: "",
+            selectedProjectId = savedStateHandle["tasks.project"],
+            selectedTab = runCatching { TaskTab.valueOf(savedStateHandle["tasks.section"] ?: "ALL") }.getOrDefault(TaskTab.ALL),
+            selectedPriority = runCatching { TaskPriorityFilter.valueOf(savedStateHandle["tasks.priority"] ?: "ALL") }.getOrDefault(TaskPriorityFilter.ALL),
+        ) }
         observePendingTaskEvidence()
         refresh()
         observeServerUpdates()
@@ -211,6 +239,9 @@ class TaskBoardViewModel @Inject constructor(
 
     fun refresh(showLoading: Boolean = true) {
         viewModelScope.launch {
+            if (showLoading) launch {
+                sollGateway.getTaskProjects().onSuccess { projects -> _uiState.update { it.copy(projects = projects).deriveTaskList() } }
+            }
             if (showLoading) {
                 _uiState.update { it.copy(isLoading = true, message = null, isError = false) }
             }
@@ -218,7 +249,8 @@ class TaskBoardViewModel @Inject constructor(
             sollGateway.getTaskBoard(limitPerSection = sectionLimit).fold(
                 onSuccess = { board ->
                     val pendingStatuses = syncQueueRepository.getPendingTaskActionStatuses()
-                    val adjustedBoard = taskCacheRepository.replaceWith(board, pendingStatuses)
+                    // A bounded board must not evict pages already saved for offline use.
+                    val adjustedBoard = taskCacheRepository.mergeBoard(board, pendingStatuses)
                     _uiState.update {
                         it.copy(
                             today = adjustedBoard.today,
@@ -254,6 +286,8 @@ class TaskBoardViewModel @Inject constructor(
                                 message = "Сервер недоступен. Показан локальный кэш задач.",
                                 isError = false,
                                 isShowingCache = true,
+                            pageTasks = null,
+                            pageTotal = null,
                             ).rebuildTaskIndex().deriveTaskList()
                         }
                         return@fold
@@ -269,6 +303,111 @@ class TaskBoardViewModel @Inject constructor(
                 }
             )
             refreshSelectedWorkspace(showLoading = showLoading)
+            if (_uiState.value.selectedMode == TaskWorkspaceMode.TASKS && !_uiState.value.isShowingCache) loadTaskPage()
+        }
+    }
+
+    fun openTask(task: SollTask) { _uiState.update { it.copy(detailTask = task) } }
+    fun closeTask() { _uiState.update { it.copy(detailTask = null) } }
+
+    fun openEditor(task: SollTask? = null) {
+        val state = _uiState.value
+        val hasMatchingDraft = state.editorTaskId == task?.id && (state.editorInput.title.isNotBlank() || state.editorInput.description.isNotBlank())
+        val input = if (hasMatchingDraft) state.editorInput else if (task != null) SollTaskInput(task.title, task.description, task.priority.normalizedTaskPriorityLabel(),
+            task.projectId ?: _uiState.value.projects.firstOrNull { it.name == task.projectName }?.id.orEmpty(), task.projectName.orEmpty(), task.dueDate.orEmpty()) else
+            _uiState.value.editorInput.takeIf { _uiState.value.editorTaskId == null } ?: SollTaskInput("")
+        _uiState.update { it.copy(editorVisible = true, editorTaskId = task?.id, editorInput = input, editorError = null) }
+        savedStateHandle["tasks.editor.task_id"] = task?.id
+        savedStateHandle["tasks.editor.visible"] = true
+        updateEditor(input)
+    }
+
+    fun closeEditor() {
+        if (_uiState.value.editorSaving) return
+        _uiState.update { it.copy(editorVisible = false) }
+        savedStateHandle["tasks.editor.visible"] = false
+    }
+
+    fun updateEditor(input: SollTaskInput) {
+        if (_uiState.value.editorSaving) return
+        if (input != _uiState.value.editorInput) editorRequestId = java.util.UUID.randomUUID().toString()
+        _uiState.update { it.copy(editorInput = input, editorError = null) }
+        savedStateHandle["tasks.editor.title"] = input.title
+        savedStateHandle["tasks.editor.description"] = input.description
+        savedStateHandle["tasks.editor.priority"] = input.priority
+        savedStateHandle["tasks.editor.project_id"] = input.projectId
+        savedStateHandle["tasks.editor.project_name"] = input.projectName
+        savedStateHandle["tasks.editor.due_date"] = input.dueDate
+        savedStateHandle["tasks.editor.request_id"] = editorRequestId
+    }
+
+    fun saveEditor() {
+        val state = _uiState.value
+        if (state.editorSaving) return
+        val input = state.editorInput
+        val error = taskInputError(input)
+        if (error != null) { _uiState.update { it.copy(editorError = error) }; return }
+        _uiState.update { it.copy(editorSaving = true, editorError = null) }
+        viewModelScope.launch {
+            val result = state.editorTaskId?.let { sollGateway.updateTaskDetails(it, input) }
+                ?: sollGateway.createTask(input, editorRequestId)
+            result.fold(onSuccess = { task ->
+                taskCacheRepository.mergePage(listOf(task))
+                _uiState.update { it.copy(editorVisible = false, editorSaving = false, editorInput = SollTaskInput(""),
+                    editorTaskId = null, detailTask = task, message = if (state.editorTaskId == null) "Задача создана" else "Задача обновлена", isError = false) }
+                savedStateHandle.keys().filter { it.startsWith("tasks.editor.") }.forEach { savedStateHandle.remove<Any?>(it) }
+                editorRequestId = java.util.UUID.randomUUID().toString()
+                refresh(showLoading = false)
+            }, onFailure = { failure ->
+                _uiState.update { it.copy(editorSaving = false, editorError = failure.taskWorkspaceMessage()) }
+            })
+        }
+    }
+
+    fun selectProject(projectId: String?) {
+        savedStateHandle["tasks.project"] = projectId
+        _uiState.update { it.copy(selectedProjectId = projectId).deriveTaskList() }
+        loadTaskPage(reset = true)
+    }
+
+    private fun loadTaskPage(reset: Boolean = false, append: Boolean = false, debounce: Boolean = false) {
+        pageJob?.cancel()
+        val generation = ++pageGeneration
+        val state = _uiState.value
+        val offset = if (append) state.pageNextOffset else 0
+        val target = if (append || reset) 80 else maxOf(80, state.pageTasks?.size ?: 0)
+        _uiState.update { it.copy(pageLoading = true, pageTasks = if (reset && it.pageTasks != null) emptyList() else it.pageTasks) }
+        pageJob = viewModelScope.launch {
+            if (debounce) delay(300)
+            var rows = emptyList<SollTask>()
+            var total = 0
+            var hasMore = false
+            var cursor = offset
+            do {
+                val result = sollGateway.getTaskPage(state.selectedTab.name.lowercase(), state.searchQuery,
+                    state.selectedProjectId, state.selectedPriority.name.takeUnless { it == "ALL" }, cursor)
+                val page = result.getOrElse { failure ->
+                    if (generation == pageGeneration) _uiState.update {
+                        // Older servers retain the existing board until their task routes are deployed.
+                        it.copy(pageLoading = false, message = if (it.pageTasks != null) failure.taskWorkspaceMessage() else it.message,
+                            isError = it.pageTasks != null).deriveTaskList()
+                    }
+                    return@launch
+                }
+                if (generation != pageGeneration) return@launch
+                rows = (rows + page.tasks).distinctBy { it.id }
+                cursor += page.tasks.size
+                total = page.total
+                hasMore = page.hasMore && page.tasks.isNotEmpty()
+            } while (!append && rows.size < target && hasMore)
+            val pending = syncQueueRepository.getPendingTaskActionStatuses()
+            rows = rows.map { task -> pending[task.id]?.let { task.copy(status = it) } ?: task }
+            taskCacheRepository.mergePage(rows)
+            _uiState.update {
+                val loaded = if (append) (it.pageTasks.orEmpty() + rows).distinctBy { task -> task.id } else rows
+                it.copy(pageTasks = loaded, pageTotal = total, pageHasMore = hasMore, pageNextOffset = cursor, pageLoading = false,
+                    detailTask = it.detailTask?.let { task -> loaded.firstOrNull { row -> row.id == task.id } ?: task }).deriveTaskList()
+            }
         }
     }
 
@@ -280,32 +419,6 @@ class TaskBoardViewModel @Inject constructor(
             optimisticStatus = "today",
         ) { taskId ->
             sollGateway.moveTaskToToday(taskId)
-        }
-    }
-
-    fun updateTask(task: SollTask, title: String, description: String) {
-        val cleanTitle = title.trim()
-        if (cleanTitle.isBlank()) {
-            _uiState.update { it.copy(message = "Название задачи не может быть пустым", isError = true) }
-            return
-        }
-        viewModelScope.launch {
-            _uiState.update { it.copy(actionTaskId = task.id, message = null, isError = false) }
-            sollGateway.updateTask(task.id, cleanTitle, description.trim()).fold(
-                onSuccess = {
-                    _uiState.update {
-                        it.copy(
-                            actionTaskId = null,
-                            message = "Задача обновлена",
-                            isError = false,
-                        )
-                    }
-                    refresh(showLoading = false)
-                },
-                onFailure = { error ->
-                    refreshAfterTaskConflict(error.message ?: "Не удалось обновить задачу")
-                },
-            )
         }
     }
 
@@ -355,74 +468,26 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun attachEvidence(task: SollTask, uri: Uri) {
+        if (_uiState.value.evidenceTaskId != null || task.id in _uiState.value.pendingEvidenceTaskIds) return
+        _uiState.update { it.copy(evidenceTaskId = task.id, message = null, isError = false) }
         viewModelScope.launch {
-            _uiState.update { it.copy(evidenceTaskId = task.id, message = null, isError = false) }
-
-            val uploadResult = sollGateway.uploadRawFile(uri)
-            if (uploadResult.isFailure) {
-                val error = uploadResult.exceptionOrNull()
-                runCatching {
-                    syncQueueRepository.enqueueRawFile(
-                        uri = uri,
-                        reason = error?.message,
-                        taskId = task.id,
-                        taskTitle = task.title,
-                    )
-                    syncQueueRepository.enqueueRawNote(
-                        title = "Вложение к задаче: ${task.title}",
-                        content = task.evidenceNoteContent(uploadedFilename = null),
-                        tags = listOf("task-evidence", "queued"),
-                        reason = error?.message,
-                        taskId = task.id,
-                        taskTitle = task.title,
-                    )
-                }
-
-                _uiState.update {
-                    it.copy(
-                        evidenceTaskId = null,
-                        message = "Сервер недоступен. Вложение сохранено в очередь синхронизации.",
-                        isError = false,
-                    )
-                }
-                return@launch
-            }
-
-            val upload = uploadResult.getOrThrow()
-            val noteResult = sollGateway.createRawNote(
-                title = "Вложение к задаче: ${task.title}",
-                content = task.evidenceNoteContent(uploadedFilename = upload.filename),
-                tags = listOf("task-evidence", "task-${task.id.take(8)}"),
-            )
-
-            noteResult.fold(
-                onSuccess = {
-                    _uiState.update {
-                        it.copy(
-                            evidenceTaskId = null,
-                            message = "Вложение отправлено в raw и привязано заметкой к задаче",
-                            isError = false,
-                        )
+            sollGateway.uploadTaskEvidence(task.id, uri).fold(onSuccess = { updated ->
+                taskCacheRepository.mergePage(listOf(updated))
+                _uiState.update { it.copy(evidenceTaskId = null, detailTask = updated,
+                    pageTasks = it.pageTasks?.map { row -> if (row.id == updated.id) updated else row },
+                    message = "Вложение добавлено к задаче", isError = false) }
+                refresh(showLoading = false)
+            }, onFailure = { error ->
+                if (error.isRetryableTaskActionFailure()) {
+                    try {
+                        syncQueueRepository.enqueueRawFile(uri = uri, reason = error.message, taskId = task.id, taskTitle = task.title)
+                        _uiState.update { it.copy(evidenceTaskId = null, message = "Нет связи. Вложение сохранено в очередь синхронизации.", isError = false) }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) {
+                        _uiState.update { it.copy(evidenceTaskId = null, message = "Не удалось сохранить вложение в очередь. Проверь свободное место и повтори.", isError = true) }
                     }
-                },
-                onFailure = { error ->
-                    syncQueueRepository.enqueueRawNote(
-                        title = "Вложение к задаче: ${task.title}",
-                        content = task.evidenceNoteContent(uploadedFilename = upload.filename),
-                        tags = listOf("task-evidence", "task-${task.id.take(8)}"),
-                        reason = error.message,
-                        taskId = task.id,
-                        taskTitle = task.title,
-                    )
-                    _uiState.update {
-                        it.copy(
-                            evidenceTaskId = null,
-                            message = "Файл загружен, заметка привязки сохранена в очередь.",
-                            isError = false,
-                        )
-                    }
-                },
-            )
+                } else _uiState.update { it.copy(evidenceTaskId = null, message = error.taskWorkspaceMessage(), isError = true) }
+            })
         }
     }
 
@@ -433,136 +498,46 @@ class TaskBoardViewModel @Inject constructor(
     fun selectMode(mode: TaskWorkspaceMode) {
         _uiState.update { it.copy(selectedMode = mode) }
         when (mode) {
-            TaskWorkspaceMode.TASKS -> if (_uiState.value.taskGraph == null) {
-                loadTaskGraph(showLoading = false)
-            }
+            TaskWorkspaceMode.TASKS -> loadTaskPage()
             TaskWorkspaceMode.INSIGHTS -> loadInsights()
             TaskWorkspaceMode.ROADMAP -> loadRoadmap()
             TaskWorkspaceMode.SOURCES -> loadSources()
         }
     }
 
-    fun loadTaskGraph(showLoading: Boolean = true) {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    workspaceLoading = showLoading,
-                    graphQueryLoading = false,
-                    message = null,
-                    isError = false,
-                )
-            }
-            sollGateway.getTaskGraph(includeDone = false).fold(
-                onSuccess = { graph ->
-                    val selectedId = _uiState.value.selectedGraphNodeId
-                        ?.takeIf { id -> graph.nodes.any { it.id == id } }
-                    _uiState.update {
-                        it.copy(
-                            taskGraph = graph,
-                            selectedGraphNodeId = selectedId,
-                            graphDescendants = if (selectedId == null) emptyList() else it.graphDescendants,
-                            workspaceLoading = false,
-                        ).deriveTaskList()
-                    }
-                    selectedId?.let(::selectGraphNode)
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            workspaceLoading = false,
-                            graphQueryLoading = false,
-                            message = error.message ?: "Не удалось загрузить связи задач",
-                            isError = true,
-                        )
-                    }
-                },
-            )
-        }
-    }
-
-    fun selectGraphNode(nodeId: String?) {
-        if (nodeId == null) {
-            _uiState.update {
-                it.copy(
-                    selectedGraphNodeId = null,
-                    graphDescendants = emptyList(),
-                    graphQueryLoading = false,
-                    message = null,
-                    isError = false,
-                ).deriveTaskList()
-            }
-            return
-        }
-        if (nodeId.isBlank()) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    selectedGraphNodeId = nodeId,
-                    graphDescendants = emptyList(),
-                    graphQueryLoading = true,
-                    message = null,
-                    isError = false,
-                )
-            }
-            sollGateway.getTaskGraphDescendants(
-                ancestorId = nodeId,
-                includeDone = false,
-                limit = GRAPH_DESCENDANT_LIMIT,
-            ).fold(
-                onSuccess = { descendants ->
-                    _uiState.update {
-                        if (it.selectedGraphNodeId != nodeId) {
-                            it
-                        } else {
-                            it.copy(
-                                graphDescendants = descendants,
-                                graphQueryLoading = false,
-                            ).deriveTaskList()
-                        }
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        if (it.selectedGraphNodeId != nodeId) {
-                            it
-                        } else {
-                            it.copy(
-                                selectedGraphNodeId = null,
-                                graphDescendants = emptyList(),
-                                graphQueryLoading = false,
-                                message = error.message ?: "Не удалось получить связанные задачи",
-                                isError = true,
-                            ).deriveTaskList()
-                        }
-                    }
-                },
-            )
-        }
-    }
-
     fun selectTab(tab: TaskTab) {
+        savedStateHandle["tasks.section"] = tab.name
         _uiState.update { it.copy(selectedTab = tab).deriveTaskList() }
+        loadTaskPage(reset = true)
     }
 
     fun selectPriority(priority: TaskPriorityFilter) {
+        savedStateHandle["tasks.priority"] = priority.name
         _uiState.update { it.copy(selectedPriority = priority).deriveTaskList() }
+        loadTaskPage(reset = true)
     }
 
     fun updateSearchQuery(query: String) {
+        savedStateHandle["tasks.search"] = query
         _uiState.update { it.copy(searchQuery = query).deriveTaskList() }
+        loadTaskPage(reset = true, debounce = true)
     }
 
-    /** Focus a single task (from a chat "Открыть задачу"): show all statuses and
-     *  filter to the task id so the owner never has to hunt for it. */
+    /** Open the canonical task even when it lies beyond the loaded page or current filters. */
     fun focusTask(taskId: String) {
         val id = taskId.trim()
         if (id.isEmpty()) return
-        _uiState.update {
-            it.copy(selectedTab = TaskTab.ALL, searchQuery = id).deriveTaskList()
+        viewModelScope.launch {
+            sollGateway.getTask(id).fold(onSuccess = { openTask(it) }, onFailure = { failure ->
+                val cached = _uiState.value.taskIndex.firstOrNull { it.id == id }
+                if (cached != null) openTask(cached) else _uiState.update { it.copy(message = failure.message ?: "Задача не найдена", isError = true) }
+            })
         }
     }
 
     fun loadMoreTasks() {
+        if (_uiState.value.pageLoading) return
+        if (_uiState.value.pageTasks != null) { loadTaskPage(append = true); return }
         val nextLimit = (_uiState.value.requestedTaskBoardLimitPerSection * 2)
             .coerceAtMost(MAX_TASK_BOARD_SECTION_LIMIT)
         if (nextLimit == _uiState.value.requestedTaskBoardLimitPerSection) {
@@ -626,6 +601,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun createTaskFromInsight(item: SollLearningItem) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.createTaskFromLearningItem(item.id).fold(
@@ -674,6 +650,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun addRoadmapLine(stageId: String, line: String, text: String) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.addRoadmapLine(stageId, line, text).fold(
@@ -683,6 +660,7 @@ class TaskBoardViewModel @Inject constructor(
                             roadmap = roadmap,
                             workspaceLoading = false,
                             message = "Roadmap обновлен",
+                            workspaceActionRevision = it.workspaceActionRevision + 1,
                             isError = false,
                         )
                     }
@@ -701,6 +679,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun updateRoadmapLine(stageId: String, oldLine: String, line: String, text: String) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.updateRoadmapLine(stageId, oldLine, line, text).fold(
@@ -710,6 +689,7 @@ class TaskBoardViewModel @Inject constructor(
                             roadmap = roadmap,
                             workspaceLoading = false,
                             message = "Строка roadmap обновлена",
+                            workspaceActionRevision = it.workspaceActionRevision + 1,
                             isError = false,
                         )
                     }
@@ -728,6 +708,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun deleteRoadmapLine(stageId: String, line: String) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.deleteRoadmapLine(stageId, line).fold(
@@ -736,7 +717,8 @@ class TaskBoardViewModel @Inject constructor(
                         it.copy(
                             roadmap = roadmap,
                             workspaceLoading = false,
-                            message = "Строка roadmap удалена",
+                            message = "Пункт roadmap архивирован",
+                            workspaceActionRevision = it.workspaceActionRevision + 1,
                             isError = false,
                         )
                     }
@@ -745,7 +727,7 @@ class TaskBoardViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             workspaceLoading = false,
-                            message = error.message ?: "Не удалось удалить строку roadmap",
+                            message = error.message ?: "Не удалось архивировать пункт roadmap",
                             isError = true,
                         )
                     }
@@ -755,6 +737,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun createTaskFromRoadmapLine(stageId: String, line: SollRoadmapLine) {
+        if (_uiState.value.workspaceLoading) return
         val lineKey = roadmapLineTaskKey(stageId, line.line)
         viewModelScope.launch {
             _uiState.update { it.copy(roadmapLineTaskKey = lineKey, message = null, isError = false) }
@@ -845,6 +828,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun createSource(name: String, target: String, sourceType: String = "web") {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.createSource(name, target, SollSourceScope.PROJECT_SOLL, sourceType).fold(
@@ -854,6 +838,7 @@ class TaskBoardViewModel @Inject constructor(
                         it.copy(
                             workspaceLoading = false,
                             message = "Источник добавлен",
+                            workspaceActionRevision = it.workspaceActionRevision + 1,
                             isError = false,
                         )
                     }
@@ -873,6 +858,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun updateSource(source: SollMonitoredSource, name: String, description: String, tagsText: String, enabled: Boolean) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.updateSource(
@@ -891,6 +877,7 @@ class TaskBoardViewModel @Inject constructor(
                             selectedSourceId = updated.id,
                             workspaceLoading = false,
                             message = "Источник обновлен",
+                            workspaceActionRevision = it.workspaceActionRevision + 1,
                             isError = false,
                         )
                     }
@@ -909,6 +896,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun deleteSource(source: SollMonitoredSource) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.deleteSource(source.id).fold(
@@ -919,6 +907,7 @@ class TaskBoardViewModel @Inject constructor(
                             workspaceLoading = false,
                             selectedSourceId = null,
                             message = "Источник удален",
+                            workspaceActionRevision = it.workspaceActionRevision + 1,
                             isError = false,
                         )
                     }
@@ -938,6 +927,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun checkSource(source: SollMonitoredSource) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(workspaceLoading = true, message = null, isError = false) }
             sollGateway.checkSource(source.id).fold(
@@ -966,6 +956,7 @@ class TaskBoardViewModel @Inject constructor(
     }
 
     fun createTaskFromSourceItem(sourceId: String, item: SollSourceItem) {
+        if (_uiState.value.workspaceLoading) return
         viewModelScope.launch {
             val projectSource = _uiState.value.sources.firstOrNull { source ->
                 source.id == sourceId && source.scope == SollSourceScope.PROJECT_SOLL
@@ -1114,6 +1105,7 @@ class TaskBoardViewModel @Inject constructor(
         targetStatus: String? = null,
         action: suspend (taskId: String) -> Result<SollTask>,
     ) {
+        if (_uiState.value.actionTaskId != null || task.id in _uiState.value.pendingTaskActionIds) return
         viewModelScope.launch {
             val cleanTaskId = task.id.trim()
             if (cleanTaskId.isBlank()) {
@@ -1129,9 +1121,11 @@ class TaskBoardViewModel @Inject constructor(
             val actionTask = task.copy(id = cleanTaskId)
             _uiState.update { it.copy(actionTaskId = cleanTaskId, message = null, isError = false) }
             action(cleanTaskId).fold(
-                onSuccess = {
+                onSuccess = { updatedTask ->
                     _uiState.update {
                         it.copy(
+                            detailTask = it.detailTask?.let { selected -> if (selected.id == updatedTask.id) updatedTask else selected },
+                            pageTasks = it.pageTasks?.map { row -> if (row.id == updatedTask.id) updatedTask else row },
                             actionTaskId = null,
                             message = successMessage,
                             isError = false,
@@ -1202,6 +1196,8 @@ class TaskBoardViewModel @Inject constructor(
                 message = "$successMessage. Сервер недоступен, действие поставлено в очередь.",
                 isError = false,
                 isShowingCache = true,
+                pageTasks = it.pageTasks?.map { row -> if (row.id == task.id) row.copy(status = optimisticStatus) else row },
+                detailTask = it.detailTask?.let { selected -> if (selected.id == task.id) selected.copy(status = optimisticStatus) else selected },
             ).rebuildTaskIndex().deriveTaskList()
         }
     }
@@ -1232,9 +1228,7 @@ class TaskBoardViewModel @Inject constructor(
     private fun refreshSelectedWorkspace(showLoading: Boolean) {
         if (_uiState.value.workspaceLoading) return
         when (_uiState.value.selectedMode) {
-            TaskWorkspaceMode.TASKS -> if (_uiState.value.taskGraph == null || showLoading) {
-                loadTaskGraph(showLoading = false)
-            }
+            TaskWorkspaceMode.TASKS -> Unit
             TaskWorkspaceMode.INSIGHTS -> loadInsights(showLoading = showLoading)
             TaskWorkspaceMode.ROADMAP -> loadRoadmap(showLoading = showLoading)
             TaskWorkspaceMode.SOURCES -> loadSources(showLoading = showLoading)
@@ -1245,7 +1239,7 @@ class TaskBoardViewModel @Inject constructor(
         viewModelScope.launch {
             while (isActive) {
                 delay(TASK_REFRESH_INTERVAL_MS)
-                if (_uiState.value.actionTaskId == null && !_uiState.value.isLoading) {
+                if (_uiState.value.actionTaskId == null && !_uiState.value.isLoading && !_uiState.value.editorSaving && !_uiState.value.workspaceLoading) {
                     when (_uiState.value.selectedMode) {
                         TaskWorkspaceMode.SOURCES -> loadSources(showLoading = false)
                         else -> refresh(showLoading = false)
@@ -1303,26 +1297,6 @@ class TaskBoardViewModel @Inject constructor(
         )
     }
 
-    private fun SollTask.evidenceNoteContent(uploadedFilename: String?): String = buildString {
-        append("Задача: $title\n")
-        append("ID: $id\n")
-        append("Статус: $status\n")
-        append("Приоритет: $priority\n")
-        projectName?.takeIf { it.isNotBlank() }?.let { append("Проект: $it\n") }
-        dueDate?.takeIf { it.isNotBlank() }?.let { append("Дата: $it\n") }
-        sourceRef.takeIf { it.isNotBlank() }?.let { append("Источник: $it\n") }
-        if (uploadedFilename != null) {
-            append("Вложение: raw/$uploadedFilename\n")
-        } else {
-            append("Вложение: файл ожидает отправки из мобильной очереди\n")
-        }
-        if (description.isNotBlank()) {
-            append("\nОписание:\n")
-            append(description)
-            append("\n")
-        }
-    }
-
     private fun SyncQueueEntity.taskIdOrNull(): String? =
         runCatching {
             val payload = JSONObject(payloadJson)
@@ -1349,7 +1323,7 @@ class TaskBoardViewModel @Inject constructor(
 }
 
 internal fun TaskBoardUiState.deriveTaskList(): TaskBoardUiState {
-    val base = when (selectedTab) {
+    val base = pageTasks ?: when (selectedTab) {
         TaskTab.ALL -> openTasksRaw()
         TaskTab.TODAY -> today
         TaskTab.BLOCKED -> blocked
@@ -1361,11 +1335,31 @@ internal fun TaskBoardUiState.deriveTaskList(): TaskBoardUiState {
     }
     return copy(
         visibleTasks = base
-            .filterByGraphSelection(this)
+            .filter { selectedProjectId == null || it.projectId == selectedProjectId ||
+                it.projectName == projects.firstOrNull { project -> project.id == selectedProjectId }?.name }
             .filterByPriority(selectedPriority)
             .filterByQuery(searchQuery),
         ideaCount = ideaTaskIndex.size,
     )
+}
+
+internal fun taskInputError(input: SollTaskInput): String? = when {
+    input.title.isBlank() -> "Напиши название задачи."
+    input.title.trim().length > 255 -> "Название должно быть не длиннее 255 символов."
+    input.description.length > 12000 -> "Описание должно быть не длиннее 12000 символов."
+    input.priority !in listOf("A", "B", "C", "D") -> "Выбери приоритет A, B, C или D."
+    input.dueDate.isNotBlank() && runCatching { java.time.LocalDate.parse(input.dueDate) }.isFailure -> "Выбери корректную дату."
+    else -> null
+}
+
+internal fun Throwable.taskWorkspaceMessage(): String = when {
+    this is IOException -> "Нет связи с сервером. Черновик сохранён — повтори попытку после подключения."
+    this is HttpException && code() == 401 -> "Не удалось подтвердить подключение устройства. Обнови соединение и повтори попытку."
+    this is HttpException && code() == 403 -> "Для устройства не разрешено это действие. Проверь его права на сервере."
+    this is HttpException && code() == 404 -> "Метод недоступен на сервере. Для новых действий требуется обновление сервера Soll."
+    this is HttpException && code() == 409 -> "Данные изменились на сервере. Обнови список и повтори действие."
+    this is HttpException && code() >= 500 -> "Сервер не смог выполнить действие. Черновик сохранён — повтори попытку позже."
+    else -> message ?: "Не удалось сохранить. Повтори попытку."
 }
 
 internal fun TaskBoardUiState.rebuildTaskIndex(): TaskBoardUiState {
@@ -1425,18 +1419,6 @@ private fun List<SollTask>.filterByPriority(filter: TaskPriorityFilter): List<So
         filter { it.priority.normalizedTaskPriorityLabel() == filter.label }
     }
 
-private fun List<SollTask>.filterByGraphSelection(state: TaskBoardUiState): List<SollTask> {
-    val selectedNodeId = state.selectedGraphNodeId ?: return this
-    val matchingTaskIds = buildSet {
-        state.taskGraph?.nodes
-            ?.firstOrNull { it.id == selectedNodeId }
-            ?.taskId
-            ?.let(::add)
-        state.graphDescendants.mapNotNullTo(this) { it.taskId }
-    }
-    return filter { it.id in matchingTaskIds }
-}
-
 private fun List<SollTask>.filterByQuery(query: String): List<SollTask> {
     val needle = query.trim()
     if (needle.isBlank()) return this
@@ -1487,18 +1469,3 @@ private const val DEFAULT_TASK_BOARD_SECTION_LIMIT = 80
 private const val MAX_TASK_BOARD_SECTION_LIMIT = 500
 private const val SOURCE_ITEM_PAGE_SIZE = 50
 private const val TASK_REFRESH_INTERVAL_MS = 30_000L
-private const val GRAPH_DESCENDANT_LIMIT = 700
-
-internal fun SollTaskGraph.rootNodes(): List<SollTaskGraphNode> {
-    val childIds = edges.mapTo(mutableSetOf()) { it.target }
-    return nodes.filterNot { it.id in childIds }.sortedWith(
-        compareBy<SollTaskGraphNode> { it.kind }.thenBy { it.label.lowercase() },
-    )
-}
-
-internal fun SollTaskGraph.projectFilterNodes(): List<SollTaskGraphNode> {
-    val roots = rootNodes()
-    return roots.filter { it.kind.equals("project", ignoreCase = true) }
-        .ifEmpty { roots.filterNot { it.kind.equals("source", ignoreCase = true) } }
-        .ifEmpty { roots }
-}

@@ -258,6 +258,7 @@ data class SollRoadmap(
     val stages: List<SollRoadmapStage> = emptyList(),
     val readiness: List<SollRoadmapReadiness> = emptyList(),
     val updated: String? = null,
+    val editSupported: Boolean = false,
 )
 
 data class SollRoadmapStage(
@@ -270,6 +271,8 @@ data class SollRoadmapStage(
 data class SollRoadmapLine(
     val line: String,
     val text: String,
+    val status: String = "planned",
+    val comment: String = "",
 )
 
 data class SollRoadmapReadiness(
@@ -484,6 +487,7 @@ data class SollTask(
     val rollbackSha: String = "",
     val executionAttempts: Int = 0,
     val executionUpdatedAt: String? = null,
+    val projectId: String? = null,
 )
 
 internal fun SollTaskBoard.withoutDailyTodoTasks(): SollTaskBoard {
@@ -829,7 +833,18 @@ interface SollGateway {
     ): Result<SollRawNote>
 
     suspend fun uploadRawFile(uri: Uri): Result<SollRawUpload>
+    suspend fun uploadTaskEvidence(taskId: String, uri: Uri): Result<SollTask> = Result.failure(UnsupportedOperationException("Вложения к задачам недоступны"))
+    suspend fun createTaskEvidenceNote(taskId: String, content: String): Result<SollTask> = Result.failure(UnsupportedOperationException("Заметки к задачам недоступны"))
     suspend fun updateTask(taskId: String, title: String, description: String): Result<SollTask>
+    suspend fun createTask(input: SollTaskInput, clientRequestId: String): Result<SollTask> =
+        Result.failure(UnsupportedOperationException("Создание задач недоступно"))
+    suspend fun updateTaskDetails(taskId: String, input: SollTaskInput): Result<SollTask> =
+        updateTask(taskId, input.title, input.description)
+    suspend fun getTask(taskId: String): Result<SollTask> =
+        Result.failure(UnsupportedOperationException("Карточка задачи недоступна"))
+    suspend fun getTaskProjects(): Result<List<SollTaskProject>> = Result.success(emptyList())
+    suspend fun getTaskPage(section: String, query: String, projectId: String?, priority: String?, offset: Int): Result<SollTaskPage> =
+        Result.failure(UnsupportedOperationException("Постраничная загрузка недоступна"))
     suspend fun setTaskStatus(taskId: String, status: String): Result<SollTask>
     suspend fun moveTaskToToday(taskId: String): Result<SollTask>
     suspend fun completeTask(taskId: String): Result<SollTask>
@@ -987,3 +1002,15 @@ interface SollGateway {
 
     suspend fun getGadgetEvents(gadgetId: String, limit: Int = 50): Result<List<GadgetCloudEvent>>
 }
+
+data class SollTaskInput(
+    val title: String,
+    val description: String = "",
+    val priority: String = "B",
+    val projectId: String = "",
+    val projectName: String = "",
+    val dueDate: String = "",
+)
+
+data class SollTaskProject(val id: String, val name: String)
+data class SollTaskPage(val tasks: List<SollTask>, val total: Int, val hasMore: Boolean)

@@ -2,9 +2,6 @@ package com.soll.presentation.screens.tasks
 
 import com.soll.domain.soll.SollTask
 import com.soll.domain.soll.SollTaskBoardCounts
-import com.soll.domain.soll.SollTaskGraph
-import com.soll.domain.soll.SollTaskGraphEdge
-import com.soll.domain.soll.SollTaskGraphNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -205,33 +202,14 @@ class TaskBoardFilterTest {
     }
 
     @Test
-    fun `project graph selection filters the existing task list without a graph workspace`() {
-        val graph = SollTaskGraph(
-            nodes = listOf(
-                SollTaskGraphNode(id = "project-a", kind = "project", label = "Project A"),
-                SollTaskGraphNode(id = "task-a", kind = "task", label = "Task A", taskId = "task-a"),
-            ),
-            edges = listOf(
-                SollTaskGraphEdge(
-                    id = "project-a-task-a",
-                    source = "project-a",
-                    target = "task-a",
-                    kind = "contains",
-                ),
-            ),
-        )
+    fun `project registry selection filters tasks without a partial graph`() {
         val filtered = TaskBoardUiState(
-            blocked = listOf(
-                task(id = "task-a", status = "blocked"),
-                task(id = "task-b", status = "blocked"),
-            ),
-            taskGraph = graph,
-            selectedGraphNodeId = "project-a",
-            graphDescendants = listOf(graph.nodes.single { it.id == "task-a" }),
+            blocked = listOf(task(id = "task-a", status = "blocked").copy(projectId = "project-a", projectName = "Project A"),
+                task(id = "task-b", status = "blocked").copy(projectId = "project-b", projectName = "Project B")),
+            projects = listOf(com.soll.domain.soll.SollTaskProject("project-a", "Project A")),
+            selectedProjectId = "project-a",
         ).rebuildTaskIndex().deriveTaskList()
-
         assertEquals(listOf("task-a"), filtered.visibleTasks.map { it.id })
-        assertEquals(listOf("project-a"), graph.projectFilterNodes().map { it.id })
     }
 
     @Test
